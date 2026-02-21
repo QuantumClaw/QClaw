@@ -1,0 +1,13 @@
+# QuantumClaw Code Owners
+# These users will be automatically requested for review on PRs
+
+# Default — all files
+* @allin1app
+
+# Security-critical
+src/security/ @allin1app
+src/agex-sdk/ @allin1app
+
+# Documentation
+docs/ @allin1app
+README.md @allin1app

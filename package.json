@@ -1,0 +1,63 @@
+{
+  "name": "quantumclaw",
+  "version": "1.0.0",
+  "description": "The agent runtime with a knowledge graph for a brain.",
+  "type": "module",
+  "bin": {
+    "qclaw": "./src/cli/index.js",
+    "quantumclaw": "./src/cli/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "onboard": "node src/cli/index.js onboard",
+    "update": "node src/cli/index.js update",
+    "status": "node src/cli/index.js status",
+    "diagnose": "node src/cli/index.js diagnose",
+    "chat": "node src/cli/index.js chat",
+    "dashboard": "node src/dashboard/server.js",
+    "test": "node tests/smoke.test.js",
+    "lint": "eslint src/"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "ai-agent",
+    "knowledge-graph",
+    "cognee",
+    "personal-assistant",
+    "autonomous",
+    "telegram",
+    "whatsapp"
+  ],
+  "author": "QuantumClaw",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/QuantumClaw/QClaw.git"
+  },
+  "homepage": "https://github.com/QuantumClaw/QClaw#readme",
+  "bugs": {
+    "url": "https://github.com/QuantumClaw/QClaw/issues"
+  },
+  "dependencies": {
+    "@agexhq/sdk": "^0.1.1",
+    "@clack/prompts": "^0.9.1",
+    "@noble/ed25519": "^2.0.0",
+    "@noble/hashes": "^1.3.3",
+    "chalk": "^5.4.1",
+    "express": "^4.21.0",
+    "grammy": "^1.30.0",
+    "jose": "^5.2.3",
+    "node-fetch": "^3.3.2",
+    "picocolors": "^1.1.1",
+    "uuid": "^9.0.0",
+    "ws": "^8.18.0"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.7.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0"
+  }
+}
