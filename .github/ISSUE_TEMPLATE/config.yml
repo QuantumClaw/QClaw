@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discord
+    url: https://discord.gg/37x3wRha
+    about: Chat with the community and get real-time help
+  - name: Questions & Help
+    url: https://github.com/QuantumClaw/QClaw/discussions/categories/questions-help
+    about: Ask questions and get help from the community
+  - name: Ideas & Feature Requests
+    url: https://github.com/QuantumClaw/QClaw/discussions/categories/ideas-feature-requests
+    about: Suggest features and improvements
+  - name: Show & Tell
+    url: https://github.com/QuantumClaw/QClaw/discussions/categories/show-tell
+    about: Share your setup, skills, and agent configurations

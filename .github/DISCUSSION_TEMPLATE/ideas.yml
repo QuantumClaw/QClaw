@@ -1,0 +1,17 @@
+title: "Ideas & Feature Requests"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Got an idea for QuantumClaw? Share it here. Good ideas explain the problem, not just the solution.
+  - type: textarea
+    attributes:
+      label: The idea
+      description: What would you like to see?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Why it matters
+      description: What problem does this solve?
