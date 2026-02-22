@@ -101,7 +101,11 @@ export async function loadConfig() {
 
   // If no config, return defaults (onboard hasn't run yet)
   if (!existsSync(CONFIG_FILE)) {
-    log.warn('No config found. Run `npx qclaw onboard` first.');
+    // Don't warn if we're already running onboard
+    const isOnboarding = process.argv.some(a => a === 'onboard');
+    if (!isOnboarding) {
+      log.warn('No config found. Run `qclaw onboard` first.');
+    }
     return { ...DEFAULTS, _dir: CONFIG_DIR, _file: CONFIG_FILE };
   }
 

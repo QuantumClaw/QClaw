@@ -57,7 +57,7 @@ class QuantumClaw {
       this.audit.log('system', 'startup', 'QuantumClaw starting');
     } catch (err) {
       log.error(`Security layer failed: ${err.message}`);
-      log.error('Cannot start without security. Run `npx qclaw diagnose`');
+      log.error('Cannot start without security. Run `qclaw diagnose`');
       process.exit(1);
     }
 
@@ -127,7 +127,7 @@ class QuantumClaw {
     } catch (err) {
       log.error(`Model router failed: ${err.message}`);
       log.error('Cannot start without at least one working model.');
-      log.info('Run `npx qclaw onboard` to set up an AI provider.');
+      log.info('Run `qclaw onboard` to set up an AI provider.');
       process.exit(1);
     }
 

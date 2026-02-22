@@ -262,34 +262,62 @@ echo ""
 # ═══════════════════════════════════════════════════════════════════
 echo -e "  ${B}[4/6] CLI${RS}"
 
-npm link 2>/dev/null || npm link --force 2>/dev/null || true
-if ! command -v qclaw &>/dev/null; then
-    GLOBAL_BIN=$(npm config get prefix 2>/dev/null)/bin
-    [ ! -d "$GLOBAL_BIN" ] && GLOBAL_BIN="$HOME/.npm-global/bin"
-    [ ! -d "$GLOBAL_BIN" ] && mkdir -p "$GLOBAL_BIN"
+BIN_TARGET="$QCLAW_DIR/src/cli/index.js"
 
-    BIN_TARGET="$QCLAW_DIR/src/cli/index.js"
-    if [ -f "$BIN_TARGET" ]; then
-        ln -sf "$BIN_TARGET" "$GLOBAL_BIN/qclaw" 2>/dev/null || true
-        chmod +x "$BIN_TARGET" 2>/dev/null || true
-        head -1 "$BIN_TARGET" | grep -q '^#!' || sed -i '1i#!/usr/bin/env node' "$BIN_TARGET"
-    fi
-
-    if ! command -v qclaw &>/dev/null; then
-        if [ -f "$GLOBAL_BIN/qclaw" ]; then
-            export PATH="$GLOBAL_BIN:$PATH"
-            for rc in "$HOME/.bashrc" "$HOME/.profile"; do
-                [ -f "$rc" ] && ! grep -q 'npm-global/bin' "$rc" 2>/dev/null && \
-                    echo "export PATH=\"$GLOBAL_BIN:\$PATH\"" >> "$rc"
-            done
-        fi
-    fi
+# Ensure shebang is present
+if [ -f "$BIN_TARGET" ]; then
+    head -1 "$BIN_TARGET" | grep -q '^#!' || sed -i '1i#!/usr/bin/env node' "$BIN_TARGET"
+    chmod +x "$BIN_TARGET"
 fi
+
+# Method 1: npm link
+npm link 2>/dev/null || npm link --force 2>/dev/null || true
+
+# Method 2: Manual symlink if npm link failed
+if ! command -v qclaw &>/dev/null; then
+    # Find a bin directory that's in PATH
+    LINK_DIR=""
+    for d in /usr/local/bin "$HOME/.local/bin" "$HOME/bin"; do
+        if [ -d "$d" ] && echo "$PATH" | grep -q "$d"; then
+            LINK_DIR="$d"; break
+        fi
+    done
+
+    # Termux: use $PREFIX/bin
+    $IS_TERMUX && LINK_DIR="$PREFIX/bin"
+
+    # Fallback: create ~/.local/bin and add to PATH
+    if [ -z "$LINK_DIR" ]; then
+        LINK_DIR="$HOME/.local/bin"
+        mkdir -p "$LINK_DIR"
+        export PATH="$LINK_DIR:$PATH"
+        for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+            if [ -f "$rc" ] && ! grep -q '.local/bin' "$rc" 2>/dev/null; then
+                echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$rc"
+            fi
+        done
+    fi
+
+    ln -sf "$BIN_TARGET" "$LINK_DIR/qclaw" 2>/dev/null
+fi
+
+# Method 3: Shell alias as absolute last resort
+if ! command -v qclaw &>/dev/null; then
+    ALIAS_CMD="alias qclaw='node $BIN_TARGET'"
+    eval "$ALIAS_CMD"
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+        if [ -f "$rc" ] && ! grep -q "alias qclaw=" "$rc" 2>/dev/null; then
+            echo "$ALIAS_CMD" >> "$rc"
+        fi
+    done
+fi
+
 if command -v qclaw &>/dev/null; then
     ok "qclaw command ready"
 else
-    warn "Link failed — use: node ~/QClaw/src/cli/index.js"
-    info "Or add to .bashrc: alias qclaw='node ~/QClaw/src/cli/index.js'"
+    # This should never happen after method 3, but just in case
+    warn "qclaw not in PATH for this session"
+    info "Close and reopen your terminal, then run: qclaw onboard"
 fi
 echo ""
 

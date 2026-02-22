@@ -3,7 +3,7 @@
 /**
  * QuantumClaw CLI
  *
- * npx qclaw <command>
+ * qclaw <command>
  */
 
 import { smallBanner } from './brand.js';
@@ -895,7 +895,7 @@ switch (command) {
         console.log('  AGEX Hub: not configured');
         console.log('  Mode:     local secrets (AES-256-GCM)');
         console.log('');
-        console.log('  To enable: AGEX_HUB_URL=http://localhost:4891 npx qclaw start');
+        console.log('  To enable: AGEX_HUB_URL=http://localhost:4891 qclaw start');
       } else {
         console.log(`  Hub URL: ${agexUrl}`);
         try {
