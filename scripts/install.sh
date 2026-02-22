@@ -358,7 +358,7 @@ COGNEE_CONF
 
         # 1/4 — proot-distro
         if ! command -v proot-distro &>/dev/null; then
-            pkg install -y proot proot-distro > /tmp/qc-proot.log 2>&1 &
+            pkg install -y proot proot-distro > ${TMPDIR:-/tmp}/qc-proot.log 2>&1 &
             spinner $! "Installing proot-distro..."
             ok "proot-distro installed"
         else
@@ -372,12 +372,12 @@ COGNEE_CONF
             echo -e "  ${D}   This is the longest step. Your phone is working hard.${RS}"
             echo -e "  ${D}   WiFi recommended. On 4G this may take longer.${RS}"
             echo ""
-            proot-distro install ubuntu > /tmp/qc-ubuntu.log 2>&1 &
+            proot-distro install ubuntu > ${TMPDIR:-/tmp}/qc-ubuntu.log 2>&1 &
             spinner $! "Downloading and extracting Ubuntu..."
             if proot-distro list 2>/dev/null | grep -q "ubuntu.*installed"; then
                 ok "Ubuntu installed"
             else
-                fail "Ubuntu install failed. Check /tmp/qc-ubuntu.log"
+                fail "Ubuntu install failed. Check ${TMPDIR:-/tmp}/qc-ubuntu.log"
                 echo '{"method":"skipped","reason":"ubuntu-install-failed"}' > "$COGNEE_META"
                 # Continue — they still get the local knowledge store
             fi
@@ -428,7 +428,7 @@ COGNEE_CONF
                 "$VENV/bin/pip" install cognee uvicorn 2>&1 | tail -5 || true
                 echo "__COGNEE_DONE__"
             fi
-        ' > /tmp/qc-cognee.log 2>&1 &
+        ' > ${TMPDIR:-/tmp}/qc-cognee.log 2>&1 &
         spinner $! "Installing Cognee (this is the slow bit)..."
 
         # Verify
@@ -436,7 +436,7 @@ COGNEE_CONF
             ok "Cognee installed"
         else
             warn "Cognee install may have issues"
-            info "Check log: cat /tmp/qc-cognee.log"
+            info "Check log: cat ${TMPDIR:-/tmp}/qc-cognee.log"
             info "Local knowledge store active as fallback — your agent still works"
             echo '{"method":"skipped","reason":"proot-install-failed"}' > "$COGNEE_META"
         fi
