@@ -1,0 +1,30 @@
+name: Build Cognee Venv (ARM64)
+
+on:
+  workflow_dispatch:  # Manual trigger
+  release:
+    types: [created]
+
+jobs:
+  build-arm64:
+    runs-on: ubuntu-24.04-arm  # GitHub's arm64 runner
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Cognee venv
+        run: |
+          bash scripts/build-cognee-venv.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cognee-venv-arm64
+          path: /tmp/cognee-venv-arm64.tar.xz
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: /tmp/cognee-venv-arm64.tar.xz

@@ -41,7 +41,7 @@ spinner() {
     wait "$pid" 2>/dev/null
     local exit_code=$?
     printf "\r                                                          \r"
-    return $exit_code
+    return 0  # Callers check success themselves — don't propagate failures
 }
 
 QCLAW_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -195,6 +195,9 @@ echo -e "  ${B}[4/5] Cognee${RS}"
 
 mkdir -p "$CONFIG_DIR"
 COGNEE_META="$CONFIG_DIR/cognee-install.json"
+
+# Cognee is optional — failures here must NOT kill the installer
+set +e
 
 if echo "$@" | grep -q "skip-cognee"; then
     info "Skipped"; echo '{"method":"skipped"}' > "$COGNEE_META"
@@ -385,60 +388,90 @@ COGNEE_CONF
             ok "Ubuntu (already installed)"
         fi
 
-        # 3/4 — Python + Cognee inside Ubuntu
-        echo ""
-        echo -e "  ${C}🐍${RS} Installing Python + Cognee inside Ubuntu..."
-        echo -e "  ${D}   Downloading ~200 Python packages. This takes 3-5 minutes.${RS}"
-        echo -e "  ${D}   The screen will look frozen — it's not. Just wait.${RS}"
-        echo ""
+        # 3/4 — Cognee venv (pre-built, no compilation on phone)
+        #
+        # Instead of compiling 200+ Python packages on the phone (fragile,
+        # slow, fails on many devices), we download a pre-built venv tarball
+        # that was compiled on a real arm64 Linux machine via GitHub Actions.
+        #
+        # The tarball contains Python 3.11 + Cognee + all dependencies,
+        # pre-compiled for aarch64. Just extract to /opt/cognee-venv.
 
-        proot-distro login ubuntu -- bash -c '
-            set -e
-            export DEBIAN_FRONTEND=noninteractive
+        COGNEE_VENV_URL="${COGNEE_VENV_URL:-https://github.com/QuantumClaw/QClaw/releases/download/cognee-v1/cognee-venv-arm64.tar.xz}"
 
-            # System deps — get Python 3.11 (Cognee has dependency conflicts on 3.12+)
-            apt-get update -qq 2>/dev/null
-            apt-get install -y -qq software-properties-common curl > /dev/null 2>&1
-            add-apt-repository -y ppa:deadsnakes/ppa > /dev/null 2>&1 || true
-            apt-get update -qq 2>/dev/null
-
-            # Try Python 3.11 first, fall back to system python3
-            apt-get install -y -qq python3.11 python3.11-venv python3.11-dev > /dev/null 2>&1 || \
-            apt-get install -y -qq python3 python3-pip python3-venv > /dev/null 2>&1
-
-            PY="python3"
-            command -v python3.11 > /dev/null 2>&1 && PY="python3.11"
-
-            # Create venv
-            VENV=/opt/cognee-venv
-            [ ! -d "$VENV" ] && $PY -m venv "$VENV"
-
-            # Upgrade pip first
-            "$VENV/bin/pip" install --upgrade pip > /dev/null 2>&1
-
-            # Install uv (much better dependency resolver than pip)
-            "$VENV/bin/pip" install --quiet uv 2>&1 | tail -2
-
-            # Install Cognee via uv (handles conflicts that break pip)
-            if "$VENV/bin/uv" pip install --python "$VENV/bin/python" cognee uvicorn 2>&1 | tail -5; then
-                echo "__COGNEE_DONE__"
-            else
-                # Fallback: pip with relaxed resolver
-                echo "uv failed, trying pip..."
-                "$VENV/bin/pip" install cognee uvicorn 2>&1 | tail -5 || true
-                echo "__COGNEE_DONE__"
-            fi
-        ' > ${TMPDIR:-/tmp}/qc-cognee.log 2>&1 &
-        spinner $! "Installing Cognee (this is the slow bit)..."
-
-        # Verify
-        if proot-distro login ubuntu -- bash -c '/opt/cognee-venv/bin/python -c "import cognee; print(cognee.__version__)"' 2>/dev/null; then
-            ok "Cognee installed"
+        if proot-distro login ubuntu -- bash -c 'test -d /opt/cognee-venv && /opt/cognee-venv/bin/python -c "import cognee" 2>/dev/null' 2>/dev/null; then
+            ok "Cognee venv (already installed)"
         else
-            warn "Cognee install may have issues"
-            info "Check log: cat ${TMPDIR:-/tmp}/qc-cognee.log"
-            info "Local knowledge store active as fallback — your agent still works"
-            echo '{"method":"skipped","reason":"proot-install-failed"}' > "$COGNEE_META"
+            echo ""
+            echo -e "  ${C}🧠${RS} Downloading Cognee knowledge engine..."
+            echo -e "  ${D}   Pre-built for ARM64. No compilation needed.${RS}"
+            echo -e "  ${D}   Download size: ~100-150MB. Only happens once.${RS}"
+            echo ""
+
+            # Download and extract inside proot Ubuntu
+            proot-distro login ubuntu -- bash -c "
+                set -e
+                export DEBIAN_FRONTEND=noninteractive
+
+                # Install minimal deps (curl, xz for extraction)
+                apt-get update -qq 2>/dev/null
+                apt-get install -y -qq curl xz-utils python3.11 python3.11-venv 2>/dev/null || \
+                apt-get install -y -qq curl xz-utils python3 python3-venv 2>/dev/null
+
+                # Clean any broken previous install
+                rm -rf /opt/cognee-venv
+
+                # Download pre-built venv tarball
+                echo 'Downloading pre-built Cognee...'
+                curl -fSL '$COGNEE_VENV_URL' -o /tmp/cognee-venv-arm64.tar.xz
+
+                # Extract to /opt
+                echo 'Extracting...'
+                cd /opt && tar -xJf /tmp/cognee-venv-arm64.tar.xz
+                rm -f /tmp/cognee-venv-arm64.tar.xz
+
+                # Verify
+                /opt/cognee-venv/bin/python -c 'import cognee; print(cognee.__version__)'
+            " > ${TMPDIR:-/tmp}/qc-cognee.log 2>&1 &
+            spinner $! "Downloading Cognee knowledge engine..."
+
+            # Verify it worked
+            if proot-distro login ubuntu -- bash -c '/opt/cognee-venv/bin/python -c "import cognee; print(cognee.__version__)"' 2>/dev/null; then
+                ok "Cognee installed"
+            else
+                # Fallback: try compiling from pip (slow but might work on some devices)
+                warn "Pre-built download failed — trying pip install (slower)..."
+                info "Check log: cat ${TMPDIR:-/tmp}/qc-cognee.log"
+
+                proot-distro login ubuntu -- bash -c '
+                    set -e
+                    export DEBIAN_FRONTEND=noninteractive
+                    apt-get update -qq 2>/dev/null
+                    apt-get install -y -qq software-properties-common curl > /dev/null 2>&1
+                    add-apt-repository -y ppa:deadsnakes/ppa > /dev/null 2>&1 || true
+                    apt-get update -qq 2>/dev/null
+                    apt-get install -y -qq python3.11 python3.11-venv python3.11-dev > /dev/null 2>&1 || \
+                    apt-get install -y -qq python3 python3-pip python3-venv > /dev/null 2>&1
+                    PY="python3"; command -v python3.11 > /dev/null 2>&1 && PY="python3.11"
+                    VENV=/opt/cognee-venv
+                    rm -rf "$VENV"
+                    $PY -m venv "$VENV"
+                    "$VENV/bin/pip" install --upgrade pip > /dev/null 2>&1
+                    "$VENV/bin/pip" install uv 2>&1 | tail -2
+                    "$VENV/bin/uv" pip install --python "$VENV/bin/python" cognee uvicorn 2>&1 | tail -5 || \
+                    "$VENV/bin/pip" install cognee uvicorn 2>&1 | tail -5
+                ' >> ${TMPDIR:-/tmp}/qc-cognee.log 2>&1 &
+                spinner $! "Compiling Cognee from source (this takes 5-10 min)..."
+
+                if proot-distro login ubuntu -- bash -c '/opt/cognee-venv/bin/python -c "import cognee"' 2>/dev/null; then
+                    ok "Cognee installed (compiled from source)"
+                else
+                    warn "Cognee install failed"
+                    info "Check log: cat ${TMPDIR:-/tmp}/qc-cognee.log"
+                    info "Your agent still works — using local knowledge store"
+                    echo '{"method":"skipped","reason":"install-failed"}' > "$COGNEE_META"
+                fi
+            fi
         fi
 
         # 4/4 — Start and verify
@@ -527,6 +560,7 @@ echo ""
 # ═══════════════════════════════════════════════════════════════════
 # [5/5] AGEX
 # ═══════════════════════════════════════════════════════════════════
+set -e  # Re-enable strict mode after optional Cognee section
 echo -e "  ${B}[5/5] AGEX${RS}"
 
 mkdir -p "$AGEX_DIR/aids" "$AGEX_DIR/creds"
