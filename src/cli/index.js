@@ -1058,9 +1058,10 @@ Dashboard: http://localhost:3000 (when agent is running)
     const C = '\x1b[38;5;87m';
     const RD = '\x1b[38;5;196m';
     const RS = '\x1b[0m';
+    const D = '\x1b[2m';
 
     const { execSync } = await import('child_process');
-    const run = (cmd) => execSync(cmd, { cwd: process.cwd(), stdio: 'pipe' }).toString().trim();
+    const run = (cmd, opts = {}) => execSync(cmd, { cwd: process.cwd(), stdio: 'pipe', ...opts }).toString().trim();
 
     // Check we're in a git repo
     try {
@@ -1072,9 +1073,9 @@ Dashboard: http://localhost:3000 (when agent is running)
     }
 
     const before = run('git rev-parse --short HEAD');
-    console.log(`  Current: ${before}`);
+    console.log(`  ${D}Current: ${before}${RS}`);
 
-    // Stop agent if running
+    // 1. Stop agent if running
     const { homedir } = await import('os');
     const pidFile = join(homedir(), '.quantumclaw', 'qclaw.pid');
     if (existsSync(pidFile)) {
@@ -1085,51 +1086,67 @@ Dashboard: http://localhost:3000 (when agent is running)
         await new Promise(r => setTimeout(r, 1000));
       } catch { /* already stopped */ }
     }
+    try { run('pm2 stop qclaw 2>/dev/null || true'); } catch {}
 
-    // Pull latest
+    // 2. Stash any local changes (lock files etc)
+    console.log('  Stashing local changes...');
+    try { run('git stash'); } catch { /* nothing to stash */ }
+
+    // 3. Pull latest
     console.log('  Pulling latest...');
     try {
       const pullResult = run('git pull --rebase origin main');
       if (pullResult.includes('Already up to date')) {
+        try { run('git stash pop 2>/dev/null || true'); } catch {}
         console.log(`\n  ${G}✓${RS} Already on latest version.`);
         break;
       }
     } catch {
-      console.log('  Stashing local changes...');
+      // Force pull if rebase fails
+      console.log(`  ${Y}!${RS} Rebase failed, force pulling...`);
       try {
-        run('git stash');
-        run('git pull --rebase origin main');
-        run('git stash pop');
+        run('git stash drop 2>/dev/null || true');
+        run('git fetch origin main');
+        run('git reset --hard origin/main');
       } catch {
-        console.log(`  ${Y}!${RS} Pull failed. Try: cd ~/QClaw && git pull`);
+        console.log(`  ${RD}✗${RS} Pull failed. Try manually:`);
+        console.log(`    cd ~/QClaw && git stash && git pull`);
         process.exit(1);
       }
     }
 
+    // Pop stash (best effort — conflicts are fine, lock files get regenerated)
+    try { run('git stash pop 2>/dev/null || true'); } catch {}
+
     const after = run('git rev-parse --short HEAD');
 
-    // Reinstall deps
-    console.log('  Installing dependencies...');
+    // 4. Run full install script (handles deps, Cognee, AGEX — everything)
+    console.log('  Running installer...');
+    console.log('');
     try {
-      try {
-        execSync('yarn install', { cwd: process.cwd(), stdio: 'ignore' });
-      } catch {
-        execSync('npm install', { cwd: process.cwd(), stdio: 'ignore' });
-      }
+      execSync('bash scripts/install.sh', {
+        cwd: process.cwd(),
+        stdio: 'inherit',  // show output live
+        env: { ...process.env }
+      });
     } catch {
+      console.log(`  ${Y}!${RS} Installer had issues — trying npm install as fallback...`);
       try {
-        execSync('npm install --ignore-scripts', { cwd: process.cwd(), stdio: 'ignore' });
-      } catch { /* best effort */ }
+        try { execSync('yarn install', { cwd: process.cwd(), stdio: 'ignore' }); }
+        catch { execSync('npm install', { cwd: process.cwd(), stdio: 'ignore' }); }
+      } catch {
+        try { execSync('npm install --ignore-scripts', { cwd: process.cwd(), stdio: 'ignore' }); }
+        catch { /* best effort */ }
+      }
     }
 
-    // Re-link global command
-    try {
-      execSync('npm link --force', { cwd: process.cwd(), stdio: 'ignore' });
-    } catch { /* not critical */ }
+    // 5. Re-link global command
+    try { execSync('npm link --force', { cwd: process.cwd(), stdio: 'ignore' }); } catch {}
 
-    console.log(`\n  ${G}✓${RS} Updated ${before} → ${after}`);
-    console.log(`\n  Run ${C}qclaw start${RS} to restart.`);
+    // 6. Restart agent
     console.log('');
+    console.log(`  ${G}✓${RS} Updated ${before} → ${after}`);
+    console.log(`\n  Run ${C}qclaw start${RS} to restart.\n`);
     break;
   }
 
