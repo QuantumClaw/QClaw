@@ -64,6 +64,12 @@ if $IS_TERMUX; then
 #!/data/data/com.termux/files/usr/bin/bash
 termux-wake-lock 2>/dev/null || true
 export DB_PATH=$HOME/.agex/agex.db
+
+# Start Cognee (knowledge graph) if installed
+COGNEE_START="$QCLAW_DIR/scripts/cognee-start.sh"
+[ -f "\$COGNEE_START" ] && [ -f "$CONFIG_DIR/cognee-proot-ready" ] && bash "\$COGNEE_START" &
+
+# Start QClaw agent
 pm2 resurrect 2>/dev/null || true
 EOF
     chmod +x "$HOME/.termux/boot/start-quantumclaw.sh"
@@ -125,9 +131,174 @@ if echo "$@" | grep -q "skip-cognee"; then
 elif curl -sf http://localhost:8000/health >/dev/null 2>&1; then
     ok "Running"
 elif $IS_TERMUX; then
-    info "Skipped on Android (lancedb has no ARM64 wheels)"
-    info "Agent uses local memory — works fine"
-    echo '{"method":"skipped","reason":"termux"}' > "$COGNEE_META"
+    # ── Cognee on Android via proot-distro Ubuntu ──
+    # LanceDB/Kuzu need glibc (manylinux wheels). Termux uses Bionic.
+    # proot-distro gives us a real Ubuntu where everything just works.
+    # Cognee runs as HTTP API on localhost:8000, QClaw talks to it.
+
+    COGNEE_MARKER="$CONFIG_DIR/cognee-proot-ready"
+
+    if [ -f "$COGNEE_MARKER" ] && curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+        ok "Cognee running (proot Ubuntu)"
+        echo '{"method":"proot-ubuntu"}' > "$COGNEE_META"
+    elif [ -f "$COGNEE_MARKER" ]; then
+        # Installed but not running — restart it
+        info "Starting Cognee..."
+        bash "$QCLAW_DIR/scripts/cognee-start.sh" &
+        for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/health >/dev/null 2>&1 && { ok "Cognee started"; echo '{"method":"proot-ubuntu"}' > "$COGNEE_META"; break; }
+            sleep 1
+        done
+    else
+        info "Installing Cognee via proot-distro Ubuntu..."
+        info "This takes 5-10 minutes (one time only)"
+        echo ""
+
+        # Step 1: Install proot-distro if not present
+        if ! command -v proot-distro &>/dev/null; then
+            info "  Installing proot-distro..."
+            pkg install -y proot proot-distro 2>&1 | tail -2
+        fi
+
+        # Step 2: Install Ubuntu if not present
+        if ! proot-distro list 2>/dev/null | grep -q "ubuntu.*installed"; then
+            info "  Installing Ubuntu (headless, ~400MB)..."
+            proot-distro install ubuntu 2>&1 | tail -3
+        fi
+        ok "Ubuntu ready"
+
+        # Step 3: Install Python + Cognee inside Ubuntu
+        info "  Installing Python + Cognee inside Ubuntu..."
+        proot-distro login ubuntu -- bash -c '
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+
+            # System deps
+            apt-get update -qq
+            apt-get install -y -qq python3 python3-pip python3-venv curl > /dev/null 2>&1
+
+            # Create isolated venv for Cognee
+            VENV=/opt/cognee-venv
+            if [ ! -d "$VENV" ]; then
+                python3 -m venv "$VENV"
+            fi
+
+            # Install Cognee with Groq support (matches QClaw default provider)
+            "$VENV/bin/pip" install --quiet cognee uvicorn 2>&1 | tail -5
+
+            echo "COGNEE_INSTALLED=true"
+        ' 2>&1 | tail -10
+
+        if proot-distro login ubuntu -- bash -c '/opt/cognee-venv/bin/python3 -c "import cognee; print(cognee.__version__)"' 2>/dev/null; then
+            ok "Cognee installed"
+        else
+            warn "Cognee install may have issues — agent uses local memory as fallback"
+            echo '{"method":"skipped","reason":"proot-install-failed"}' > "$COGNEE_META"
+        fi
+
+        # Step 4: Create the Cognee startup script
+        cat > "$QCLAW_DIR/scripts/cognee-start.sh" << 'COGNEE_START'
+#!/data/data/com.termux/files/usr/bin/bash
+# Start Cognee API server inside proot Ubuntu
+# Called by: install.sh, start.sh, qclaw start
+
+CONFIG_DIR="$HOME/.quantumclaw"
+COGNEE_ENV="$CONFIG_DIR/cognee.env"
+VENV="/opt/cognee-venv"
+
+# Build env vars from QClaw config
+LLM_KEY=""
+[ -f "$COGNEE_ENV" ] && source "$COGNEE_ENV"
+
+# Start Cognee API server in background
+proot-distro login ubuntu -- bash -c "
+    export LLM_API_KEY=\"${LLM_KEY:-placeholder}\"
+    export LLM_PROVIDER=\"${LLM_PROVIDER:-openai}\"
+    export LLM_MODEL=\"${LLM_MODEL:-gpt-4o-mini}\"
+    export DB_PROVIDER=sqlite
+    export VECTOR_DB_PROVIDER=lancedb
+    export GRAPH_DATABASE_PROVIDER=kuzu
+    export REQUIRE_AUTHENTICATION=False
+    export ENABLE_BACKEND_ACCESS_CONTROL=False
+    export TELEMETRY_DISABLED=1
+
+    cd /opt
+    $VENV/bin/python3 -m uvicorn cognee.api.server:app --host 0.0.0.0 --port 8000
+" > "$CONFIG_DIR/cognee.log" 2>&1 &
+
+echo $! > "$CONFIG_DIR/cognee-proot.pid"
+COGNEE_START
+        chmod +x "$QCLAW_DIR/scripts/cognee-start.sh"
+
+        # Step 5: Create the Cognee env writer (called during onboard to pass API keys)
+        cat > "$QCLAW_DIR/scripts/cognee-configure.sh" << 'COGNEE_CONF'
+#!/data/data/com.termux/files/usr/bin/bash
+# Write Cognee env vars from QClaw secrets
+# Usage: bash cognee-configure.sh <provider> <api_key> [model]
+
+PROVIDER="${1:-openai}"
+API_KEY="${2:-}"
+MODEL="${3:-}"
+
+CONFIG_DIR="$HOME/.quantumclaw"
+mkdir -p "$CONFIG_DIR"
+
+# Map QClaw provider names to Cognee provider names
+case "$PROVIDER" in
+    anthropic) COGNEE_PROVIDER="anthropic"; [ -z "$MODEL" ] && MODEL="anthropic/claude-sonnet-4-5-20250929" ;;
+    openai)    COGNEE_PROVIDER="openai";    [ -z "$MODEL" ] && MODEL="openai/gpt-4o-mini" ;;
+    groq)      COGNEE_PROVIDER="groq";      [ -z "$MODEL" ] && MODEL="groq/llama-3.3-70b-versatile" ;;
+    google)    COGNEE_PROVIDER="gemini";    [ -z "$MODEL" ] && MODEL="gemini/gemini-2.0-flash" ;;
+    ollama)    COGNEE_PROVIDER="ollama";    [ -z "$MODEL" ] && MODEL="ollama/llama3.3" ;;
+    *)         COGNEE_PROVIDER="openai";    [ -z "$MODEL" ] && MODEL="openai/gpt-4o-mini" ;;
+esac
+
+cat > "$CONFIG_DIR/cognee.env" << EOF
+LLM_KEY="$API_KEY"
+LLM_PROVIDER="$COGNEE_PROVIDER"
+LLM_MODEL="$MODEL"
+EOF
+
+# Also write .env inside proot for direct use
+proot-distro login ubuntu -- bash -c "
+    mkdir -p /opt
+    cat > /opt/cognee.env << ENVEOF
+LLM_API_KEY=$API_KEY
+LLM_PROVIDER=$COGNEE_PROVIDER
+LLM_MODEL=$MODEL
+DB_PROVIDER=sqlite
+VECTOR_DB_PROVIDER=lancedb
+GRAPH_DATABASE_PROVIDER=kuzu
+REQUIRE_AUTHENTICATION=False
+ENABLE_BACKEND_ACCESS_CONTROL=False
+TELEMETRY_DISABLED=1
+ENVEOF
+" 2>/dev/null
+COGNEE_CONF
+        chmod +x "$QCLAW_DIR/scripts/cognee-configure.sh"
+
+        # Step 6: Start Cognee and verify
+        info "  Starting Cognee API..."
+        bash "$QCLAW_DIR/scripts/cognee-start.sh" &
+        sleep 2
+
+        HEALTHY=false
+        for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+                HEALTHY=true; break
+            fi
+            sleep 1
+        done
+
+        if $HEALTHY; then
+            ok "Cognee API healthy on :8000"
+            echo '{"method":"proot-ubuntu"}' > "$COGNEE_META"
+            touch "$COGNEE_MARKER"
+        else
+            warn "Cognee API didn't start — agent uses local knowledge store"
+            echo '{"method":"skipped","reason":"api-timeout"}' > "$COGNEE_META"
+        fi
+    fi
 else
     DONE=false
 

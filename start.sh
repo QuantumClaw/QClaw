@@ -42,6 +42,19 @@ fi
 
 # Check if onboarding has been done
 CONFIG_DIR="$HOME/.quantumclaw"
+
+# Start Cognee knowledge graph if installed (Termux proot or Docker)
+COGNEE_START="$(cd "$(dirname "$0")" && pwd)/scripts/cognee-start.sh"
+if [ -f "$COGNEE_START" ] && [ -f "$CONFIG_DIR/cognee-proot-ready" ]; then
+    if ! curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+        echo -e "${GREEN}✓${NC} Starting knowledge graph..."
+        bash "$COGNEE_START" &
+        sleep 3
+    else
+        echo -e "${GREEN}✓${NC} Knowledge graph running"
+    fi
+fi
+
 if [ ! -f "$CONFIG_DIR/config.json" ]; then
     echo ""
     echo "First time? Running onboard wizard..."

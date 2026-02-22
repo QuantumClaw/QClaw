@@ -142,22 +142,34 @@ class Agent {
       };
     }
 
-    // Build context
+    // Build context — now uses structured knowledge + selective history
     const graphContext = route.extendedContext
       ? await memory.graphQuery(message)
       : { results: [] };
 
-    const systemPrompt = this._buildSystemPrompt(graphContext);
+    // Structured knowledge context (~1,000 tokens vs 5,000+ for raw history)
+    const knowledgeContext = memory.knowledge ? memory.knowledge.buildContext() : '';
 
-    // Token budget for history: reserve space for system prompt, current message, and response
-    // Rough estimate: 1 token ≈ 4 chars. Most models have 128k context but we cap conservatively.
-    const MAX_CONTEXT_CHARS = 100000; // ~25k tokens — leaves plenty of room for response
+    // For complex queries, also search knowledge store for relevant entries
+    let relevantKnowledge = [];
+    if (route.extendedContext && memory.knowledge) {
+      relevantKnowledge = memory.knowledge.search(message, 5);
+    }
+
+    const systemPrompt = this._buildSystemPrompt(graphContext, knowledgeContext, relevantKnowledge);
+
+    // Token budget for working memory (recent conversation)
+    // Knowledge context replaces most of what raw history used to provide,
+    // so we can load fewer raw messages (8 instead of 20) — saves tokens
+    const MAX_CONTEXT_CHARS = 100000;
     const systemChars = systemPrompt.length;
     const messageChars = message.length;
     const availableForHistory = MAX_CONTEXT_CHARS - systemChars - messageChars;
 
-    // Get history and truncate to fit
-    const fullHistory = memory.getHistory(this.name);
+    // Working Memory: last N messages (short-term, current session)
+    // Reduced from 20 to 8 because knowledge store handles long-term context
+    const historyLimit = knowledgeContext.length > 100 ? 8 : 20;
+    const fullHistory = memory.getHistory(this.name, historyLimit);
     const truncatedHistory = this._truncateHistory(fullHistory, availableForHistory);
 
     const messages = [
@@ -172,13 +184,23 @@ class Agent {
       system: systemPrompt
     });
 
-    // Store in memory
+    // Store in conversation memory (working memory / episodic log)
     memory.addMessage(this.name, 'user', message, { tier: route.tier });
     memory.addMessage(this.name, 'assistant', result.content, {
       model: result.model,
       tier: route.tier,
       tokens: (result.usage?.input_tokens || 0) + (result.usage?.output_tokens || 0)
     });
+
+    // Async: extract structured knowledge from this message
+    // Runs in background — doesn't delay the response
+    if (memory.knowledge && router) {
+      import('../memory/knowledge.js').then(({ extractKnowledge }) => {
+        extractKnowledge(router, memory.knowledge, message, 'user').catch(() => {});
+        // Save JSON store if using fallback
+        if (memory._jsonStore) memory._saveJsonStore();
+      }).catch(() => {});
+    }
 
     // Audit
     audit.log(this.name, 'completion', message.slice(0, 100), {
@@ -221,12 +243,18 @@ class Agent {
     return history.slice(cutoff);
   }
 
-  _buildSystemPrompt(graphContext) {
+  _buildSystemPrompt(graphContext, knowledgeContext, relevantKnowledge) {
     const parts = [this.soul];
 
     // Add Trust Kernel
     const values = this.services.trustKernel.getContext();
     if (values) parts.push(`\n## Trust Kernel\n${values}`);
+
+    // Add structured knowledge (semantic + procedural + episodic)
+    // This is the agent's long-term memory about the user — compact and efficient
+    if (knowledgeContext) {
+      parts.push(`\n${knowledgeContext}`);
+    }
 
     // Add skills
     if (this.skills.length > 0) {
@@ -236,9 +264,17 @@ class Agent {
       }
     }
 
-    // Add knowledge graph context
+    // Add query-relevant knowledge (from search, for complex queries)
+    if (relevantKnowledge && relevantKnowledge.length > 0) {
+      parts.push('\n## Relevant Context');
+      for (const r of relevantKnowledge) {
+        parts.push(`- [${r.type}] ${r.content}`);
+      }
+    }
+
+    // Add knowledge graph context (Cognee, if connected)
     if (graphContext.results?.length > 0) {
-      parts.push('\n## Relevant Knowledge');
+      parts.push('\n## Knowledge Graph');
       for (const r of graphContext.results) {
         parts.push(`- ${r.content || r.text || JSON.stringify(r)}`);
       }

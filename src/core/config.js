@@ -76,7 +76,15 @@ const DEFAULTS = {
     eventDriven: true,
     graphDriven: false, // Off by default — costs money (LLM calls per query)
     graphDiscoveryIntervalHours: 4,
-    maxDailyCost: 0.50
+    maxDailyCost: 0.50,
+    autoLearn: {
+      enabled: false,       // Off by default — user opts in via CLI or dashboard
+      maxQuestionsPerDay: 3,
+      minIntervalHours: 4,  // Minimum gap between questions
+      useFastModel: true,   // Use fast/free model to save costs
+      quietHoursStart: 22,  // Don't message after 10pm
+      quietHoursEnd: 8,     // Don't message before 8am
+    }
   },
   evolution: {
     enabled: false // off by default, user opts in

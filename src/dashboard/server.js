@@ -49,6 +49,20 @@ export class DashboardServer {
       res.send(this._renderDashboard());
     });
 
+    // Serve terminal onboarding UI
+    this.app.get('/onboard', (req, res) => {
+      try {
+        const dir = dirname(fileURLToPath(import.meta.url));
+        res.send(readFileSync(join(dir, 'onboard.html'), 'utf-8'));
+      } catch {
+        try {
+          res.send(readFileSync(join(process.cwd(), 'src', 'dashboard', 'onboard.html'), 'utf-8'));
+        } catch {
+          res.redirect('/');
+        }
+      }
+    });
+
     // Create HTTP server
     this.server = createServer(this.app);
 

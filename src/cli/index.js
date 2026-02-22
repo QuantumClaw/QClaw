@@ -83,71 +83,6 @@ switch (command) {
     break;
   }
 
-  // ─── UPDATE ─────────────────────────────────────────────────
-  case 'update': {
-    smallBanner();
-    const { execSync: ex } = await import('child_process');
-
-    // Find repo root (where .git lives)
-    let repoDir = process.cwd();
-    try { repoDir = ex('git rev-parse --show-toplevel', { encoding: 'utf-8' }).trim(); } catch {}
-
-    console.log(`${green}Updating QuantumClaw...${reset}`);
-    console.log('');
-
-    // 1. Stop running agent
-    try {
-      ex('pm2 stop qclaw 2>/dev/null || true', { stdio: 'inherit' });
-    } catch {}
-
-    // 2. Git pull
-    try {
-      console.log(`  ${dim}git pull...${reset}`);
-      const pullOut = ex('git pull --ff-only', { cwd: repoDir, encoding: 'utf-8' });
-      if (pullOut.includes('Already up to date')) {
-        ok('Already up to date');
-      } else {
-        ok('Pulled latest changes');
-        console.log(`  ${dim}${pullOut.trim().split('\n').slice(-2).join('\n  ')}${reset}`);
-      }
-    } catch (err) {
-      if (err.message?.includes('not a git repository')) {
-        warn('Not a git repository — download latest from GitHub');
-        break;
-      }
-      warn(`Git pull failed: ${err.message}`);
-      console.log(`  ${dim}Try: cd ${repoDir} && git stash && git pull${reset}`);
-      break;
-    }
-
-    // 3. npm install (picks up new/updated deps)
-    console.log('');
-    console.log(`  ${dim}npm install...${reset}`);
-    try {
-      ex('npm install --progress', { cwd: repoDir, stdio: 'inherit' });
-      ok('Dependencies updated');
-    } catch {
-      warn('npm install had issues — try manually');
-    }
-
-    // 4. Restart agent
-    console.log('');
-    try {
-      ex('pm2 restart qclaw 2>/dev/null || true', { stdio: 'inherit' });
-      ok('Agent restarted');
-    } catch {}
-
-    // 5. Show version
-    console.log('');
-    try {
-      const pkg = JSON.parse(readFileSync(join(repoDir, 'package.json'), 'utf-8'));
-      ok(`QuantumClaw v${pkg.version}`);
-    } catch {}
-
-    console.log('');
-    break;
-  }
-
   // ─── TUI ──────────────────────────────────────────────────────
   case 'tui': {
     const { startTUI } = await import('./tui.js');
@@ -1060,6 +995,11 @@ Usage: qclaw <command>
   agex status         Hub connection, AID info
   agex revoke         Emergency revoke all credentials
 
+  \x1b[1mAuto-Learn AI\x1b[0m
+  autolearn on        Enable proactive learning
+  autolearn off       Disable proactive learning
+  autolearn status    Show auto-learn settings
+
   \x1b[1mOther\x1b[0m
   update              Update to latest version
   help                This message
@@ -1068,6 +1008,45 @@ Usage: qclaw <command>
 Dashboard: http://localhost:3000 (when agent is running)
 `);
     break;
+
+  // ─── AUTOLEARN ────────────────────────────────────────────────
+  case 'autolearn': {
+    smallBanner();
+    const { config: alConfig, secrets: alSecrets } = await loadCore();
+    const { saveConfig: alSave } = await import('../core/config.js');
+
+    if (!alConfig.heartbeat) alConfig.heartbeat = {};
+    if (!alConfig.heartbeat.autoLearn) alConfig.heartbeat.autoLearn = {};
+
+    const alSub = subcommand;
+
+    if (alSub === 'on') {
+      alConfig.heartbeat.autoLearn.enabled = true;
+      alSave(alConfig);
+      console.log('\n  \x1b[38;5;82m✓\x1b[0m Auto-learn enabled.');
+      console.log('  Your agent will periodically ask you about yourself and your');
+      console.log('  business to become a better assistant. Max 3 questions/day.');
+      console.log('\n  Restart agent for changes to take effect: \x1b[38;5;87mqclaw restart\x1b[0m\n');
+    } else if (alSub === 'off') {
+      alConfig.heartbeat.autoLearn.enabled = false;
+      alSave(alConfig);
+      console.log('\n  \x1b[38;5;82m✓\x1b[0m Auto-learn disabled.\n');
+    } else {
+      const al = alConfig.heartbeat.autoLearn;
+      console.log('');
+      console.log(`  Auto-learn:       ${al.enabled ? '\x1b[38;5;82menabled\x1b[0m' : '\x1b[38;5;220mdisabled\x1b[0m'}`);
+      console.log(`  Max questions/day: ${al.maxQuestionsPerDay || 3}`);
+      console.log(`  Min interval:     ${al.minIntervalHours || 4}h`);
+      console.log(`  Uses fast model:  ${al.useFastModel !== false ? 'yes (saves cost)' : 'no (uses primary)'}`);
+      console.log(`  Quiet hours:      ${al.quietHoursStart ?? 22}:00 – ${al.quietHoursEnd ?? 8}:00`);
+      console.log('');
+      console.log('  Toggle:');
+      console.log('    \x1b[38;5;87mqclaw autolearn on\x1b[0m');
+      console.log('    \x1b[38;5;87mqclaw autolearn off\x1b[0m');
+      console.log('');
+    }
+    break;
+  }
 
   // ─── UPDATE ──────────────────────────────────────────────────
   case 'update': {
@@ -1158,7 +1137,7 @@ Dashboard: http://localhost:3000 (when agent is running)
   case 'version':
   case '-v':
   case '--version':
-    console.log('qclaw 1.0.0');
+    console.log('qclaw 1.1.4');
     break;
 
   // ─── UNKNOWN ──────────────────────────────────────────────────

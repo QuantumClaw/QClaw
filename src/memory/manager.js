@@ -17,6 +17,7 @@ import { join } from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'fs';
 import { log } from '../core/logger.js';
 import { VectorMemory } from './vector.js';
+import { KnowledgeStore } from './knowledge.js';
 
 // Try to load better-sqlite3 (native module, may fail on Android)
 let Database;
@@ -95,11 +96,20 @@ export class MemoryManager {
     this.vector = new VectorMemory(this.config, this.secrets);
     const vectorStats = await this.vector.init();
 
+    // Init structured knowledge store (human-like memory types)
+    this.knowledge = new KnowledgeStore(this.db, this._jsonStore);
+    this.knowledge.init();
+    const knowledgeStats = this.knowledge.stats();
+    if (knowledgeStats.total > 0) {
+      log.debug(`Knowledge: ${knowledgeStats.semantic} facts, ${knowledgeStats.episodic} events, ${knowledgeStats.procedural} prefs (~${knowledgeStats.estimatedTokens} tokens)`);
+    }
+
     return {
       cognee: this.cogneeConnected,
       sqlite: !!this.db,
       jsonFallback: !!this._jsonStore,
       vector: vectorStats,
+      knowledge: knowledgeStats,
       entities
     };
   }
