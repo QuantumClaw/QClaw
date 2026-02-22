@@ -71,7 +71,7 @@ export class ModelRouter {
     }
 
     // Verify fast model
-    if (this.fast.provider) {
+    if (this.fast && this.fast.provider) {
       try {
         await this._testProvider(this.fast);
         models.push(`${this.fast.provider}/${this.fast.model} (fast)`);

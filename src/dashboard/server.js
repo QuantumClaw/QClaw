@@ -63,6 +63,37 @@ export class DashboardServer {
       }
     });
 
+    // Web onboard: save config from the browser UI
+    this.app.post('/api/onboard', async (req, res) => {
+      try {
+        const { provider, model, apiKey, wantTg, tgToken, name } = req.body || {};
+        if (!provider || !name) return res.status(400).json({ error: 'Missing provider or name' });
+
+        const { loadConfig, saveConfig } = await import('../core/config.js');
+        const { SecretStore } = await import('../security/secrets.js');
+        const config = await loadConfig();
+
+        config.agent = { name: 'QClaw', owner: name, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+        config.models = config.models || {};
+        config.models.primary = { provider, model: model || 'auto' };
+        config.channels = config.channels || {};
+        if (wantTg && tgToken) {
+          config.channels.telegram = { enabled: true, dmPolicy: 'pairing', allowedUsers: [] };
+        }
+
+        saveConfig(config);
+
+        const secrets = new SecretStore(config);
+        await secrets.load();
+        if (apiKey) secrets.set(`${provider}_api_key`, apiKey);
+        if (wantTg && tgToken) secrets.set('telegram_bot_token', tgToken);
+
+        res.json({ ok: true });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
     // Create HTTP server
     this.server = createServer(this.app);
 
@@ -211,9 +242,14 @@ export class DashboardServer {
 
     // Memory search
     this.app.post('/api/memory/search', async (req, res) => {
-      const { query } = req.body;
-      const results = await this.qclaw.memory.graphQuery(query);
-      res.json(results);
+      try {
+        const { query } = req.body;
+        if (!query) return res.status(400).json({ error: 'query required' });
+        const results = await this.qclaw.memory.graphQuery(query);
+        res.json(results);
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
     });
 
     // Pairing: list pending codes
@@ -239,31 +275,35 @@ export class DashboardServer {
 
     // Pairing: approve a code
     this.app.post('/api/pairing/approve', async (req, res) => {
-      const { channel: channelName, code } = req.body;
+      try {
+        const { channel: channelName, code } = req.body;
 
-      if (!channelName || !code) {
-        return res.status(400).json({ error: 'Missing channel or code' });
-      }
-
-      // Find the channel
-      const channel = (this.qclaw.channels?.channels || []).find(c => {
-        return c.constructor.name.toLowerCase().includes(channelName.toLowerCase()) ||
-               c.channelConfig?.channelName === channelName;
-      });
-
-      if (!channel || !channel.approvePairing) {
-        return res.status(404).json({ error: `Channel ${channelName} not found or doesn't support pairing` });
-      }
-
-      const result = await channel.approvePairing(code);
-      if (result) {
-        // Send confirmation to the user in Telegram
-        if (channel.bot) {
-          channel.bot.api.sendMessage(result.chatId, '✓ Paired successfully! Send me a message.').catch(() => {});
+        if (!channelName || !code) {
+          return res.status(400).json({ error: 'Missing channel or code' });
         }
-        res.json(result);
-      } else {
-        res.status(404).json({ error: 'Code not found or expired' });
+
+        // Find the channel
+        const channel = (this.qclaw.channels?.channels || []).find(c => {
+          return c.constructor.name.toLowerCase().includes(channelName.toLowerCase()) ||
+                 c.channelConfig?.channelName === channelName;
+        });
+
+        if (!channel || !channel.approvePairing) {
+          return res.status(404).json({ error: `Channel ${channelName} not found or doesn't support pairing` });
+        }
+
+        const result = await channel.approvePairing(code);
+        if (result) {
+          // Send confirmation to the user in Telegram
+          if (channel.bot) {
+            channel.bot.api.sendMessage(result.chatId, '✓ Paired successfully! Send me a message.').catch(() => {});
+          }
+          res.json(result);
+        } else {
+          res.status(404).json({ error: 'Code not found or expired' });
+        }
+      } catch (err) {
+        res.status(500).json({ error: err.message });
       }
     });
 

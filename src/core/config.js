@@ -53,7 +53,7 @@ const DEFAULTS = {
     port: 3000,
     host: '127.0.0.1',
     autoPort: true,
-    tunnel: 'none',
+    tunnel: 'auto',
     tunnel_subdomain: null
   },
   channels: {},

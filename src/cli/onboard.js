@@ -201,17 +201,23 @@ export async function runOnboard() {
 
   s.stop(`${green}✓${reset} Done`);
 
-  // ─── Done — agent starts automatically from start-termux.sh ──
+  // ─── Done ──
 
-  const port = config.dashboard?.port || 3000;
   console.log('');
   console.log(`  ${green}✓${reset} ${bold}Ready, ${name}.${reset}`);
   console.log('');
+  console.log(`  ${bold}Next step:${reset}`);
+  console.log(`  ${cyan}qclaw start${reset}  ${dim}— launches your agent + opens dashboard${reset}`);
+  console.log('');
   if (telegramToken) {
-    console.log(`  ${white}Telegram:${reset}  ${dim}Send /start to your bot after agent starts${reset}`);
-    console.log(`  ${white}Pair:${reset}      ${dim}Approve from the dashboard${reset}`);
+    console.log(`  ${bold}Telegram pairing:${reset} ${dim}(after qclaw start)${reset}`);
+    console.log(`  ${dim}1. Send${reset} /start ${dim}to your bot in Telegram${reset}`);
+    console.log(`  ${dim}2. Copy the pairing code it gives you${reset}`);
+    console.log(`  ${dim}3. Run:${reset} ${cyan}qclaw pairing approve telegram CODE${reset}`);
+    console.log('');
   }
-  console.log(`  ${white}Dashboard:${reset} ${dim}http://localhost:${port}/#token=${dashToken}${reset}`);
+  console.log(`  ${dim}A public dashboard URL will be printed when you start.${reset}`);
+  console.log(`  ${dim}You can re-show it anytime with:${reset} ${cyan}qclaw dashboard${reset}`);
   console.log('');
 }
 

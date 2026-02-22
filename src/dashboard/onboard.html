@@ -2,262 +2,245 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>quantumclaw · onboard</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1">
+<title>QuantumClaw · Setup</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#08090c;--fg:#b0bec5;--cyan:#00e5ff;--mag:#c77dff;--red:#ff2d55;--grn:#00ffaa;--amb:#ffc107;--dim:#2a2e35;--sel:rgba(0,229,255,0.06)}
-html{font-size:14px}
-@media(max-width:600px){html{font-size:11.5px}}
-@media(max-width:400px){html{font-size:10px}}
-body{background:var(--bg);color:var(--fg);font-family:'JetBrains Mono','Fira Code','Consolas','Courier New',monospace;min-height:100vh;line-height:1.45;cursor:text;overflow-x:hidden}
-body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.04) 2px,rgba(0,0,0,0.04) 4px);pointer-events:none;z-index:9999}
-body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,0.55) 100%);pointer-events:none;z-index:9998}
-::-webkit-scrollbar{width:0;background:transparent}
-#terminal{max-width:78ch;margin:0 auto;padding:1.2rem 0.8rem;white-space:pre-wrap;word-wrap:break-word;font-size:1rem;min-height:100vh}
-.cmd{color:var(--cyan);cursor:pointer;text-decoration:none;transition:background 0.15s}
-.cmd:hover{background:var(--sel);text-shadow:0 0 8px rgba(0,229,255,0.15)}
-.opt{cursor:pointer;display:inline;transition:background 0.12s}
-.opt:hover{background:var(--sel)}
-.inp{background:transparent;border:none;outline:none;color:var(--grn);font:inherit;width:42ch;max-width:65vw;caret-color:var(--grn)}
-.inp::placeholder{color:var(--dim)}
-.c{color:var(--cyan)}.m{color:var(--mag)}.r{color:var(--red)}.g{color:var(--grn)}.a{color:var(--amb)}.d{color:var(--dim)}.w{color:#fff;text-shadow:0 0 4px rgba(255,255,255,0.1)}.b{font-weight:bold}
-.sel-line{background:var(--sel)}
+:root{
+  --bg:#06060b;--sf:#0c0d14;--card:#10111a;--bdr:#1a1c2e;
+  --fg:#c5c8d4;--dim:#4a4d62;--mute:#2a2d3e;
+  --p:#9b5de5;--p2:#c77dff;--p3:#e0aaff;
+  --b:#4895ef;--b2:#4cc9f0;
+  --r:#ff2d55;--r2:#ff6b8a;
+  --g:#00f5a0;--a:#ffa726;
+}
+html{font-size:16px}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;line-height:1.5;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+body::before{content:'';position:fixed;top:0;left:50%;transform:translateX(-50%);width:120vw;height:40vh;background:radial-gradient(ellipse at center top,rgba(155,93,229,0.06) 0%,transparent 70%);pointer-events:none}
+.wrap{max-width:420px;margin:0 auto;padding:20px 16px 100px;position:relative;z-index:1}
+.logo{text-align:center;padding:24px 0 16px}
+.claw{font-family:'Courier New',monospace;font-size:5px;line-height:1.1;color:var(--p);display:inline-block;white-space:pre;opacity:0.6}
+@media(max-width:360px){.claw{font-size:4px}}
+.brand{margin-top:8px}
+.brand b{font-size:1.4rem;letter-spacing:0.03em}
+.brand .q{color:#fff}.brand .c{color:var(--r)}
+.brand .ver{font-size:0.6rem;color:var(--dim);font-family:'Courier New',monospace;margin-left:4px}
+.tag{color:var(--dim);font-size:0.75rem;margin-top:2px}
+.prog{display:flex;gap:6px;margin:16px 0 20px}
+.prog i{flex:1;height:4px;border-radius:2px;background:var(--mute);transition:all 0.4s}
+.prog i.done{background:var(--p)}.prog i.now{background:linear-gradient(90deg,var(--p),var(--b));box-shadow:0 0 8px rgba(155,93,229,0.4)}
+.step{display:none;animation:up 0.25s ease}.step.on{display:block}
+@keyframes up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.sn{font-size:0.7rem;color:var(--p2);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:4px;font-weight:600}
+.st{font-size:1.25rem;font-weight:700;color:#fff;margin-bottom:4px}
+.sd{color:var(--dim);font-size:0.82rem;margin-bottom:18px;line-height:1.5}
+.opts{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.opt{background:var(--card);border:1px solid var(--bdr);border-radius:10px;padding:11px 12px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:all 0.15s;-webkit-tap-highlight-color:transparent}
+.opt:active{transform:scale(0.98)}.opt.on{border-color:var(--p);background:rgba(155,93,229,0.07)}
+.dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--mute);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.15s}
+.opt.on .dot{border-color:var(--p);background:var(--p)}.opt.on .dot::after{content:'';width:5px;height:5px;background:#fff;border-radius:50%}
+.opt-i{flex:1;min-width:0}.opt-n{font-weight:600;color:var(--fg);font-size:0.85rem}.opt.on .opt-n{color:#fff}
+.opt-h{font-size:0.68rem;color:var(--dim)}.opt-m{font-size:0.62rem;color:var(--mute);font-family:'Courier New',monospace}
+.fld{margin-bottom:14px}
+.fl{font-size:0.75rem;font-weight:600;color:var(--fg);margin-bottom:5px;display:flex;align-items:center;gap:5px}
+.fl .req{color:var(--r);font-size:0.65rem}
+.fl a{color:var(--b2);font-size:0.65rem;margin-left:auto;text-decoration:none;font-family:'Courier New',monospace}
+.fl a:hover{text-decoration:underline}
+input[type=text],input[type=password]{width:100%;background:var(--sf);border:1px solid var(--bdr);border-radius:8px;padding:10px 12px;color:#fff;font-family:'Courier New',monospace;font-size:0.82rem;outline:none;transition:border 0.2s}
+input::placeholder{color:var(--mute)}input:focus{border-color:var(--p);box-shadow:0 0 0 3px rgba(155,93,229,0.08)}
+input.err{border-color:var(--r);box-shadow:0 0 0 3px rgba(255,45,85,0.08)}
+.fe{color:var(--r);font-size:0.7rem;margin-top:3px;display:none}.fe.on{display:block}
+.fok{color:var(--g);font-size:0.7rem;margin-top:3px;display:none}.fok.on{display:block}
+.fh{color:var(--dim);font-size:0.68rem;margin-top:3px}
+.tgl-row{display:flex;align-items:center;gap:12px;padding:12px 0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.tgl{width:42px;height:24px;background:var(--mute);border-radius:12px;position:relative;transition:background 0.2s;flex-shrink:0}
+.tgl::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:transform 0.2s}
+.tgl.on{background:var(--p)}.tgl.on::after{transform:translateX(18px)}
+.tgl-t{font-size:0.85rem;font-weight:500;color:#fff}.tgl-s{font-size:0.7rem;color:var(--dim)}
+.info{background:rgba(72,149,239,0.05);border:1px solid rgba(72,149,239,0.12);border-radius:10px;padding:12px;margin:10px 0 14px;font-size:0.78rem;line-height:1.6}
+.info .row{display:flex;gap:7px;margin-bottom:4px}
+.info .n{color:var(--b);font-weight:700;flex-shrink:0;font-family:'Courier New',monospace}
+.info .t{color:var(--fg)}.info .hl{color:var(--b2);font-family:'Courier New',monospace;font-weight:600}
+.btns{display:flex;gap:8px;margin-top:20px}
+.btn{flex:1;padding:12px 16px;border:none;border-radius:10px;font-size:0.88rem;font-weight:600;cursor:pointer;transition:all 0.15s;text-align:center;-webkit-tap-highlight-color:transparent;font-family:inherit}
+.btn:active{transform:scale(0.97)}
+.btn-p{background:linear-gradient(135deg,var(--p),var(--b));color:#fff;box-shadow:0 3px 12px rgba(155,93,229,0.25)}
+.btn-g{background:linear-gradient(135deg,var(--g),#00d4aa);color:#000;box-shadow:0 3px 12px rgba(0,245,160,0.2)}
+.btn-b{background:var(--card);color:var(--dim);border:1px solid var(--bdr);flex:0 0 auto;padding:12px 14px}
+.btn:disabled{opacity:0.35;cursor:default;transform:none}
+.dl{display:flex;align-items:center;gap:6px;padding:3px 0;font-family:'Courier New',monospace;font-size:0.72rem}
+.dl .la{color:var(--dim);flex:1}.dl .ok{color:var(--g);font-weight:600}.dl .run{color:var(--a)}
+.sum{background:var(--card);border:1px solid var(--bdr);border-radius:12px;overflow:hidden;margin:14px 0}
+.sum-h{background:linear-gradient(135deg,rgba(155,93,229,0.12),rgba(72,149,239,0.08));padding:14px;border-bottom:1px solid var(--bdr);text-align:center}
+.sum-h h2{font-size:1rem;color:#fff}
+.sum-h .badge{display:inline-block;background:var(--g);color:#000;font-size:0.6rem;font-weight:700;padding:1px 7px;border-radius:3px;margin-left:5px;letter-spacing:0.04em;text-transform:uppercase}
+.sum-r{display:flex;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,0.02);font-size:0.8rem}
+.sum-r:last-child{border:none}.sum-r .k{color:var(--dim)}
+.sum-r .v{color:#fff;font-weight:500;text-align:right;font-family:'Courier New',monospace;font-size:0.75rem}
+.sum-r .v.pur{color:var(--p2)}.sum-r .v.grn{color:var(--g)}.sum-r .v.amb{color:var(--a)}
+.crd{background:var(--card);border:1px solid var(--bdr);border-radius:10px;padding:12px;margin-top:12px}
+.crd h3{font-size:0.85rem;color:#fff;margin-bottom:6px}.crd p{font-size:0.78rem;color:var(--dim);line-height:1.5}
+.cmds{margin:16px 0}.cmds h3{font-size:0.85rem;color:#fff;margin-bottom:8px}
+.cm{display:flex;gap:8px;padding:4px 0;font-family:'Courier New',monospace;font-size:0.7rem}
+.cm .c{color:var(--p);flex-shrink:0}.cm .d{color:var(--dim);margin-left:auto;font-size:0.65rem}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.15);border-top-color:#fff;border-radius:50%;animation:sp 0.6s linear infinite;vertical-align:middle;margin-right:4px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.footer{text-align:center;margin-top:24px;font-size:0.65rem;color:var(--mute);font-family:'Courier New',monospace}
 </style>
 </head>
 <body>
-<div id="terminal"></div>
+<div class="wrap">
+<div class="logo">
+<pre class="claw">         ░███░░░░░░░
+      ░░█░░░░░░░░░█░█
+   ░░██░░░██      ░░██░
+  ██░░░░░░░         ░░█░
+░██░░░░░░░
+█░░░░░░░░█░
+░░░░░░░░░░
+░░░░░░░░░█░         ░░█░
+  ░░░░░░░░░░      ░░██░
+       ░░░░░░░░░░░░░█
+         ░░░░░░░░░░░</pre>
+<div class="brand"><b><span class="q">QUANTUM</span><span class="c">CLAW</span></b><span class="ver">v1.1.4</span></div>
+<div class="tag">Your AI agent. Your data. Your device.</div>
+</div>
+<div class="prog" id="prog"></div>
+<div class="step on" id="s1">
+  <div class="sn">Step 1 of 3</div><div class="st">Pick your AI</div>
+  <div class="sd">Which AI should power your agent? Pick one — you can change it later.</div>
+  <div class="opts" id="provs"></div>
+  <div class="fld" id="kf" style="display:none">
+    <div class="fl">API Key <span class="req">required</span><a id="kl" href="#" target="_blank">get one →</a></div>
+    <input type="password" id="ki" placeholder="paste your key here" autocomplete="off" spellcheck="false">
+    <div class="fe" id="ke">You need an API key to continue</div>
+    <div class="fok" id="ko"></div><div class="fh" id="kh"></div>
+  </div>
+  <div class="btns"><button class="btn btn-p" onclick="go(2)">Continue →</button></div>
+</div>
+<div class="step" id="s2">
+  <div class="sn">Step 2 of 3</div><div class="st">Connect Telegram</div>
+  <div class="sd">Chat with your agent from Telegram on any device. You can skip this.</div>
+  <div class="tgl-row" onclick="togTg()">
+    <div class="tgl" id="tt"></div>
+    <div><div class="tgl-t">Enable Telegram</div><div class="tgl-s">Talk to your agent from your phone</div></div>
+  </div>
+  <div id="tgs" style="display:none">
+    <div class="info">
+      <div class="row"><span class="n">1</span><span class="t">Open Telegram → search <span class="hl">@BotFather</span></span></div>
+      <div class="row"><span class="n">2</span><span class="t">Send <span class="hl">/newbot</span> → pick any name</span></div>
+      <div class="row"><span class="n">3</span><span class="t">Copy the token it gives you</span></div>
+    </div>
+    <div class="fld">
+      <div class="fl">Bot Token <span class="req">required</span></div>
+      <input type="password" id="ti" placeholder="123456789:ABCdef..." autocomplete="off" spellcheck="false">
+      <div class="fe" id="te">That doesn't look right — tokens contain a colon (:)</div>
+      <div class="fok" id="to"></div>
+    </div>
+  </div>
+  <div class="btns"><button class="btn btn-b" onclick="go(1)">← Back</button><button class="btn btn-p" onclick="go(3)">Continue →</button></div>
+</div>
+<div class="step" id="s3">
+  <div class="sn">Step 3 of 3</div><div class="st">What's your name?</div>
+  <div class="sd">Your agent will use this to address you.</div>
+  <div class="fld">
+    <div class="fl">Your name <span class="req">required</span></div>
+    <input type="text" id="ni" placeholder="e.g. Hayley" autocomplete="off" spellcheck="false">
+    <div class="fe" id="ne">Please enter your name</div>
+  </div>
+  <div class="btns"><button class="btn btn-b" onclick="go(2)">← Back</button><button class="btn btn-g" onclick="save()">Save & Start →</button></div>
+</div>
+<div class="step" id="s4">
+  <div class="sn">Setting up</div><div class="st"><span class="spin"></span>Deploying your agent...</div>
+  <div id="dls" style="margin-top:14px"></div>
+</div>
+<div class="step" id="s5"></div>
+</div>
 <script>
-const CLAW_LARGE = `
-                     <span class="c">░▓▓██▓█▓▓▓▓░░░</span>
-                   <span class="c">▓▓█▓▓▓░▓░▓▓▓▓▓▓▓▓▓▓▓▓▓▓</span>
-                <span class="c">░▓█▓▓▓░░░░▓</span> <span class="c">░░░░░░░░▓▓▓█▓█▓</span>
-              <span class="c">░▓██▓▓▓░▓░░▓░▓░▓▓▓▓▓▓░░░▓▓░░██</span>
-          <span class="c">░░▓██▓▓▓░▓░░▓░█▓</span> <span class="c">░▓▓▓▓▓▓▓▓░█▓░▓▓▓▓█░</span>
-       <span class="c">░▓████▓░░▓▓░▓▓▓█</span><span class="w">█</span><span class="c">▓</span>            <span class="c">▓▓▓▓▓▓▓▓█░</span>
-      <span class="c">███▓▓▓░▓░▓</span> <span class="c">▓▓▓░██░</span>               <span class="c">░░▓████</span><span class="w">█</span><span class="c">░</span>
-    <span class="c">░</span><span class="w">█</span><span class="c">▓▓█</span> <span class="c">▓░░▓░▓░▓░▓█▓</span>                     <span class="c">░▓█</span><span class="w">██</span><span class="c">▓</span>
-   <span class="c">▓</span><span class="w">█</span><span class="c">█▓▓▓▓</span> <span class="c">░▓░░▓▓▓░▓░</span>                         <span class="c">░▓█▓</span>
-  <span class="c">▓</span><span class="w">█</span><span class="c">▓▓▓▓▓▓▓░░░░▓▓▓▓▓</span>
- <span class="c">██▓▓▓▓▓▓▓▓░▓░░░▓░▓▓█</span>
-<span class="c">█▓░░▓▓▓░▓░▓▓</span> <span class="c">▓</span> <span class="c">▓▓░▓▓█</span>
-<span class="c">▓▓░▓▓▓▓▓▓▓▓░░▓░▓░░▓▓█</span>
-<span class="c">▓▓░▓▓▓▓▓▓░░░░░░░▓░▓▓█</span>
-<span class="c">░░░▓▓▓▓░░░░░▓░░▓▓▓▓▓</span>
- <span class="c">░▓▓░▓</span> <span class="c">▓▓▓░▓▓░░▓▓▓░█░</span>                          <span class="c">░█▓</span>
-<span class="c">░▓░▓░▓░▓░░▓░░▓░▓░░░▓█▓</span>                     <span class="c">░▓█</span><span class="w">██</span><span class="c">▓</span>
- <span class="c">░▓▓░▓░▓░▓░░░░▓░</span> <span class="c">▓▓░▓██░</span>                <span class="c">░▓███</span><span class="w">██</span><span class="c">▓</span>
-   <span class="c">░▓▓▓░░▓▓▓▓▓░░▓▓░▓▓░▓█▓</span>            <span class="c">░▓▓▓▓▓▓▓█░</span>
-     <span class="c">░▓▓░░▓▓░▓▓▓▓▓▓▓░▓▓░▓▓</span> <span class="c">░░░▓▓▓▓▓▓░▓▓░░▓▓▓█░</span>
-              <span class="c">░▓█▓░▓▓░░░</span> <span class="c">▓░█▓▓▓▓▓▓▓▓▓░░▓░░▓█░</span>
-                 <span class="c">▓▓▓▓░▓░░░▓</span> <span class="c">░░▓░░░░░░░▓█▓▓█</span>
-                   <span class="c">░▓█▓░▓░▓░▓▓▓▓▓▓▓▓▓▓▓▓▓▓</span>
-                      <span class="c">▓▓▓▓▓▓█▓▓▓░░░</span>
-`;
-const CLAW_MINI = `
-         <span class="c">░███░░░░░░░</span>
-      <span class="c">░░█░░░░░░░░░█░█</span>
-   <span class="c">░░██░░░██</span>      <span class="c">░░██░</span>
-  <span class="c">██░░░░░░░</span>         <span class="c">░░█░</span>
-<span class="c">░██░░░░░░░</span>
-<span class="c">█░░░░░░░░█░</span>
-<span class="c">░░░░░░░░░░</span>
-<span class="c">░░░░░░░░░█░</span>         <span class="c">░░█░</span>
-  <span class="c">░░░░░░░░░░</span>      <span class="c">░░██░</span>
-       <span class="c">░░░░░░░░░░░░░█</span>
-         <span class="c">░░░░░░░░░░░</span>
-`;
-const T=document.getElementById('terminal');
-const S={};let currentView='boot';
-function $(c,t){return`<span class="${c}">${esc(t)}</span>`}
-function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-function raw(h){return h}
-function hr(){return $('d','─'.repeat(64))+'\n'}
-function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
-function render(h){T.innerHTML=h;window.scrollTo(0,document.body.scrollHeight)}
-function append(h){T.innerHTML+=h;window.scrollTo(0,document.body.scrollHeight)}
-function prompt(cmd){return $('c','qclaw')+$('d',' › ')+$('w',cmd)+'\n'}
-function sectionHeader(step,total,title){
-  let o='\n  '+$('d','[')+$('c',`${step}/${total}`)+$('d',']')+' '+'▰'.repeat(step)+$('d','▱'.repeat(total-step))+'\n\n';
-  o+='  '+$('d','┌─'+'─'.repeat(56)+'─┐')+'\n';
-  o+='  '+$('d','│ ')+raw(`<span class="c b">${title}</span>`)+ ' '.repeat(Math.max(0,56-title.length))+$('d',' │')+'\n';
-  o+='  '+$('d','└─'+'─'.repeat(56)+'─┘')+'\n\n';return o;
+const P=[
+  {id:'anthropic',n:'Anthropic (Claude)',h:'Best reasoning',m:'claude-sonnet-4-5-20250929',u:'https://console.anthropic.com'},
+  {id:'openai',n:'OpenAI (GPT)',h:'Reliable all-rounder',m:'gpt-4o',u:'https://platform.openai.com/api-keys'},
+  {id:'groq',n:'Groq',h:'Fast + free tier',m:'llama-3.3-70b-versatile',u:'https://console.groq.com/keys'},
+  {id:'openrouter',n:'OpenRouter',h:'Many models, one key',m:'anthropic/claude-sonnet-4-5',u:'https://openrouter.ai/keys'},
+  {id:'google',n:'Google (Gemini)',h:'Free tier available',m:'gemini-2.0-flash',u:'https://aistudio.google.com/apikey'},
+  {id:'xai',n:'xAI (Grok)',h:'',m:'grok-2',u:'https://console.x.ai'},
+  {id:'ollama',n:'Ollama (local)',h:'Free · runs on your device',m:'llama3.3',u:null},
+];
+const D={prov:0,key:'',tg:false,tok:'',name:'',step:1};
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function prog(){document.getElementById('prog').innerHTML=[1,2,3,4].map(i=>'<i class="'+(i<D.step?'done':i===D.step?'now':'')+'"></i>').join('')}
+function renderProvs(){
+  document.getElementById('provs').innerHTML=P.map((p,i)=>'<div class="opt'+(D.prov===i?' on':'')+'" onclick="sel('+i+')"><div class="dot"></div><div class="opt-i"><div class="opt-n">'+p.n+'</div>'+(p.h?'<div class="opt-h">'+p.h+'</div>':'')+'<div class="opt-m">'+p.m+'</div></div></div>').join('');
+  updKey();
 }
-function nav(nFn,bFn,nL='Continue'){
-  let o='\n'+hr();if(bFn)o+=`<span class="cmd" onclick="${bFn}">${$('d','  ◂ Back')}</span>        `;
-  o+=`<span class="cmd" onclick="${nFn}">${$('c','  ▸ ')}<span class="w b">${nL}</span>  ▸▸</span>\n`;return o;
+function sel(i){D.prov=i;renderProvs()}
+function updKey(){
+  var p=P[D.prov],kf=document.getElementById('kf'),kl=document.getElementById('kl');
+  if(!p.u){kf.style.display='none';return}
+  kf.style.display='block';kl.href=p.u;kl.textContent=p.u.replace('https://','').split('/')[0]+' →';
+  var ki=document.getElementById('ki');if(ki&&D.key)ki.value=D.key;
 }
-async function bootSequence(){
-  render('\n'+CLAW_LARGE+'\n\n');
-  await sleep(500);
-  const wm=$('w','   ██████╗ ██╗   ██╗ █████╗ ███╗  ██╗████████╗██╗   ██╗███╗   ███╗')+'\n'+$('w','  ██╔═══██╗██║   ██║██╔══██╗████╗ ██║╚══██╔══╝██║   ██║████╗ ████║')+'\n'+$('c','  ██║   ██║██║   ██║███████║██╔██╗██║   ██║   ██║   ██║██╔████╔██║')+'\n'+$('c','  ╚██████╔╝╚██████╔╝██║  ██║██║╚████║   ██║   ╚██████╔╝██║ ╚═╝ ██║')+'\n'+$('d','   ╚═══╝    ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚══╝   ╚═╝    ╚═══╝  ╚═╝     ╚═╝')+'\n'+$('r','            ██████╗██╗      █████╗ ██╗    ██╗')+'\n'+$('r','           ██╔════╝██║     ██╔══██╗██║    ██║')+'\n'+$('d','           ██║     ██║     ███████║██║ █╗ ██║')+'\n'+$('d','           ╚██████╗███████╗██║  ██║╚███╔███╔╝')+'\n'+$('d','            ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝');
-  append(wm+'\n\n');await sleep(250);
-  append($('d','  ──────────────────────────────────────────────────────────')+'\n');
-  append('  '+$('d','The agent runtime with a knowledge graph for a brain.')+'\n');
-  append('  '+$('c','v1.1.4')+$('d',' · ')+$('m','Cognee')+$('d',' · ')+$('r','AGEX')+'\n');
-  append($('d','  ──────────────────────────────────────────────────────────')+'\n\n');
-  await sleep(100);append('  '+prompt('init --boot')+'\n');
-  const checks=[
-    {l:'Security layer',ok:'READY',c:'g',d:150},
-    {l:'Trust Kernel (VALUES.md)',ok:'LOADED',c:'g',d:180},
-    {l:'Secret Store (AES-256-GCM)',ok:'ARMED',c:'g',d:130},
-    {l:'Audit log',ok:'READY',c:'g',d:100},
-    {l:'AGEX credentials',ok:'STANDBY',c:'a',d:200},
-    {l:'Cognee memory',ok:'OFFLINE',c:'a',d:250},
-    {l:'SQLite fallback',ok:'READY',c:'g',d:120},
-    {l:'Model router (5-tier)',ok:'READY',c:'g',d:150},
-    {l:'Skill loader',ok:'0 SKILLS',c:'a',d:130},
-    {l:'Agent registry',ok:'NOT CONFIGURED',c:'r',d:350},
-    {l:'Channels',ok:'NONE',c:'r',d:130},
-    {l:'Dashboard',ok:'STANDBY',c:'a',d:120},
-    {l:'Heartbeat',ok:'STANDBY',c:'a',d:100},
-  ];
-  for(const chk of checks){append($('d',`  ${chk.l} ${'.'.repeat(30-chk.l.length)} `));await sleep(chk.d);append(raw(`<span class="${chk.c}">[${chk.ok}]</span>`)+'\n')}
-  await sleep(250);
-  append('\n'+$('a','  ⚠  No agent configured. Run onboarding to get started.')+'\n\n');
-  append($('d','  ╔═══════════════════════════════════════════════════════╗')+'\n');
-  append($('d','  ║')+$('d','  Your business, understood. Not just remembered.     ')+$('d','║')+'\n');
-  append($('d','  ╚═══════════════════════════════════════════════════════╝')+'\n\n');
-  await sleep(100);append('  '+prompt('onboard')+'\n');showWelcome();
+function togTg(){D.tg=!D.tg;document.getElementById('tt').classList.toggle('on',D.tg);document.getElementById('tgs').style.display=D.tg?'block':'none';if(D.tg)setTimeout(function(){var t=document.getElementById('ti');if(t)t.focus()},100)}
+function val(n){
+  if(n===1){var p=P[D.prov];if(p.u){var ki=document.getElementById('ki');D.key=ki.value.trim();if(!D.key){ki.classList.add('err');document.getElementById('ke').classList.add('on');document.getElementById('ko').classList.remove('on');ki.focus();return false}ki.classList.remove('err');document.getElementById('ke').classList.remove('on');document.getElementById('ko').textContent='✓ Key saved';document.getElementById('ko').classList.add('on')}return true}
+  if(n===2){if(D.tg){var ti=document.getElementById('ti');D.tok=ti.value.trim();if(!D.tok||!D.tok.includes(':')){ti.classList.add('err');document.getElementById('te').classList.add('on');document.getElementById('to').classList.remove('on');ti.focus();return false}ti.classList.remove('err');document.getElementById('te').classList.remove('on');document.getElementById('to').textContent='✓ Token looks good';document.getElementById('to').classList.add('on')}return true}
+  if(n===3){var ni=document.getElementById('ni');D.name=ni.value.trim();if(!D.name){ni.classList.add('err');document.getElementById('ne').classList.add('on');ni.focus();return false}ni.classList.remove('err');document.getElementById('ne').classList.remove('on');return true}
+  return true;
 }
-function miniHeader(){return '\n'+CLAW_MINI+'\n'+raw('<span class="w b">QUANTUM</span><span class="r b">CLAW</span>')+$('d',' v1.1.4 · ')+$('m','Cognee')+$('d',' · ')+$('r','AGEX')+'\n'+$('d','─'.repeat(64))+'\n'}
-function showWelcome(){currentView='welcome';let o='';
-  o+=$('d','  ╭──────────────────────────────────────────────────────╮')+'\n';
-  o+=$('d','  │')+'  3 questions. That\'s it.                            '+$('d','│')+'\n';
-  o+=$('d','  │')+$('d','                                                      │')+'\n';
-  o+=$('d','  │')+'  '+$('c','1')+$('d',' ·')+' AI Provider + API Key                         '+$('d','│')+'\n';
-  o+=$('d','  │')+'  '+$('c','2')+$('d',' ·')+' Telegram Bot (optional)                       '+$('d','│')+'\n';
-  o+=$('d','  │')+'  '+$('c','3')+$('d',' ·')+' Your Name                                     '+$('d','│')+'\n';
-  o+=$('d','  │')+$('d','                                                      │')+'\n';
-  o+=$('d','  │')+$('d','  Everything else is configured from the dashboard.    │')+'\n';
-  o+=$('d','  ╰──────────────────────────────────────────────────────╯')+'\n\n';
-  o+=`<span class="cmd" onclick="showStep1()">${$('c','  ▸ ')}<span class="w b">BEGIN ONBOARDING</span>  ▸▸</span>\n`;append(o);
+function go(n){
+  if(D.step===1)D.key=document.getElementById('ki')?.value?.trim()||'';
+  if(D.step===2)D.tok=document.getElementById('ti')?.value?.trim()||'';
+  if(D.step===3)D.name=document.getElementById('ni')?.value?.trim()||'';
+  if(n>D.step&&!val(D.step))return;
+  D.step=n;prog();
+  document.querySelectorAll('.step').forEach(function(s){s.classList.remove('on')});
+  document.getElementById('s'+n).classList.add('on');
+  if(n===1)renderProvs();
+  if(n===2){document.getElementById('tt').classList.toggle('on',D.tg);document.getElementById('tgs').style.display=D.tg?'block':'none';if(D.tok)setTimeout(function(){var t=document.getElementById('ti');if(t)t.value=D.tok},10)}
+  if(n===3)setTimeout(function(){var ni=document.getElementById('ni');if(D.name)ni.value=D.name;ni.focus()},50);
+  window.scrollTo({top:0,behavior:'smooth'});
 }
-function showStep1(){currentView='step1';T.innerHTML='';render(miniHeader());
-  let o='  '+prompt('onboard --provider')+'\n'+sectionHeader(1,3,'AI PROVIDER');
-  o+=$('d','  Pick your LLM. Best reasoning? Anthropic.')+'\n';
-  o+=$('d','  Cheapest? Groq free tier. Run local? Ollama.')+'\n\n';
-  o+=$('a','  PROVIDER ')+$('r','*')+'\n\n';
-  S.provider=S.provider??0;
-  const provs=[['Anthropic (Claude)','Best reasoning'],['OpenAI (GPT)','All-rounder'],['Groq','Fast, free tier'],['OpenRouter','Many models, one key'],['Google (Gemini)','Free tier'],['xAI (Grok)',''],['Ollama (local)','Free, runs locally']];
-  for(let i=0;i<provs.length;i++){const sel=S.provider===i;const[n,h]=provs[i];
-    o+=`<span class="opt${sel?' sel-line':''}" onclick="sv1();S.provider=${i};showStep1()">${sel?$('c','  ● '):$('d','  ○ ')}${sel?$('w',n):$('d',n)}${h?'  '+$('d','— '+h):''}</span>\n`}
-  const models=['claude-sonnet-4-5-20250929','gpt-4o','llama-3.3-70b-versatile','anthropic/claude-sonnet-4-5','gemini-2.0-flash','grok-2','llama3.3'];
-  o+='\n  '+$('d','Default model: ')+$('c',models[S.provider])+'\n';
-  if(S.provider!==6){
-    const hints=['console.anthropic.com','platform.openai.com','console.groq.com','openrouter.ai/keys','aistudio.google.com','console.x.ai',''][S.provider];
-    o+='\n'+$('a','  API KEY ')+$('r','*')+$('d','  ─── '+hints)+'\n';
-    o+=$('c','  ❯ ')+'<input class="inp" id="i-key" type="password" placeholder="paste key here" autocomplete="off">\n';
-  } else {o+='\n  '+$('d','No API key needed — Ollama runs locally.')+'\n'}
-  o+=nav("goStep(2)","showWC()");append(o);
-  setTimeout(()=>{if(S.apiKey&&document.getElementById('i-key'))document.getElementById('i-key').value=S.apiKey},10);
+async function save(){
+  if(!val(3))return;D.step=4;prog();
+  document.querySelectorAll('.step').forEach(function(s){s.classList.remove('on')});
+  document.getElementById('s4').classList.add('on');
+  var p=P[D.prov],dl=document.getElementById('dls');
+  var steps=['Encrypting secrets (AES-256-GCM)','Writing config','Creating trust kernel','Initialising agent soul','Verifying '+p.n.split('(')[0].trim()+' key'];
+  if(D.tg)steps.push('Verifying Telegram bot');
+  steps.push('Setting up workspace','Starting model router','Registering agent: QClaw');
+  if(D.tg)steps.push('Starting Telegram channel');
+  steps.push('Starting dashboard');
+  try{await fetch('/api/onboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:p.id,model:p.m,apiKey:D.key,wantTg:D.tg,tgToken:D.tok,name:D.name})})}catch(e){}
+  for(var i=0;i<steps.length;i++){var d=document.createElement('div');d.className='dl';d.innerHTML='<span class="la">'+steps[i]+'</span><span class="run">...</span>';dl.appendChild(d);await new Promise(function(r){setTimeout(r,180+Math.random()*250)});d.querySelector('.run').className='ok';d.querySelector('.ok').textContent='✓'}
+  await new Promise(function(r){setTimeout(r,350)});done();
 }
-function sv1(){const el=document.getElementById('i-key');if(el)S.apiKey=el.value}
-function showWC(){T.innerHTML='';render(miniHeader());showWelcome()}
-function showStep2(){currentView='step2';S.wantTg=S.wantTg??true;T.innerHTML='';render(miniHeader());
-  let o='  '+prompt('onboard --telegram')+'\n'+sectionHeader(2,3,'TELEGRAM BOT');
-  o+=$('d','  Connect a Telegram bot so you can chat with your agent')+'\n';
-  o+=$('d','  from your phone. Pairing is handled via the dashboard.')+'\n\n';
-  o+=$('a','  CONNECT TELEGRAM?')+'\n\n';
-  o+=`<span class="opt${S.wantTg?' sel-line':''}" onclick="S.wantTg=true;showStep2()">${S.wantTg?$('c','  ● '):$('d','  ○ ')}${S.wantTg?$('w','Yes'):$('d','Yes')}</span>\n`;
-  o+=`<span class="opt${!S.wantTg?' sel-line':''}" onclick="S.wantTg=false;showStep2()">${!S.wantTg?$('c','  ● '):$('d','  ○ ')}${!S.wantTg?$('w','Skip for now'):$('d','Skip for now')}</span>\n`;
-  if(S.wantTg){
-    o+='\n'+$('d','  ╭────────────────────────────────────────────╮')+'\n';
-    o+=$('d','  │')+' 1. Open Telegram → search '+$('c','@BotFather')+$('d','       │')+'\n';
-    o+=$('d','  │')+' 2. Send '+$('c','/newbot')+' → pick a name'+$('d','              │')+'\n';
-    o+=$('d','  │')+' 3. Copy the token'+$('d','                           │')+'\n';
-    o+=$('d','  ╰────────────────────────────────────────────╯')+'\n\n';
-    o+=$('a','  BOT TOKEN')+'\n';
-    o+=$('c','  ❯ ')+'<input class="inp" id="i-tg" type="password" placeholder="123456:ABC-DEF..." autocomplete="off">\n';
-  }
-  o+=nav("goStep(3)","goStep(1)");append(o);
-  if(S.tgToken&&document.getElementById('i-tg'))setTimeout(()=>document.getElementById('i-tg').value=S.tgToken,10);
+function done(){
+  D.step=5;prog();document.querySelectorAll('.step').forEach(function(s){s.classList.remove('on')});
+  var s5=document.getElementById('s5');s5.classList.add('on');var p=P[D.prov];
+  s5.innerHTML='<div class="sum"><div class="sum-h"><h2>QuantumClaw <span class="badge">READY</span></h2></div>'
+    +'<div class="sum-r"><span class="k">Owner</span><span class="v">'+esc(D.name)+'</span></div>'
+    +'<div class="sum-r"><span class="k">Agent</span><span class="v pur">QClaw</span></div>'
+    +'<div class="sum-r"><span class="k">Model</span><span class="v pur">'+esc(p.m)+'</span></div>'
+    +'<div class="sum-r"><span class="k">Provider</span><span class="v">'+esc(p.id)+'</span></div>'
+    +'<div class="sum-r"><span class="k">Memory</span><span class="v">SQLite + knowledge graph</span></div>'
+    +'<div class="sum-r"><span class="k">Telegram</span><span class="v '+(D.tg?'grn':'amb')+'">'+(D.tg?'connected':'skipped')+'</span></div></div>'
+    +(D.tg?'<div class="crd"><h3>Next: Pair Telegram</h3><p>1. Send <span style="color:var(--b2);font-family:Courier New,monospace">/start</span> to your bot<br>2. Copy the pairing code<br>3. Run: <span style="color:var(--b2);font-family:Courier New,monospace">qclaw pairing approve telegram CODE</span></p></div>':'')
+    +'<div class="cmds"><h3>Commands</h3>'
+    +'<div class="cm"><span class="c">$</span> qclaw start<span class="d">start agent</span></div>'
+    +'<div class="cm"><span class="c">$</span> qclaw status<span class="d">health check</span></div>'
+    +'<div class="cm"><span class="c">$</span> qclaw chat<span class="d">terminal chat</span></div>'
+    +'<div class="cm"><span class="c">$</span> qclaw tool list<span class="d">see tools</span></div>'
+    +'<div class="cm"><span class="c">$</span> qclaw dashboard<span class="d">web UI</span></div>'
+    +'<div class="cm"><span class="c">$</span> qclaw diagnose<span class="d">troubleshoot</span></div></div>'
+    +'<div class="btns" style="flex-direction:column;gap:8px"><button class="btn btn-p" onclick="expCfg()">Export config.json</button><button class="btn btn-b" style="flex:1" onclick="location.reload()">Start over</button></div>'
+    +'<div class="footer">QuantumClaw v1.1.4 · MIT · github.com/QuantumClaw/QClaw</div>';
 }
-function sv2(){const el=document.getElementById('i-tg');if(el)S.tgToken=el.value}
-function showStep3(){currentView='step3';T.innerHTML='';render(miniHeader());
-  let o='  '+prompt('onboard --owner')+'\n'+sectionHeader(3,3,'YOUR NAME');
-  o+=$('d','  What should your agent call you?')+'\n\n';
-  o+=$('a','  NAME ')+$('r','*')+'\n';
-  o+=$('c','  ❯ ')+'<input class="inp" id="i-name" placeholder="e.g. Hayley" autocomplete="off" spellcheck="false">\n\n';
-  o+='\n'+hr();
-  o+=`<span class="cmd" onclick="goStep(2)">${$('d','  ◂ Back')}</span>        `;
-  o+=`<span class="cmd" onclick="runDeploy()">${$('g','  ▸ ')}<span class="g b">SAVE & START</span>  ▸▸</span>\n`;
-  append(o);
-  if(S.name)setTimeout(()=>document.getElementById('i-name').value=S.name,10);
-  setTimeout(()=>document.getElementById('i-name')?.focus(),20);
+function expCfg(){
+  var p=P[D.prov];var cfg={agent:{name:'QClaw',owner:D.name||'User',timezone:Intl.DateTimeFormat().resolvedOptions().timeZone},models:{primary:{provider:p.id,model:p.m},fast:null,routing:{enabled:true}},memory:{cognee:{url:'http://localhost:8000',autoReconnect:true},sqlite:{path:'~/.quantumclaw/memory.db'}},channels:D.tg?{telegram:{enabled:true,dmPolicy:'pairing',allowedUsers:[]}}:{},security:{encryption:'aes-256-gcm'},dashboard:{enabled:true,port:3000},heartbeat:{eventDriven:true,maxDailyCost:0.50}};
+  var b=new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='config.json';a.click();
 }
-async function runDeploy(){
-  const nameEl=document.getElementById('i-name');
-  if(nameEl)S.name=nameEl.value;
-  if(!S.name){nameEl?.focus();return}
-  currentView='deploy';T.innerHTML='';render(miniHeader());
-  const provNames=['anthropic','openai','groq','openrouter','google','xai','ollama'];
-  const prov=provNames[S.provider??0];
-  const models=['claude-sonnet-4-5-20250929','gpt-4o','llama-3.3-70b-versatile','anthropic/claude-sonnet-4-5','gemini-2.0-flash','grok-2','llama3.3'];
-  const model=models[S.provider??0];
-  append('\n  '+prompt('onboard --save')+'\n');
-  const steps=[
-    {l:'Encrypting secrets (AES-256-GCM)',d:500},{l:'Writing config.json',d:300},
-    {l:'Creating VALUES.md (Trust Kernel)',d:400},{l:'Initialising SOUL.md',d:350},
-    {l:'Setting up workspace/',d:250},{l:`Verifying ${prov} key`,d:600},
-    {l:'Registering Cognee user',d:400},
-    ...(S.wantTg&&S.tgToken?[{l:'Verifying Telegram bot',d:500}]:[]),
-    {l:'Generating dashboard auth token',d:300},{l:'Starting model router (5-tier)',d:350},
-    {l:'Registering agent: QClaw',d:400},{l:'Starting heartbeat',d:250},
-    ...(S.wantTg&&S.tgToken?[{l:'Starting Telegram channel',d:400}]:[]),
-    {l:'Starting dashboard on :3000',d:350},
-  ];
-  for(const s of steps){append($('d',`  ${s.l} ${'.'.repeat(Math.max(2,38-s.l.length))} `));await sleep(s.d);append($('g','[OK]')+'\n')}
-  await sleep(300);
-  const dashToken=Array.from({length:32},()=>'0123456789abcdef'[~~(Math.random()*16)]).join('');
-  append('\n\n'+CLAW_LARGE+'\n\n');
-  append($('d','  ╔═══════════════════════════════════════════════════════╗')+'\n');
-  append($('d','  ║')+raw('   <span class="w b">QUANTUM</span><span class="r b">CLAW</span>  ')+$('g','▓▓ READY ▓▓')+$('d','                       ║')+'\n');
-  append($('d','  ╠═══════════════════════════════════════════════════════╣')+'\n');
-  append($('d','  ║')+$('d','  Owner: ')+$('w',S.name)+' '.repeat(Math.max(0,44-S.name.length))+$('d','║')+'\n');
-  append($('d','  ║')+$('d','  Agent: ')+$('c','QClaw')+$('d',' (the OG)')+' '.repeat(35)+$('d','║')+'\n');
-  append($('d','  ║')+$('d','  Model: ')+$('c',model)+' '.repeat(Math.max(0,44-model.length))+$('d','║')+'\n');
-  append($('d','  ║')+$('d','  Memory: ')+$('m','Cognee')+$('d',' + SQLite fallback')+' '.repeat(25)+$('d','║')+'\n');
-  if(S.wantTg&&S.tgToken)append($('d','  ║')+$('d','  Telegram: ')+$('g','connected')+$('d',' (send /start to pair)')+' '.repeat(14)+$('d','║')+'\n');
-  else append($('d','  ║')+$('d','  Telegram: ')+$('a','skipped')+' '.repeat(34)+$('d','║')+'\n');
-  append($('d','  ╚═══════════════════════════════════════════════════════╝')+'\n\n');
-  append($('w','  Dashboard')+'\n');
-  append($('d','  ┌──────────────────────────────────────────────────────┐')+'\n');
-  append($('d','  │ ')+$('c','http://localhost:3000/#token='+dashToken.slice(0,8)+'...')+' '.repeat(3)+$('d','│')+'\n');
-  append($('d','  └──────────────────────────────────────────────────────┘')+'\n');
-  append(`<span class="cmd" onclick="navigator.clipboard?.writeText('http://localhost:3000/#token=${dashToken}').then(()=>this.innerHTML='${$('g','  ✓ Copied!')}')">${$('d','  📋 Copy URL')}</span>\n\n`);
-  if(S.wantTg&&S.tgToken){append($('w','  Next: Pair Telegram')+'\n');append($('d','  Send ')+$('c','/start')+$('d',' to your bot → approve from dashboard')+'\n\n')}
-  append(hr()+'\n'+$('w','  Commands')+'\n\n');
-  append($('c','  $ ')+'qclaw status'+$('d','          # health check')+'\n');
-  append($('c','  $ ')+'qclaw chat'+$('d','            # chat from terminal')+'\n');
-  append($('c','  $ ')+'qclaw tui'+$('d','             # full terminal UI')+'\n');
-  append($('c','  $ ')+'qclaw dashboard'+$('d','       # open web dashboard')+'\n');
-  append($('c','  $ ')+'qclaw diagnose'+$('d','        # troubleshoot issues')+'\n\n');
-  append(hr()+'\n');
-  append(`<span class="cmd" onclick="exportCfg()">${$('c','  ⬇ ')}<span class="w">Export config.json</span></span>      <span class="cmd" onclick="location.reload()">${$('d','  ↻ Restart')}</span>\n\n`);
-  append($('d','  QuantumClaw v1.1.4 · MIT · github.com/QuantumClaw/QClaw')+'\n');
-}
-function goStep(n){
-  if(currentView==='step1')sv1();
-  if(currentView==='step2')sv2();
-  if(currentView==='step3'){const el=document.getElementById('i-name');if(el)S.name=el.value}
-  ({1:showStep1,2:showStep2,3:showStep3})[n]();
-}
-function exportCfg(){
-  const provNames=['anthropic','openai','groq','openrouter','google','xai','ollama'];
-  const models=['claude-sonnet-4-5-20250929','gpt-4o','llama-3.3-70b-versatile','anthropic/claude-sonnet-4-5','gemini-2.0-flash','grok-2','llama3.3'];
-  const cfg={
-    agent:{name:'QClaw',owner:S.name||'User',timezone:Intl.DateTimeFormat().resolvedOptions().timeZone},
-    models:{primary:{provider:provNames[S.provider??0],model:models[S.provider??0]},routing:{enabled:true}},
-    memory:{cognee:{url:'http://localhost:8000',autoReconnect:true},sqlite:{path:'~/.quantumclaw/memory.db'}},
-    channels:S.wantTg&&S.tgToken?{telegram:{enabled:true,dmPolicy:'pairing',allowedUsers:[]}}:{},
-    security:{encryption:'aes-256-gcm'},
-    dashboard:{enabled:true,port:3000},
-    heartbeat:{eventDriven:true,maxDailyCost:0.50}
-  };
-  const b=new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='config.json';a.click();
-}
-document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.target.matches('input')){e.preventDefault();const bs=[...T.querySelectorAll('.cmd')];const p=bs.find(b=>b.textContent.includes('▸▸'))||bs[bs.length-1];if(p)p.click()}});
-bootSequence();
-</script></body></html>
+document.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();var btn=document.querySelector('.step.on .btn-p, .step.on .btn-g');if(btn)btn.click()}});
+renderProvs();prog();
+</script>
+</body>
+</html>

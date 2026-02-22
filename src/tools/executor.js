@@ -37,6 +37,10 @@ export class ToolExecutor {
    */
   async run(messages, options = {}) {
     const model = options.model || this.router.primary;
+    if (!model || !model.provider) {
+      const result = await this.router.complete(messages, options);
+      return { content: result.content, toolCalls: [], usage: result.usage, model: result.model };
+    }
     const provider = model.provider;
     const toolDefs = this.tools.getToolDefinitions(provider === 'anthropic' ? 'anthropic' : 'openai');
 

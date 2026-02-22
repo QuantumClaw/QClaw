@@ -1039,39 +1039,62 @@ switch (command) {
       saveConfig(config);
     }
 
-    const url = `http://${localHost}:${port}/#token=${token}`;
+    const localUrl = `http://${localHost}:${port}/#token=${token}`;
+
+    // Check for saved tunnel URL (written by qclaw start)
+    let tunnelUrl = null;
+    const urlFile = join(config._dir, 'dashboard.url');
+    if (existsSync(urlFile)) {
+      try {
+        tunnelUrl = readFileSync(urlFile, 'utf-8').trim();
+      } catch { /* non-fatal */ }
+    }
+
+    // Determine which URL to show/copy
+    const url = tunnelUrl || localUrl;
+
+    console.log('');
+    if (tunnelUrl) {
+      console.log(`  ${'\x1b[1m'}Dashboard (public):${'\x1b[0m'}`);
+      console.log(`  ${tunnelUrl}`);
+      console.log('');
+      console.log(`  ${'\x1b[2m'}Local: ${localUrl}${'\x1b[0m'}`);
+    } else {
+      console.log(`  ${'\x1b[1m'}Dashboard:${'\x1b[0m'}`);
+      console.log(`  ${localUrl}`);
+      console.log('');
+      console.log(`  ${'\x1b[33m'}No tunnel active.${'\x1b[0m'} Run ${'\x1b[36m'}qclaw start${'\x1b[0m'} to open a public URL.`);
+    }
+    console.log('');
 
     // Copy to clipboard (best effort)
     try {
       const { execSync } = await import('child_process');
       if (process.platform === 'darwin') {
         execSync(`echo "${url}" | pbcopy`, { stdio: 'ignore' });
-        console.log('\n  📋 URL copied to clipboard');
+        console.log('  📋 URL copied to clipboard');
       } else if (process.platform === 'win32') {
         execSync(`echo ${url}| clip`, { stdio: 'ignore' });
-        console.log('\n  📋 URL copied to clipboard');
+        console.log('  📋 URL copied to clipboard');
       } else {
-        // Try termux first, then xclip
         try {
           execSync(`echo "${url}" | termux-clipboard-set`, { stdio: 'ignore' });
-          console.log('\n  📋 URL copied to clipboard');
+          console.log('  📋 URL copied to clipboard');
         } catch {
           try {
             execSync(`echo "${url}" | xclip -selection clipboard`, { stdio: 'ignore' });
-            console.log('\n  📋 URL copied to clipboard');
+            console.log('  📋 URL copied to clipboard');
           } catch { /* no clipboard */ }
         }
       }
     } catch { /* no clipboard */ }
 
-    console.log(`\n  Dashboard: ${url}\n`);
-    console.log(`  Token: ${token}\n`);
+    console.log('');
 
-    // Open browser
+    // Open browser (use tunnel URL if available)
     try {
       const { exec } = await import('child_process');
       if (existsSync('/data/data/com.termux')) {
-        // Termux: use termux-open-url
         exec(`termux-open-url "${url}"`);
       } else {
         const openCmd = process.platform === 'darwin' ? 'open' :
