@@ -14,13 +14,18 @@ const modules = [
   '../src/security/audit.js',
   '../src/security/approvals.js',
   '../src/memory/manager.js',
+  '../src/memory/knowledge.js',
+  '../src/memory/graph.js',
+  '../src/memory/vector.js',
   '../src/models/router.js',
   '../src/agents/registry.js',
   '../src/skills/loader.js',
   '../src/channels/manager.js',
   '../src/dashboard/server.js',
   '../src/credentials.js',
-  '../src/agex-sdk/crypto.js'
+  '../src/tools/mcp-client.js',
+  '../src/tools/registry.js',
+  '../src/tools/executor.js',
 ];
 
 let passed = 0;

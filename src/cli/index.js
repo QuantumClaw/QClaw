@@ -649,6 +649,161 @@ switch (command) {
     break;
   }
 
+  // ─── TOOL ────────────────────────────────────────────────────
+  case 'tool': {
+    smallBanner();
+    const { config, secrets } = await loadCore();
+    const { ToolRegistry, PRESET_SERVERS } = await import('../tools/registry.js');
+    const { writeFileSync } = await import('fs');
+
+    const G = '\x1b[32m', R = '\x1b[31m', C = '\x1b[36m', D = '\x1b[2m', RS = '\x1b[0m', B = '\x1b[1m';
+
+    if (subcommand === 'list' || !subcommand) {
+      console.log('');
+      console.log(`  ${B}Available MCP Tool Servers${RS}`);
+      console.log('');
+
+      const enabledMcp = config.tools?.mcp || {};
+
+      // Group by type
+      const mcpPresets = Object.entries(PRESET_SERVERS).filter(([, p]) => p.type === 'mcp');
+      const apiPresets = Object.entries(PRESET_SERVERS).filter(([, p]) => p.type === 'api');
+
+      console.log(`  ${B}MCP Servers${RS} ${D}(run as local processes)${RS}`);
+      console.log('');
+      for (const [key, preset] of mcpPresets) {
+        const enabled = enabledMcp[key]?.enabled !== false && enabledMcp[key];
+        const keyNeeded = preset.requiresKey ? `${D}(needs API key)${RS}` : `${D}(no key needed)${RS}`;
+        console.log(`  ${enabled ? G + '✓' : D + '○'}${RS} ${B}${preset.name}${RS} ${D}[${key}]${RS} — ${preset.description}`);
+        console.log(`    ${enabled ? G + 'enabled' + RS : D + 'disabled' + RS} ${keyNeeded}`);
+      }
+
+      console.log('');
+      console.log(`  ${B}API Tools${RS} ${D}(direct HTTP — no process needed)${RS}`);
+      console.log('');
+      for (const [key, preset] of apiPresets) {
+        const enabled = enabledMcp[key]?.enabled !== false && enabledMcp[key];
+        const toolCount = preset.tools?.length || 0;
+        const keyNeeded = preset.requiresKey ? `${D}(needs API key)${RS}` : `${D}(free, no key)${RS}`;
+        console.log(`  ${enabled ? G + '✓' : D + '○'}${RS} ${B}${preset.name}${RS} ${D}[${key}]${RS} — ${preset.description}`);
+        console.log(`    ${enabled ? G + 'enabled' + RS : D + 'disabled' + RS} ${keyNeeded} ${D}(${toolCount} tools)${RS}`);
+      }
+
+      // Custom servers
+      for (const [key, conf] of Object.entries(enabledMcp)) {
+        if (!PRESET_SERVERS[key]) {
+          console.log(`  ${G}✓${RS} ${B}${key}${RS} — custom MCP server`);
+          console.log(`    ${D}${conf.command || conf.url || 'unknown'}${RS}`);
+        }
+      }
+
+      console.log('');
+      console.log(`  ${D}Enable:  qclaw tool enable <name> [api_key]${RS}`);
+      console.log(`  ${D}Disable: qclaw tool disable <name>${RS}`);
+      console.log(`  ${D}Add:     qclaw tool add <name> <command> [args...]${RS}`);
+      console.log('');
+
+    } else if (subcommand === 'enable') {
+      const name = args[2];
+      const apiKey = args[3];
+
+      if (!name) {
+        console.log('Usage: qclaw tool enable <name> [api_key]');
+        console.log(`Available: ${Object.keys(PRESET_SERVERS).join(', ')}`);
+        break;
+      }
+
+      const preset = PRESET_SERVERS[name];
+      if (preset && preset.requiresKey && !apiKey) {
+        console.log('');
+        console.log(`  ${B}${preset.name}${RS}`);
+        console.log(`  ${preset.description}`);
+        console.log('');
+        console.log(`  ${C}Setup:${RS} ${preset.setup}`);
+        console.log('');
+        console.log(`  Usage: ${C}qclaw tool enable ${name} YOUR_API_KEY${RS}`);
+        break;
+      }
+
+      try {
+        const registry = new ToolRegistry(config, secrets);
+
+        if (preset) {
+          const tools = await registry.enablePreset(name, apiKey);
+          console.log(`  ${G}✓${RS} ${preset.name} enabled (${tools.length} tools)`);
+          for (const t of tools.slice(0, 8)) {
+            console.log(`    ${D}→ ${t.name}: ${t.description.slice(0, 60)}${RS}`);
+          }
+          if (tools.length > 8) console.log(`    ${D}... and ${tools.length - 8} more${RS}`);
+        } else {
+          // Treat as custom server command
+          const cmd = apiKey;
+          const cmdArgs = args.slice(4);
+          const tools = await registry.addCustom(name, cmd, cmdArgs);
+          console.log(`  ${G}✓${RS} ${name} added (${tools.length} tools)`);
+        }
+
+        // Save config
+        const configPath = join(config._dir, 'config.json');
+        writeFileSync(configPath, JSON.stringify(config, null, 2));
+        console.log('');
+        console.log(`  Restart agent: ${C}qclaw restart${RS}`);
+
+      } catch (err) {
+        console.log(`  ${R}✗${RS} Failed: ${err.message}`);
+      }
+
+    } else if (subcommand === 'disable') {
+      const name = args[2];
+      if (!name) { console.log('Usage: qclaw tool disable <name>'); break; }
+
+      if (config.tools?.mcp?.[name]) {
+        config.tools.mcp[name].enabled = false;
+        const configPath = join(config._dir, 'config.json');
+        writeFileSync(configPath, JSON.stringify(config, null, 2));
+        console.log(`  ${G}✓${RS} ${name} disabled`);
+      } else {
+        console.log(`  ${R}✗${RS} ${name} not found in config`);
+      }
+
+    } else if (subcommand === 'add') {
+      const name = args[2];
+      const cmd = args[3];
+      const cmdArgs = args.slice(4);
+
+      if (!name || !cmd) {
+        console.log('Usage: qclaw tool add <name> <command> [args...]');
+        console.log('');
+        console.log('Examples:');
+        console.log('  qclaw tool add myserver npx my-mcp-server');
+        console.log('  qclaw tool add remote-sse https://mcp.example.com/sse');
+        break;
+      }
+
+      try {
+        const registry = new ToolRegistry(config, secrets);
+
+        if (cmd.startsWith('http://') || cmd.startsWith('https://')) {
+          const tools = await registry.addRemote(name, cmd);
+          console.log(`  ${G}✓${RS} ${name} connected via SSE (${tools.length} tools)`);
+        } else {
+          const tools = await registry.addCustom(name, cmd, cmdArgs);
+          console.log(`  ${G}✓${RS} ${name} connected (${tools.length} tools)`);
+        }
+
+        const configPath = join(config._dir, 'config.json');
+        writeFileSync(configPath, JSON.stringify(config, null, 2));
+      } catch (err) {
+        console.log(`  ${R}✗${RS} Failed: ${err.message}`);
+      }
+
+    } else {
+      console.log('Usage: qclaw tool [list|enable|disable|add]');
+    }
+    console.log('');
+    break;
+  }
+
   // ─── CHANNEL ──────────────────────────────────────────────────
   case 'channel': {
     smallBanner();
