@@ -583,6 +583,72 @@ switch (command) {
     break;
   }
 
+  // ─── SETUP-COGNEE ───────────────────────────────────────────
+  case 'setup-cognee': {
+    smallBanner();
+    const { config, secrets } = await loadCore();
+    const { writeFileSync } = await import('fs');
+    const { join } = await import('path');
+    const { createInterface } = await import('readline');
+
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const ask = (q) => new Promise(r => rl.question(q, r));
+
+    console.log('');
+    console.log('  \x1b[1m🧠 Connect to Cognee Brain Server\x1b[0m');
+    console.log('');
+    console.log('  Run this on your PC/laptop/Pi first:');
+    console.log('  \x1b[36mcurl -sL https://raw.githubusercontent.com/QuantumClaw/QClaw/main/scripts/cognee-server.sh | bash\x1b[0m');
+    console.log('');
+    console.log('  Then paste the URL it gives you below.');
+    console.log('');
+
+    const url = (await ask('  Cognee URL: ')).trim();
+    rl.close();
+
+    if (!url) {
+      console.log('  No URL entered. Cancelled.');
+      break;
+    }
+
+    // Test connection
+    console.log('');
+    console.log('  Testing connection...');
+    try {
+      const res = await fetch(`${url.replace(/\/$/, '')}/health`, { signal: AbortSignal.timeout(10000) });
+      if (res.ok) {
+        console.log('  \x1b[32m✓\x1b[0m Cognee server is reachable!');
+
+        // Save to config
+        const configPath = join(config._dir, 'config.json');
+        const existing = JSON.parse(readFileSync(configPath, 'utf-8'));
+        existing.memory = existing.memory || {};
+        existing.memory.cognee = existing.memory.cognee || {};
+        existing.memory.cognee.url = url.replace(/\/$/, '');
+        existing.memory.cognee.enabled = true;
+        writeFileSync(configPath, JSON.stringify(existing, null, 2));
+
+        console.log('  \x1b[32m✓\x1b[0m Config saved. Cognee URL: ' + url);
+        console.log('');
+        console.log('  Restart your agent: \x1b[36mqclaw restart\x1b[0m');
+        console.log('  Your agent now has the full Cognee knowledge graph brain!');
+      } else {
+        console.log(`  \x1b[31m✗\x1b[0m Server responded with ${res.status}`);
+        console.log('  Check your URL and make sure Cognee is running.');
+      }
+    } catch (err) {
+      console.log(`  \x1b[31m✗\x1b[0m Could not reach ${url}`);
+      console.log(`  Error: ${err.message}`);
+      console.log('');
+      console.log('  Tips:');
+      console.log('  - If using local IP: are phone and PC on the same WiFi?');
+      console.log('  - If using tunnel: is cloudflared still running?');
+      console.log('  - Is the Cognee server still running on your PC?');
+    }
+    console.log('');
+    break;
+  }
+
   // ─── CHANNEL ──────────────────────────────────────────────────
   case 'channel': {
     smallBanner();

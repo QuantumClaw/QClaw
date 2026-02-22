@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from '
 import { log } from '../core/logger.js';
 import { VectorMemory } from './vector.js';
 import { KnowledgeStore } from './knowledge.js';
+import { KnowledgeGraph, extractGraph } from './graph.js';
 
 // Try to load better-sqlite3 (native module, may fail on Android)
 let Database;
@@ -104,12 +105,21 @@ export class MemoryManager {
       log.debug(`Knowledge: ${knowledgeStats.semantic} facts, ${knowledgeStats.episodic} events, ${knowledgeStats.procedural} prefs (~${knowledgeStats.estimatedTokens} tokens)`);
     }
 
+    // Init knowledge graph (entity-relationship graph, works everywhere)
+    this.graph = new KnowledgeGraph(this.db);
+    this.graph.init();
+    const graphStats = this.graph.stats();
+    if (graphStats.entities > 0) {
+      log.debug(`Graph: ${graphStats.entities} entities, ${graphStats.relationships} relationships`);
+    }
+
     return {
       cognee: this.cogneeConnected,
       sqlite: !!this.db,
       jsonFallback: !!this._jsonStore,
       vector: vectorStats,
       knowledge: knowledgeStats,
+      graph: graphStats,
       entities
     };
   }
@@ -146,6 +156,11 @@ export class MemoryManager {
     if (this.vector && content.length > 20) {
       this.vector.add(content, { agent, role }).catch(() => {});
     }
+
+    // Extract entities/relationships into knowledge graph
+    if (this.graph && this._router && content.length > 40) {
+      extractGraph(this._router, this.graph, content, role).catch(() => {});
+    }
   }
 
   /**
@@ -172,10 +187,17 @@ export class MemoryManager {
   }
 
   /**
+   * Set the LLM router reference (needed for knowledge extraction)
+   */
+  setRouter(router) {
+    this._router = router;
+  }
+
+  /**
    * Search knowledge graph for relationships
    */
   async graphQuery(query) {
-    // Try Cognee first
+    // Try Cognee first (remote knowledge graph)
     if (this.cogneeConnected) {
       try {
         const token = await this.secrets.get('cognee_token');
@@ -198,6 +220,15 @@ export class MemoryManager {
         }
       } catch (err) {
         log.debug(`Graph query failed: ${err.message}`);
+      }
+    }
+
+    // Local knowledge graph (entities + relationships)
+    if (this.graph) {
+      const graphContext = this.graph.buildGraphContext(query, 500);
+      if (graphContext && graphContext.length > 20) {
+        const graphStats = this.graph.stats();
+        return { results: [{ content: graphContext }], source: 'graph', entities: graphStats.entities, relationships: graphStats.relationships };
       }
     }
 

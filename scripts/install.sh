@@ -191,7 +191,7 @@ echo ""
 # ═══════════════════════════════════════════════════════════════════
 # [4/5] COGNEE
 # ═══════════════════════════════════════════════════════════════════
-echo -e "  ${B}[4/5] Cognee${RS}"
+echo -e "  ${B}[4/5] Knowledge Engine${RS}"
 
 mkdir -p "$CONFIG_DIR"
 COGNEE_META="$CONFIG_DIR/cognee-install.json"
@@ -199,321 +199,46 @@ COGNEE_META="$CONFIG_DIR/cognee-install.json"
 # Cognee is optional — failures here must NOT kill the installer
 set +e
 
-if echo "$@" | grep -q "skip-cognee"; then
-    info "Skipped"; echo '{"method":"skipped"}' > "$COGNEE_META"
-elif curl -sf http://localhost:8000/health >/dev/null 2>&1; then
-    ok "Running"
-elif $IS_TERMUX; then
-    # ── Cognee on Android via proot-distro Ubuntu ──────────────
-    # LanceDB/Kuzu need glibc. Termux uses Bionic (Android).
-    # proot-distro gives real Ubuntu where manylinux wheels work.
-    # Cognee runs as HTTP API on localhost:8000, QClaw talks to it.
-    #
-    # PERSISTENCE: proot Ubuntu lives at ~/.local/share/proot-distro/
-    #   and survives QClaw updates. The install check is idempotent:
-    #   - proot-distro already installed? → skip
-    #   - Ubuntu already installed?       → skip
-    #   - Cognee venv already exists?     → skip
-    #   - API already running on :8000?   → skip
-    #   Only first install takes 5-10 min. Updates take seconds.
-
-    COGNEE_MARKER="$CONFIG_DIR/cognee-proot-ready"
-
-    # ── Always write helper scripts (so updates can fix them) ──
-    mkdir -p "$QCLAW_DIR/scripts"
-
-    cat > "$QCLAW_DIR/scripts/cognee-start.sh" << 'COGNEE_START'
-#!/data/data/com.termux/files/usr/bin/bash
-# Start Cognee API server inside proot Ubuntu
-# Called by: install.sh, start.sh, qclaw start, boot script
-
-# Don't start if already running
-curl -sf http://localhost:8000/health >/dev/null 2>&1 && exit 0
-
-CONFIG_DIR="$HOME/.quantumclaw"
-COGNEE_ENV="$CONFIG_DIR/cognee.env"
-VENV="/opt/cognee-venv"
-
-# Load env vars from QClaw config (set during onboard)
-LLM_KEY="placeholder"
-LLM_PROVIDER="openai"
-LLM_MODEL="openai/gpt-4o-mini"
-[ -f "$COGNEE_ENV" ] && source "$COGNEE_ENV"
-
-# Start Cognee API server in background inside proot Ubuntu
-proot-distro login ubuntu -- bash -c "
-    export LLM_API_KEY='${LLM_KEY}'
-    export LLM_PROVIDER='${LLM_PROVIDER}'
-    export LLM_MODEL='${LLM_MODEL}'
-    export DB_PROVIDER=sqlite
-    export VECTOR_DB_PROVIDER=lancedb
-    export GRAPH_DATABASE_PROVIDER=kuzu
-    export REQUIRE_AUTHENTICATION=False
-    export ENABLE_BACKEND_ACCESS_CONTROL=False
-    export TELEMETRY_DISABLED=1
-    cd /opt
-    $VENV/bin/python -m uvicorn cognee.api.server:app --host 0.0.0.0 --port 8000
-" > "$CONFIG_DIR/cognee.log" 2>&1 &
-
-echo $! > "$CONFIG_DIR/cognee-proot.pid"
-COGNEE_START
-    chmod +x "$QCLAW_DIR/scripts/cognee-start.sh"
-
-    cat > "$QCLAW_DIR/scripts/cognee-configure.sh" << 'COGNEE_CONF'
-#!/data/data/com.termux/files/usr/bin/bash
-# Pass QClaw API keys to Cognee. Called during onboard.
-# Usage: bash cognee-configure.sh <provider> <api_key> [model]
-
-PROVIDER="${1:-openai}"
-API_KEY="${2:-}"
-MODEL="${3:-}"
-
-CONFIG_DIR="$HOME/.quantumclaw"
-mkdir -p "$CONFIG_DIR"
-
-case "$PROVIDER" in
-    anthropic) CP="anthropic"; [ -z "$MODEL" ] && MODEL="anthropic/claude-sonnet-4-5-20250929" ;;
-    openai)    CP="openai";    [ -z "$MODEL" ] && MODEL="openai/gpt-4o-mini" ;;
-    groq)      CP="groq";      [ -z "$MODEL" ] && MODEL="groq/llama-3.3-70b-versatile" ;;
-    google)    CP="gemini";    [ -z "$MODEL" ] && MODEL="gemini/gemini-2.0-flash" ;;
-    ollama)    CP="ollama";    [ -z "$MODEL" ] && MODEL="ollama/llama3.3" ;;
-    *)         CP="openai";    [ -z "$MODEL" ] && MODEL="openai/gpt-4o-mini" ;;
-esac
-
-cat > "$CONFIG_DIR/cognee.env" << EOF
-LLM_KEY="$API_KEY"
-LLM_PROVIDER="$CP"
-LLM_MODEL="$MODEL"
-EOF
-
-# Write .env inside proot for direct use
-proot-distro login ubuntu -- bash -c "
-    cat > /opt/cognee.env << ENVEOF
-LLM_API_KEY=$API_KEY
-LLM_PROVIDER=$CP
-LLM_MODEL=$MODEL
-DB_PROVIDER=sqlite
-VECTOR_DB_PROVIDER=lancedb
-GRAPH_DATABASE_PROVIDER=kuzu
-REQUIRE_AUTHENTICATION=False
-ENABLE_BACKEND_ACCESS_CONTROL=False
-TELEMETRY_DISABLED=1
-ENVEOF
-" 2>/dev/null
-
-echo "Cognee configured for $PROVIDER"
-COGNEE_CONF
-    chmod +x "$QCLAW_DIR/scripts/cognee-configure.sh"
-
-    # ── Now decide what to do ──────────────────────────────────
-
-    # Auto-repair: if marker exists but Cognee doesn't actually work, nuke the venv
-    if [ -f "$COGNEE_MARKER" ]; then
-        if ! proot-distro login ubuntu -- bash -c '/opt/cognee-venv/bin/python -c "import cognee" 2>/dev/null' 2>/dev/null; then
-            warn "Previous Cognee install is broken — repairing automatically..."
-            proot-distro login ubuntu -- rm -rf /opt/cognee-venv 2>/dev/null || true
-            rm -f "$COGNEE_MARKER"
-        fi
-    fi
-
-    if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
-        # Already running — nothing to do
-        ok "Cognee running (proot Ubuntu)"
-        echo '{"method":"proot-ubuntu"}' > "$COGNEE_META"
-
-    elif [ -f "$COGNEE_MARKER" ]; then
-        # Installed before but not running — just start it
-        info "Knowledge graph installed — starting it..."
-        bash "$QCLAW_DIR/scripts/cognee-start.sh" &
-        STARTED=false
-        for i in $(seq 1 20); do
-            curl -sf http://localhost:8000/health >/dev/null 2>&1 && { STARTED=true; break; }
-            sleep 1
-        done
-        if $STARTED; then
-            ok "Knowledge graph started"
-        else
-            warn "Didn't start yet — will retry when agent launches"
-            info "This is normal after a phone restart"
-        fi
-        echo '{"method":"proot-ubuntu"}' > "$COGNEE_META"
-
+if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+    # Cognee already running (local or remote)
+    ok "Cognee running"
+    echo '{"method":"cognee-api"}' > "$COGNEE_META"
+elif [ -f "$CONFIG_DIR/config.json" ] && grep -q '"cognee"' "$CONFIG_DIR/config.json" 2>/dev/null && grep -q '"url"' "$CONFIG_DIR/config.json" 2>/dev/null; then
+    # Remote Cognee configured — check if reachable
+    COGNEE_URL=$(grep -oP '"url"\s*:\s*"\K[^"]+' "$CONFIG_DIR/config.json" 2>/dev/null | head -1)
+    if [ -n "$COGNEE_URL" ] && curl -sf "$COGNEE_URL/health" >/dev/null 2>&1; then
+        ok "Cognee connected: $COGNEE_URL"
+        echo '{"method":"cognee-remote","url":"'$COGNEE_URL'"}' > "$COGNEE_META"
     else
-        # ── FIRST TIME INSTALL (only happens once) ────────────
-        echo ""
-        echo -e "  ${B}🧠 Installing Knowledge Graph${RS}"
-        echo -e "  ${D}┌─────────────────────────────────────────────────┐${RS}"
-        echo -e "  ${D}│${RS} This installs your agent's brain — a knowledge   ${D}│${RS}"
-        echo -e "  ${D}│${RS} graph that remembers everything about you and    ${D}│${RS}"
-        echo -e "  ${D}│${RS} your business. It runs locally on your phone.    ${D}│${RS}"
-        echo -e "  ${D}│${RS}                                                  ${D}│${RS}"
-        echo -e "  ${D}│${RS} ${Y}This is a one-time setup (5-10 minutes).${RS}        ${D}│${RS}"
-        echo -e "  ${D}│${RS} ${G}Future updates will skip this entirely.${RS}         ${D}│${RS}"
-        echo -e "  ${D}│${RS}                                                  ${D}│${RS}"
-        echo -e "  ${D}│${RS} ${B}DO NOT close Termux or lock your phone.${RS}         ${D}│${RS}"
-        echo -e "  ${D}│${RS} The screen may appear frozen — ${G}that's normal.${RS}   ${D}│${RS}"
-        echo -e "  ${D}│${RS} Large packages download silently.                ${D}│${RS}"
-        echo -e "  ${D}└─────────────────────────────────────────────────┘${RS}"
-        echo ""
-
-        # Ensure wake lock is active
-        command -v termux-wake-lock &>/dev/null && termux-wake-lock 2>/dev/null || true
-
-        # 1/4 — proot-distro
-        if ! command -v proot-distro &>/dev/null; then
-            pkg install -y proot proot-distro > ${TMPDIR:-/tmp}/qc-proot.log 2>&1 &
-            spinner $! "Installing proot-distro..."
-            ok "proot-distro installed"
-        else
-            ok "proot-distro (already installed)"
-        fi
-
-        # 2/4 — Ubuntu
-        if ! proot-distro list 2>/dev/null | grep -q "ubuntu.*installed"; then
-            echo ""
-            echo -e "  ${C}⬇${RS}  Downloading Ubuntu (~400MB)..."
-            echo -e "  ${D}   This is the longest step. Your phone is working hard.${RS}"
-            echo -e "  ${D}   WiFi recommended. On 4G this may take longer.${RS}"
-            echo ""
-            proot-distro install ubuntu > ${TMPDIR:-/tmp}/qc-ubuntu.log 2>&1 &
-            spinner $! "Downloading and extracting Ubuntu..."
-            if proot-distro list 2>/dev/null | grep -q "ubuntu.*installed"; then
-                ok "Ubuntu installed"
-            else
-                fail "Ubuntu install failed. Check ${TMPDIR:-/tmp}/qc-ubuntu.log"
-                echo '{"method":"skipped","reason":"ubuntu-install-failed"}' > "$COGNEE_META"
-                # Continue — they still get the local knowledge store
-            fi
-        else
-            ok "Ubuntu (already installed)"
-        fi
-
-        # 3/4 — Cognee venv (pre-built, no compilation on phone)
-        #
-        # Instead of compiling 200+ Python packages on the phone (fragile,
-        # slow, fails on many devices), we download a pre-built venv tarball
-        # that was compiled on a real arm64 Linux machine via GitHub Actions.
-        #
-        # The tarball contains Python 3.11 + Cognee + all dependencies,
-        # pre-compiled for aarch64. Just extract to /opt/cognee-venv.
-
-        COGNEE_VENV_URL="${COGNEE_VENV_URL:-https://github.com/QuantumClaw/QClaw/releases/download/cognee-v1/cognee-venv-arm64.tar.xz}"
-
-        if proot-distro login ubuntu -- bash -c 'test -d /opt/cognee-venv && /opt/cognee-venv/bin/python -c "import cognee" 2>/dev/null' 2>/dev/null; then
-            ok "Cognee venv (already installed)"
-        else
-            echo ""
-            echo -e "  ${C}🧠${RS} Downloading Cognee knowledge engine..."
-            echo -e "  ${D}   Pre-built for ARM64. No compilation needed.${RS}"
-            echo -e "  ${D}   Download size: ~100-150MB. Only happens once.${RS}"
-            echo ""
-
-            # Download and extract inside proot Ubuntu
-            proot-distro login ubuntu -- bash -c "
-                set -e
-                export DEBIAN_FRONTEND=noninteractive
-
-                # Install minimal deps (curl, xz for extraction)
-                apt-get update -qq 2>/dev/null
-                apt-get install -y -qq curl xz-utils python3.11 python3.11-venv 2>/dev/null || \
-                apt-get install -y -qq curl xz-utils python3 python3-venv 2>/dev/null
-
-                # Clean any broken previous install
-                rm -rf /opt/cognee-venv
-
-                # Download pre-built venv tarball
-                echo 'Downloading pre-built Cognee...'
-                curl -fSL '$COGNEE_VENV_URL' -o /tmp/cognee-venv-arm64.tar.xz
-
-                # Extract to /opt
-                echo 'Extracting...'
-                cd /opt && tar -xJf /tmp/cognee-venv-arm64.tar.xz
-                rm -f /tmp/cognee-venv-arm64.tar.xz
-
-                # Verify
-                /opt/cognee-venv/bin/python -c 'import cognee; print(cognee.__version__)'
-            " > ${TMPDIR:-/tmp}/qc-cognee.log 2>&1 &
-            spinner $! "Downloading Cognee knowledge engine..."
-
-            # Verify it worked
-            if proot-distro login ubuntu -- bash -c '/opt/cognee-venv/bin/python -c "import cognee; print(cognee.__version__)"' 2>/dev/null; then
-                ok "Cognee installed"
-            else
-                # Fallback: try compiling from pip (slow but might work on some devices)
-                warn "Pre-built download failed — trying pip install (slower)..."
-                info "Check log: cat ${TMPDIR:-/tmp}/qc-cognee.log"
-
-                proot-distro login ubuntu -- bash -c '
-                    set -e
-                    export DEBIAN_FRONTEND=noninteractive
-                    apt-get update -qq 2>/dev/null
-                    apt-get install -y -qq software-properties-common curl > /dev/null 2>&1
-                    add-apt-repository -y ppa:deadsnakes/ppa > /dev/null 2>&1 || true
-                    apt-get update -qq 2>/dev/null
-                    apt-get install -y -qq python3.11 python3.11-venv python3.11-dev > /dev/null 2>&1 || \
-                    apt-get install -y -qq python3 python3-pip python3-venv > /dev/null 2>&1
-                    PY="python3"; command -v python3.11 > /dev/null 2>&1 && PY="python3.11"
-                    VENV=/opt/cognee-venv
-                    rm -rf "$VENV"
-                    $PY -m venv "$VENV"
-                    "$VENV/bin/pip" install --upgrade pip > /dev/null 2>&1
-                    "$VENV/bin/pip" install uv 2>&1 | tail -2
-                    "$VENV/bin/uv" pip install --python "$VENV/bin/python" cognee uvicorn 2>&1 | tail -5 || \
-                    "$VENV/bin/pip" install cognee uvicorn 2>&1 | tail -5
-                ' >> ${TMPDIR:-/tmp}/qc-cognee.log 2>&1 &
-                spinner $! "Compiling Cognee from source (this takes 5-10 min)..."
-
-                if proot-distro login ubuntu -- bash -c '/opt/cognee-venv/bin/python -c "import cognee"' 2>/dev/null; then
-                    ok "Cognee installed (compiled from source)"
-                else
-                    warn "Cognee install failed"
-                    info "Check log: cat ${TMPDIR:-/tmp}/qc-cognee.log"
-                    info "Your agent still works — using local knowledge store"
-                    echo '{"method":"skipped","reason":"install-failed"}' > "$COGNEE_META"
-                fi
-            fi
-        fi
-
-        # 4/4 — Start and verify
-        echo ""
-        echo -e "  ${C}🚀${RS} Starting knowledge graph API..."
-        bash "$QCLAW_DIR/scripts/cognee-start.sh" &
-        sleep 2
-
-        HEALTHY=false
-        for i in $(seq 1 30); do
-            curl -sf http://localhost:8000/health >/dev/null 2>&1 && { HEALTHY=true; break; }
-            [ $((i % 5)) -eq 0 ] && printf "\r  ${D}  Still starting... (%ss)${RS}  " "$i"
-            sleep 1
-        done
-        printf "\r                                          \r"
-
-        if $HEALTHY; then
-            ok "Knowledge graph running on localhost:8000"
-            echo '{"method":"proot-ubuntu"}' > "$COGNEE_META"
-            touch "$COGNEE_MARKER"
-            echo ""
-            echo -e "  ${G}┌─────────────────────────────────────────────────┐${RS}"
-            echo -e "  ${G}│${RS} ${B}Knowledge graph installed successfully!${RS}         ${G}│${RS}"
-            echo -e "  ${G}│${RS} Your agent now has a brain that remembers.       ${G}│${RS}"
-            echo -e "  ${G}│${RS} This will ${B}never need to install again${RS} —         ${G}│${RS}"
-            echo -e "  ${G}│${RS} updates just pull new code in seconds.           ${G}│${RS}"
-            echo -e "  ${G}└─────────────────────────────────────────────────┘${RS}"
-        else
-            warn "Knowledge graph API didn't start"
-            info "This sometimes happens on first boot. It will retry on next start."
-            info "Your agent still works — it uses the local knowledge store."
-            info "Run 'qclaw start' and it will try Cognee again automatically."
-            echo '{"method":"skipped","reason":"api-timeout"}' > "$COGNEE_META"
-            touch "$COGNEE_MARKER"  # Mark as installed so it doesn't re-download
-        fi
+        info "Remote Cognee configured but not reachable: $COGNEE_URL"
+        info "Using local knowledge graph (will retry Cognee when agent starts)"
     fi
+fi
+
+# Local knowledge graph ALWAYS available as base layer
+ok "Local knowledge graph (Node.js — works on all devices)"
+info "Entities, relationships, semantic/episodic/procedural memory"
+
+if $IS_TERMUX; then
+    echo ""
+    echo -e "  ${D}┌──────────────────────────────────────────────────┐${RS}"
+    echo -e "  ${D}│${RS} ${B}Want the full Cognee knowledge graph brain?${RS}      ${D}│${RS}"
+    echo -e "  ${D}│${RS}                                                  ${D}│${RS}"
+    echo -e "  ${D}│${RS} Run this on your PC/laptop/Pi:                   ${D}│${RS}"
+    echo -e "  ${D}│${RS} ${C}curl -sL qclaw.dev/cognee | bash${RS}                ${D}│${RS}"
+    echo -e "  ${D}│${RS}                                                  ${D}│${RS}"
+    echo -e "  ${D}│${RS} Then on your phone:                              ${D}│${RS}"
+    echo -e "  ${D}│${RS} ${C}qclaw setup-cognee${RS}                              ${D}│${RS}"
+    echo -e "  ${D}│${RS}                                                  ${D}│${RS}"
+    echo -e "  ${D}│${RS} ${D}Your data stays on YOUR machine. Free forever.${RS} ${D}│${RS}"
+    echo -e "  ${D}└──────────────────────────────────────────────────┘${RS}"
 else
+    # Desktop/server — try to install Cognee locally via pip/docker
     DONE=false
 
     # Docker
     if ! $DONE && command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
-        info "Docker pull..."
+        info "Docker found — installing Cognee..."
         docker pull cognee/cognee:latest 2>&1 | tail -2
         docker rm -f quantumclaw-cognee 2>/dev/null || true
         docker run -d --name quantumclaw-cognee --restart unless-stopped \
@@ -521,7 +246,7 @@ else
             -e ENABLE_BACKEND_ACCESS_CONTROL=false \
             -v quantumclaw-cognee-data:/app/cognee/.cognee_system \
             cognee/cognee:latest >/dev/null
-        DONE=true; ok "Docker"
+        DONE=true; ok "Cognee (Docker)"
     fi
 
     # pip (Linux/Mac only)
@@ -531,13 +256,13 @@ else
         [ -z "$PIP" ] && command -v pip &>/dev/null && PIP="pip"
 
         if [ -n "$PIP" ]; then
-            info "$PIP install cognee..."
+            info "Installing Cognee via pip..."
             if $PIP install cognee uvicorn 2>&1 | tail -3; then
                 PY="python3"; command -v python3 &>/dev/null || PY="python"
                 nohup $PY -m uvicorn cognee.api.server:app --host 0.0.0.0 --port 8000 \
                     > "$CONFIG_DIR/cognee.log" 2>&1 &
                 echo $! > "$CONFIG_DIR/cognee.pid"
-                DONE=true; ok "pip"
+                DONE=true; ok "Cognee (pip)"
             else
                 warn "pip install failed"
             fi
@@ -545,14 +270,11 @@ else
     fi
 
     if $DONE; then
-        info "Waiting..."
+        info "Waiting for Cognee API..."
         for i in $(seq 1 20); do
-            curl -sf http://localhost:8000/health >/dev/null 2>&1 && { ok "Healthy"; echo '{"method":"auto"}' > "$COGNEE_META"; break; }
+            curl -sf http://localhost:8000/health >/dev/null 2>&1 && { ok "Cognee healthy"; echo '{"method":"auto"}' > "$COGNEE_META"; break; }
             sleep 1
         done
-    else
-        warn "No Docker — local memory only"
-        echo '{"method":"skipped"}' > "$COGNEE_META"
     fi
 fi
 echo ""
