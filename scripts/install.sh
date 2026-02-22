@@ -270,8 +270,14 @@ if [ -f "$BIN_TARGET" ]; then
     chmod +x "$BIN_TARGET"
 fi
 
-# Method 1: npm link
-npm link 2>/dev/null || npm link --force 2>/dev/null || true
+# Method 1: npm link (needs sudo on Linux when prefix is /usr)
+if $IS_TERMUX; then
+    npm link 2>/dev/null || npm link --force 2>/dev/null || true
+elif [ "$(npm config get prefix 2>/dev/null)" = "/usr" ] || [ "$(npm config get prefix 2>/dev/null)" = "/usr/local" ]; then
+    sudo npm link 2>/dev/null || npm link 2>/dev/null || true
+else
+    npm link 2>/dev/null || npm link --force 2>/dev/null || true
+fi
 
 # Method 2: Manual symlink if npm link failed
 if ! command -v qclaw &>/dev/null; then
