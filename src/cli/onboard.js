@@ -127,6 +127,25 @@ export async function runOnboard() {
   });
   if (p.isCancel(name)) { p.cancel('Cancelled.'); process.exit(0); }
 
+  // Dashboard PIN (optional but recommended for remote access)
+  const wantPin = await p.confirm({
+    message: 'Set a dashboard PIN? (protects remote access)',
+    initialValue: true
+  });
+  if (p.isCancel(wantPin)) { p.cancel('Cancelled.'); process.exit(0); }
+
+  let dashPin = null;
+  if (wantPin) {
+    dashPin = await p.password({
+      message: 'Dashboard PIN (4-8 digits):',
+      validate: v => {
+        if (!v) return 'Enter a PIN';
+        if (!/^\d{4,8}$/.test(v)) return '4-8 digits only';
+      }
+    });
+    if (p.isCancel(dashPin)) { p.cancel('Cancelled.'); process.exit(0); }
+  }
+
   // ─── Save ─────────────────────────────────────────────
 
   const s = p.spinner();
@@ -160,7 +179,9 @@ export async function runOnboard() {
   const dashToken = randomBytes(16).toString('hex');
   config.dashboard = config.dashboard || {};
   config.dashboard.authToken = dashToken;
+  config.dashboard.tokenCreatedAt = Date.now();
   config.dashboard.enabled = true;
+  if (dashPin) config.dashboard.pin = dashPin;
 
   saveConfig(config);
 
@@ -206,18 +227,34 @@ export async function runOnboard() {
   console.log('');
   console.log(`  ${green}✓${reset} ${bold}Ready, ${name}.${reset}`);
   console.log('');
-  console.log(`  ${bold}Next step:${reset}`);
-  console.log(`  ${cyan}qclaw start${reset}  ${dim}— launches your agent + opens dashboard${reset}`);
+  console.log(`  ${green}┌─────────────────────────────────────────────────┐${reset}`);
+  console.log(`  ${green}│${reset}                                                 ${green}│${reset}`);
+  console.log(`  ${green}│${reset}  ${bold}Now run:${reset}                                      ${green}│${reset}`);
+  console.log(`  ${green}│${reset}                                                 ${green}│${reset}`);
+  console.log(`  ${green}│${reset}    ${cyan}qclaw start${reset}                                  ${green}│${reset}`);
+  console.log(`  ${green}│${reset}                                                 ${green}│${reset}`);
+  console.log(`  ${green}└─────────────────────────────────────────────────┘${reset}`);
   console.log('');
+
   if (telegramToken) {
-    console.log(`  ${bold}Telegram pairing:${reset} ${dim}(after qclaw start)${reset}`);
-    console.log(`  ${dim}1. Send${reset} /start ${dim}to your bot in Telegram${reset}`);
-    console.log(`  ${dim}2. Copy the pairing code it gives you${reset}`);
-    console.log(`  ${dim}3. Run:${reset} ${cyan}qclaw pairing approve telegram CODE${reset}`);
+    console.log(`  ${bold}After starting — pair Telegram:${reset}`);
+    console.log('');
+    console.log(`  ${dim}1.${reset} Send ${cyan}/start${reset} to your bot in Telegram`);
+    console.log(`  ${dim}2.${reset} It replies with an 8-letter code`);
+    console.log(`  ${dim}3.${reset} Open a new terminal tab and run:`);
+    console.log('');
+    console.log(`     ${cyan}qclaw pairing approve telegram CODE${reset}`);
+    console.log('');
+    console.log(`  ${dim}Replace CODE with the code from Telegram.${reset}`);
     console.log('');
   }
-  console.log(`  ${dim}A public dashboard URL will be printed when you start.${reset}`);
-  console.log(`  ${dim}You can re-show it anytime with:${reset} ${cyan}qclaw dashboard${reset}`);
+
+  console.log(`  ${bold}Useful commands:${reset}`);
+  console.log(`  ${cyan}qclaw start${reset}       ${dim}launch agent + dashboard${reset}`);
+  console.log(`  ${cyan}qclaw dashboard${reset}   ${dim}re-show dashboard URL${reset}`);
+  console.log(`  ${cyan}qclaw chat${reset}        ${dim}chat in terminal${reset}`);
+  console.log(`  ${cyan}qclaw status${reset}      ${dim}health check${reset}`);
+  console.log(`  ${cyan}qclaw help${reset}        ${dim}all commands${reset}`);
   console.log('');
 }
 

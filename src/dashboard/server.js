@@ -9,7 +9,7 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import { log } from '../core/logger.js';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -28,16 +28,30 @@ export class DashboardServer {
 
   async start() {
     const port = this.config.dashboard?.port || 3000;
-    const host = this.config.dashboard?.host || '127.0.0.1';
+    const isTermux = existsSync('/data/data/com.termux');
+    // Desktop: localhost only. Mobile/Termux: bind all interfaces for tunnel
+    const host = this.config.dashboard?.host || (isTermux ? '0.0.0.0' : '127.0.0.1');
 
-    // Generate a session auth token (always — protects dashboard even locally)
+    // Generate session auth token with expiry
+    const tokenAge = this.config.dashboard?.tokenExpiry || 86400000; // 24h default
     if (!this.config.dashboard?.authToken && !process.env.DASHBOARD_AUTH_TOKEN) {
       const { randomBytes } = await import('crypto');
       this.sessionToken = randomBytes(16).toString('hex');
+      this.tokenCreatedAt = Date.now();
       process.env.DASHBOARD_AUTH_TOKEN = this.sessionToken;
     } else {
       this.sessionToken = this.config.dashboard?.authToken || process.env.DASHBOARD_AUTH_TOKEN;
+      this.tokenCreatedAt = this.config.dashboard?.tokenCreatedAt || Date.now();
     }
+    this.tokenExpiry = tokenAge;
+
+    // PIN protection (set during onboard or via config)
+    this.pin = this.config.dashboard?.pin || null;
+
+    // Auth lockout tracking
+    this.authAttempts = new Map(); // ip -> { count, lockedUntil }
+    this.AUTH_MAX_ATTEMPTS = 5;
+    this.AUTH_LOCKOUT_MS = 900000; // 15 minutes
 
     this.app.use(express.json());
 
@@ -137,6 +151,7 @@ export class DashboardServer {
   }
 
   async stop() {
+    if (this._wsHeartbeat) clearInterval(this._wsHeartbeat);
     if (this.tunnel) {
       try { await this._stopTunnel(); } catch { /* best effort */ }
     }
@@ -147,36 +162,66 @@ export class DashboardServer {
   _setupAPI() {
     // Rate limiter: track requests per IP per minute
     const rateLimit = new Map();
-    const RATE_LIMIT = 30; // max requests per minute per IP
+    const RATE_LIMIT = 30;
     const RATE_WINDOW = 60000;
 
-    // Proactive cleanup every 2 minutes to prevent memory leak
     const rateLimitCleanup = setInterval(() => {
       const now = Date.now();
       for (const [key, val] of rateLimit) {
         if (now - val.start > RATE_WINDOW) rateLimit.delete(key);
       }
+      // Clean expired lockouts
+      for (const [key, val] of this.authAttempts) {
+        if (val.lockedUntil && now > val.lockedUntil) this.authAttempts.delete(key);
+      }
     }, 120000);
-    rateLimitCleanup.unref(); // Don't keep process alive just for cleanup
+    rateLimitCleanup.unref();
 
     this.app.use((req, res, next) => {
-      // Skip auth for HTML page and health check
-      if (req.path === '/' || req.path === '/favicon.ico' || req.path === '/api/health') return next();
+      // Skip auth for HTML pages, health check, and PIN verify endpoint
+      if (req.path === '/' || req.path === '/onboard' || req.path === '/favicon.ico' || 
+          req.path === '/api/health' || req.path === '/api/auth/verify-pin') return next();
 
-      // Optional auth token (set via config or env)
+      const ip = req.ip || req.socket.remoteAddress;
+
+      // Check auth lockout
+      const lockout = this.authAttempts.get(ip);
+      if (lockout?.lockedUntil && Date.now() < lockout.lockedUntil) {
+        const remaining = Math.ceil((lockout.lockedUntil - Date.now()) / 60000);
+        return res.status(429).json({ error: `Locked out. Try again in ${remaining} minutes.` });
+      }
+
+      // Token auth
       const authToken = this.config.dashboard?.authToken || process.env.DASHBOARD_AUTH_TOKEN;
       if (authToken) {
         const provided = req.headers['authorization']?.replace('Bearer ', '') || req.query.token;
         if (provided !== authToken) {
+          // Track failed attempt
+          const attempts = this.authAttempts.get(ip) || { count: 0 };
+          attempts.count++;
+          if (attempts.count >= this.AUTH_MAX_ATTEMPTS) {
+            attempts.lockedUntil = Date.now() + this.AUTH_LOCKOUT_MS;
+            log.warn(`Dashboard auth lockout: ${ip} (${this.AUTH_MAX_ATTEMPTS} failed attempts)`);
+          }
+          this.authAttempts.set(ip, attempts);
           return res.status(401).json({ error: 'Unauthorised' });
         }
+
+        // Token expiry check (skip for localhost connections)
+        const isLocal = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+        if (!isLocal && this.tokenCreatedAt && this.tokenExpiry) {
+          if (Date.now() - this.tokenCreatedAt > this.tokenExpiry) {
+            return res.status(401).json({ error: 'Token expired. Run: qclaw dashboard' });
+          }
+        }
+
+        // Reset failed attempts on success
+        this.authAttempts.delete(ip);
       }
 
       // Rate limit check
-      const ip = req.ip || req.socket.remoteAddress;
       const now = Date.now();
       const entry = rateLimit.get(ip);
-
       if (entry && now - entry.start < RATE_WINDOW) {
         entry.count++;
         if (entry.count > RATE_LIMIT) {
@@ -187,6 +232,42 @@ export class DashboardServer {
       }
 
       next();
+    });
+
+    // PIN verification endpoint (for dashboard UI to check PIN before showing content)
+    this.app.post('/api/auth/verify-pin', (req, res) => {
+      if (!this.pin) {
+        return res.json({ ok: true, pinRequired: false });
+      }
+      const ip = req.ip || req.socket.remoteAddress;
+      
+      // Check lockout
+      const lockout = this.authAttempts.get(ip);
+      if (lockout?.lockedUntil && Date.now() < lockout.lockedUntil) {
+        const remaining = Math.ceil((lockout.lockedUntil - Date.now()) / 60000);
+        return res.status(429).json({ error: `Locked out. Try again in ${remaining} minutes.` });
+      }
+
+      const { pin } = req.body;
+      if (String(pin) === String(this.pin)) {
+        this.authAttempts.delete(ip);
+        return res.json({ ok: true });
+      }
+      
+      // Track failed PIN attempt
+      const attempts = this.authAttempts.get(ip) || { count: 0 };
+      attempts.count++;
+      if (attempts.count >= this.AUTH_MAX_ATTEMPTS) {
+        attempts.lockedUntil = Date.now() + this.AUTH_LOCKOUT_MS;
+        log.warn(`Dashboard PIN lockout: ${ip} (${this.AUTH_MAX_ATTEMPTS} failed attempts)`);
+      }
+      this.authAttempts.set(ip, attempts);
+      return res.status(401).json({ error: 'Wrong PIN', attemptsLeft: this.AUTH_MAX_ATTEMPTS - attempts.count });
+    });
+
+    // Check if PIN is required (no auth needed for this)
+    this.app.get('/api/auth/pin-required', (req, res) => {
+      res.json({ pinRequired: !!this.pin });
     });
 
     // Health endpoint is always open (for Docker health checks, monitoring)
@@ -224,9 +305,24 @@ export class DashboardServer {
       res.json(this.qclaw.audit.recent(limit));
     });
 
-    // Agents list
+    // Agents list (with stats)
     this.app.get('/api/agents', (req, res) => {
-      res.json(this.qclaw.agents.list());
+      const agents = [];
+      for (const name of this.qclaw.agents.list()) {
+        const agent = this.qclaw.agents.get(name);
+        const threads = this.qclaw.memory.getThreads(name);
+        const totalMessages = threads.reduce((sum, t) => sum + t.messageCount, 0);
+        agents.push({
+          name: agent.name,
+          model: this.qclaw.config.models?.primary?.model || 'auto',
+          provider: this.qclaw.config.models?.primary?.provider || 'unknown',
+          skills: agent.skills?.length || 0,
+          threads: threads.length,
+          messages: totalMessages,
+          isPrimary: name === 'echo'
+        });
+      }
+      res.json(agents);
     });
 
     // Skills list
@@ -250,6 +346,85 @@ export class DashboardServer {
       } catch (err) {
         res.status(500).json({ error: err.message });
       }
+    });
+
+    // ─── Conversation Threads ───────────────────────────────
+    this.app.get('/api/threads', (req, res) => {
+      const agent = this.qclaw.agents.primary();
+      if (!agent) return res.json([]);
+      const threads = this.qclaw.memory.getThreads(agent.name);
+      res.json(threads);
+    });
+
+    this.app.get('/api/threads/history', (req, res) => {
+      const agent = this.qclaw.agents.primary();
+      if (!agent) return res.json([]);
+      const { channel, userId } = req.query;
+      const limit = parseInt(req.query.limit) || 50;
+      const history = this.qclaw.memory.getHistory(agent.name, limit, {
+        channel: channel || undefined,
+        userId: userId || undefined
+      });
+      res.json(history);
+    });
+
+    // ─── Stats ──────────────────────────────────────────────
+    this.app.get('/api/stats', (req, res) => {
+      const memStats = this.qclaw.memory.getStats();
+      const costStats = this.qclaw.audit.costSummary();
+      res.json({ memory: memStats, costs: costStats });
+    });
+
+    // ─── Config Management ──────────────────────────────────
+    this.app.get('/api/config', (req, res) => {
+      const { _dir, _file, ...safe } = this.qclaw.config;
+      if (safe.dashboard?.authToken) safe.dashboard.authToken = '***';
+      if (safe.dashboard?.pin) safe.dashboard.pin = '***';
+      res.json(safe);
+    });
+
+    this.app.post('/api/config', async (req, res) => {
+      try {
+        const { key, value } = req.body;
+        if (!key) return res.status(400).json({ error: 'key required' });
+        const blocked = ['_dir', '_file', 'dashboard.authToken', 'dashboard.pin'];
+        if (blocked.includes(key)) return res.status(403).json({ error: 'Cannot modify this key via API' });
+
+        const { saveConfig } = await import('../core/config.js');
+        const keys = key.split('.');
+        let target = this.qclaw.config;
+        for (let i = 0; i < keys.length - 1; i++) {
+          if (!target[keys[i]] || typeof target[keys[i]] !== 'object') target[keys[i]] = {};
+          target = target[keys[i]];
+        }
+        let parsed = value;
+        if (value === 'true') parsed = true;
+        else if (value === 'false') parsed = false;
+        else if (typeof value === 'string' && !isNaN(value) && value !== '') parsed = Number(value);
+        target[keys[keys.length - 1]] = parsed;
+        saveConfig(this.qclaw.config);
+        res.json({ ok: true, key, value: parsed });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // ─── Channel Status ─────────────────────────────────────
+    this.app.get('/api/channels', (req, res) => {
+      const channels = [];
+      for (const ch of (this.qclaw.channels?.channels || [])) {
+        const name = ch.channelConfig?.channelName || 'unknown';
+        const paired = ch.channelConfig?.allowedUsers?.length || 0;
+        const pending = ch.pendingPairings?.size || 0;
+        const botName = ch.botInfo?.username || null;
+        channels.push({ name, status: 'active', paired, pending, botName });
+      }
+      channels.push({ name: 'dashboard', status: 'active', tunnel: this.tunnelUrl || null });
+      res.json(channels);
+    });
+
+    // ─── Agent Restart ──────────────────────────────────────
+    this.app.post('/api/restart', async (req, res) => {
+      res.json({ ok: true, message: 'Restarting...' });
+      setTimeout(() => { process.exit(0); }, 500);
     });
 
     // Pairing: list pending codes
@@ -323,6 +498,9 @@ export class DashboardServer {
         }
       }
 
+      ws.isAlive = true;
+      ws.on('pong', () => { ws.isAlive = true; });
+
       ws.on('message', async (data) => {
         try {
           const { message, agent: agentName } = JSON.parse(data);
@@ -341,6 +519,29 @@ export class DashboardServer {
           ws.send(JSON.stringify({ type: 'error', error: err.message }));
         }
       });
+    });
+
+    // Heartbeat to detect dead connections
+    this._wsHeartbeat = setInterval(() => {
+      this.wss.clients.forEach(ws => {
+        if (!ws.isAlive) return ws.terminate();
+        ws.isAlive = false;
+        ws.ping();
+      });
+    }, 30000);
+  }
+
+  /**
+   * Broadcast a message to all connected dashboard clients.
+   * Used by channels (Telegram etc.) to show messages in real-time.
+   */
+  broadcast(data) {
+    if (!this.wss) return;
+    const payload = JSON.stringify(data);
+    this.wss.clients.forEach(ws => {
+      if (ws.readyState === 1) { // OPEN
+        try { ws.send(payload); } catch { /* dead socket */ }
+      }
     });
   }
 

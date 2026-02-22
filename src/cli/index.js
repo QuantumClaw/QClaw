@@ -246,27 +246,42 @@ switch (command) {
   // ─── DIAGNOSE ─────────────────────────────────────────────────
   case 'diagnose': {
     smallBanner();
-    console.log('\nRunning diagnostics...\n');
+    console.log('\n  Running diagnostics...\n');
     const { config, secrets } = await loadCore();
 
     const ok = (msg) => console.log(`  \x1b[38;5;82m✓\x1b[0m ${msg}`);
     const warn = (msg) => console.log(`  \x1b[38;5;220m○\x1b[0m ${msg}`);
     const fail = (msg) => console.log(`  \x1b[38;5;196m✗\x1b[0m ${msg}`);
+    const info = (msg) => console.log(`  \x1b[2m${msg}\x1b[0m`);
+
+    let issues = 0;
+    let gatewayRunning = false;
 
     // Node version
     const nodeVer = process.version;
     const major = parseInt(nodeVer.slice(1));
-    major >= 20 ? ok(`Node.js: ${nodeVer}`) : fail(`Node.js: ${nodeVer} (need 20+)`);
+    major >= 20 ? ok(`Node.js: ${nodeVer}`) : (fail(`Node.js: ${nodeVer} (need 20+)`), issues++);
 
     // Platform
     ok(`Platform: ${process.platform}-${process.arch}`);
 
+    // Cloudflared
+    try {
+      const { execSync } = await import('child_process');
+      const cfVer = execSync('cloudflared --version 2>&1', { encoding: 'utf-8' }).trim();
+      ok(`Cloudflared: ${cfVer.match(/\d+\.\d+\.\d+/)?.[0] || 'installed'}`);
+    } catch {
+      warn('Cloudflared: not installed (dashboard won\'t be accessible remotely)');
+      info('  Fix: bash scripts/install.sh (or install manually)');
+      issues++;
+    }
+
     // Config
-    existsSync(config._file) ? ok(`Config: ${config._file}`) : warn('Config: not found (run onboard)');
+    existsSync(config._file) ? ok(`Config: ${config._file}`) : (warn('Config: not found (run onboard)'), issues++);
 
     // Secrets
     const secretCount = secrets.list().length;
-    secretCount > 0 ? ok(`Secrets: ${secretCount} keys encrypted (AES-256-GCM)`) : warn('Secrets: none stored');
+    secretCount > 0 ? ok(`Secrets: ${secretCount} keys encrypted (AES-256-GCM)`) : (warn('Secrets: none stored'), issues++);
 
     // Trust Kernel
     const valuesFile = join(config._dir, 'VALUES.md');
@@ -278,27 +293,24 @@ switch (command) {
       const hasKey = secrets.has(`${primaryProvider}_api_key`) || primaryProvider === 'ollama';
       hasKey
         ? ok(`Primary model: ${primaryProvider}/${config.models.primary.model}`)
-        : fail(`Primary model: ${primaryProvider} (API key missing)`);
+        : (fail(`Primary model: ${primaryProvider} (API key missing)`), issues++);
     } else {
       warn('Primary model: not configured');
+      issues++;
     }
 
     // Fast model
     const fastProvider = config.models?.fast?.provider;
-    if (fastProvider) {
-      ok(`Fast model: ${fastProvider}/${config.models.fast.model}`);
-    } else {
-      warn('Fast model: not configured (all messages use primary)');
-    }
+    fastProvider
+      ? ok(`Fast model: ${fastProvider}/${config.models.fast.model}`)
+      : warn('Fast model: not configured (all messages use primary)');
 
     // Cognee
     const cogneeUrl = config.memory?.cognee?.url || 'http://localhost:8000';
     if (config.memory?.cognee?.enabled !== false) {
       try {
         const res = await fetch(cogneeUrl + '/health', { signal: AbortSignal.timeout(3000) });
-        res.ok
-          ? ok(`Cognee: connected (${cogneeUrl})`)
-          : warn(`Cognee: responded with ${res.status}`);
+        res.ok ? ok(`Cognee: connected (${cogneeUrl})`) : warn(`Cognee: responded with ${res.status}`);
       } catch {
         warn(`Cognee: not reachable at ${cogneeUrl}`);
       }
@@ -309,8 +321,7 @@ switch (command) {
     // Memory layers
     const layers = [];
     if (secrets.has('cognee_token')) layers.push('graph');
-    layers.push('sqlite');
-    layers.push('workspace');
+    layers.push('sqlite', 'workspace');
     ok(`Memory: ${layers.join(' + ')} (${layers.length} layers)`);
 
     // Channels
@@ -319,20 +330,73 @@ switch (command) {
       if (name === 'telegram') {
         secrets.has('telegram_bot_token')
           ? ok('Channel: Telegram (token present)')
-          : fail('Channel: Telegram (token missing)');
+          : (fail('Channel: Telegram (token missing)'), issues++);
       } else {
         ok(`Channel: ${name}`);
       }
     }
     if (channels.length === 0) warn('Channels: none configured');
 
-    // Dashboard
+    // Dashboard / Gateway
+    console.log('');
+    console.log('  \x1b[1mGateway\x1b[0m');
     const dashPort = config.dashboard?.port || 3000;
     try {
       const res = await fetch(`http://127.0.0.1:${dashPort}/api/health`, { signal: AbortSignal.timeout(2000) });
-      res.ok ? ok(`Dashboard: running on :${dashPort}`) : warn(`Dashboard: responded with ${res.status}`);
+      if (res.ok) {
+        const health = await res.json();
+        gatewayRunning = true;
+        ok(`Dashboard: running on :${dashPort}`);
+        ok(`Degradation level: ${health.degradationLevel}/5`);
+        ok(`Agents: ${health.agents}`);
+        if (health.tunnel) {
+          ok(`Tunnel: ${health.tunnel}`);
+        } else {
+          warn('Tunnel: not active (dashboard is localhost only)');
+        }
+      } else {
+        warn(`Dashboard: responded with ${res.status}`);
+      }
     } catch {
-      warn('Dashboard: not running (start agent first)');
+      fail('Dashboard: not running');
+      info('  Fix: qclaw start');
+      issues++;
+    }
+
+    // Check PID file for crash detection
+    const pidFile = join(config._dir, 'qclaw.pid');
+    if (existsSync(pidFile)) {
+      try {
+        const pid = parseInt(readFileSync(pidFile, 'utf-8').trim());
+        try {
+          process.kill(pid, 0); // Check if process exists
+          ok(`Agent process: running (PID ${pid})`);
+        } catch {
+          fail(`Agent process: crashed (PID ${pid} not found)`);
+          info('  The agent was running but has stopped unexpectedly.');
+          info('  Fix: qclaw start');
+          issues++;
+        }
+      } catch { /* corrupt pid file */ }
+    }
+
+    // Dashboard security
+    console.log('');
+    console.log('  \x1b[1mSecurity\x1b[0m');
+    config.dashboard?.authToken ? ok('Auth token: set') : warn('Auth token: not set');
+    config.dashboard?.pin ? ok('Dashboard PIN: enabled') : warn('Dashboard PIN: not set (recommended for remote access)');
+    info('  Set PIN: qclaw config set dashboard.pin 1234');
+
+    // Token age
+    if (config.dashboard?.tokenCreatedAt) {
+      const age = Date.now() - config.dashboard.tokenCreatedAt;
+      const hours = Math.floor(age / 3600000);
+      const expiry = config.dashboard?.tokenExpiry || 86400000;
+      if (age > expiry) {
+        warn(`Token age: ${hours}h (expired — run qclaw dashboard for a fresh URL)`);
+      } else {
+        ok(`Token age: ${hours}h (expires in ${Math.floor((expiry - age) / 3600000)}h)`);
+      }
     }
 
     // AGEX
@@ -358,7 +422,33 @@ switch (command) {
       ok(`Disk: ${parts[3]} available`);
     } catch { /* skip */ }
 
-    console.log('\nDone.\n');
+    // Summary
+    console.log('');
+    if (issues === 0) {
+      console.log('  \x1b[38;5;82m✓ All checks passed.\x1b[0m');
+    } else {
+      console.log(`  \x1b[38;5;220m${issues} issue(s) found.\x1b[0m`);
+    }
+
+    // Auto-restart offer if gateway is down
+    if (!gatewayRunning && existsSync(config._file)) {
+      console.log('');
+      const p = await import('@clack/prompts');
+      const restart = await p.confirm({
+        message: 'Gateway is not running. Start it now?',
+        initialValue: true
+      });
+      if (restart && !p.isCancel(restart)) {
+        console.log('');
+        console.log('  Starting agent...');
+        const { exec } = await import('child_process');
+        exec('qclaw start', { detached: true, stdio: 'ignore' }).unref();
+        console.log('  \x1b[38;5;82m✓\x1b[0m Agent starting in background.');
+        console.log('  Run \x1b[36mqclaw dashboard\x1b[0m to get the URL.');
+      }
+    }
+
+    console.log('');
     break;
   }
 
@@ -1028,15 +1118,21 @@ switch (command) {
     const host = config.dashboard?.host || '127.0.0.1';
     const localHost = host === '0.0.0.0' ? 'localhost' : host;
 
-    // Get or generate auth token
+    // Get or generate auth token (refresh if expired)
     let token = config.dashboard?.authToken || process.env.DASHBOARD_AUTH_TOKEN;
-    if (!token) {
+    const tokenAge = config.dashboard?.tokenCreatedAt ? Date.now() - config.dashboard.tokenCreatedAt : 0;
+    const tokenExpiry = config.dashboard?.tokenExpiry || 86400000;
+    const tokenExpired = tokenAge > tokenExpiry;
+
+    if (!token || tokenExpired) {
       const { randomBytes } = await import('crypto');
       token = randomBytes(16).toString('hex');
       const { saveConfig } = await import('../core/config.js');
       if (!config.dashboard) config.dashboard = {};
       config.dashboard.authToken = token;
+      config.dashboard.tokenCreatedAt = Date.now();
       saveConfig(config);
+      if (tokenExpired) console.log(`  \x1b[33mToken expired — new token generated.\x1b[0m\n`);
     }
 
     const localUrl = `http://${localHost}:${port}/#token=${token}`;

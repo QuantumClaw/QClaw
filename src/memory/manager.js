@@ -59,9 +59,14 @@ export class MemoryManager {
         timestamp TEXT DEFAULT (datetime('now')),
         model TEXT,
         tier TEXT,
-        tokens INTEGER
+        tokens INTEGER,
+        channel TEXT DEFAULT 'dashboard',
+        user_id TEXT,
+        username TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_conv_agent ON conversations(agent, timestamp);
+      CREATE INDEX IF NOT EXISTS idx_conv_channel ON conversations(channel, timestamp);
+      CREATE INDEX IF NOT EXISTS idx_conv_thread ON conversations(agent, channel, user_id);
 
       CREATE TABLE IF NOT EXISTS context (
         key TEXT PRIMARY KEY,
@@ -130,15 +135,16 @@ export class MemoryManager {
   addMessage(agent, role, content, meta = {}) {
     if (this.db) {
       this.db.prepare(`
-        INSERT INTO conversations (agent, role, content, model, tier, tokens)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(agent, role, content, meta.model || null, meta.tier || null, meta.tokens || null);
+        INSERT INTO conversations (agent, role, content, model, tier, tokens, channel, user_id, username)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(agent, role, content, meta.model || null, meta.tier || null, meta.tokens || null,
+             meta.channel || 'dashboard', meta.userId || null, meta.username || null);
     } else if (this._jsonStore) {
       this._jsonStore.conversations.push({
         agent, role, content, timestamp: new Date().toISOString(),
-        model: meta.model || null, tier: meta.tier || null, tokens: meta.tokens || null
+        model: meta.model || null, tier: meta.tier || null, tokens: meta.tokens || null,
+        channel: meta.channel || 'dashboard', userId: meta.userId || null, username: meta.username || null
       });
-      // Keep last 500 messages to prevent unbounded growth
       if (this._jsonStore.conversations.length > 500) {
         this._jsonStore.conversations = this._jsonStore.conversations.slice(-500);
       }
@@ -166,24 +172,99 @@ export class MemoryManager {
   /**
    * Get recent conversation history for context
    */
-  getHistory(agent, limit = 20) {
+  getHistory(agent, limit = 20, options = {}) {
+    const { channel, userId } = options;
+
     if (this.db) {
-      return this.db.prepare(`
-        SELECT role, content, timestamp, model, tier
-        FROM conversations
-        WHERE agent = ?
-        ORDER BY id DESC
-        LIMIT ?
-      `).all(agent, limit).reverse();
+      let sql = `SELECT role, content, timestamp, model, tier, channel, user_id, username
+                 FROM conversations WHERE agent = ?`;
+      const params = [agent];
+
+      if (channel) { sql += ' AND channel = ?'; params.push(channel); }
+      if (userId) { sql += ' AND user_id = ?'; params.push(userId); }
+
+      sql += ' ORDER BY id DESC LIMIT ?';
+      params.push(limit);
+
+      return this.db.prepare(sql).all(...params).reverse();
     }
 
     if (this._jsonStore) {
-      return this._jsonStore.conversations
-        .filter(m => m.agent === agent)
-        .slice(-limit);
+      let msgs = this._jsonStore.conversations.filter(m => m.agent === agent);
+      if (channel) msgs = msgs.filter(m => m.channel === channel);
+      if (userId) msgs = msgs.filter(m => m.userId === userId);
+      return msgs.slice(-limit);
     }
 
     return [];
+  }
+
+  /**
+   * Get conversation threads (grouped by channel + user)
+   */
+  getThreads(agent) {
+    if (this.db) {
+      return this.db.prepare(`
+        SELECT channel, user_id, username,
+               COUNT(*) as messageCount,
+               MAX(timestamp) as lastMessage,
+               MIN(timestamp) as firstMessage
+        FROM conversations
+        WHERE agent = ?
+        GROUP BY channel, user_id
+        ORDER BY MAX(timestamp) DESC
+      `).all(agent);
+    }
+
+    if (this._jsonStore) {
+      const threads = new Map();
+      this._jsonStore.conversations
+        .filter(m => m.agent === agent)
+        .forEach(m => {
+          const key = `${m.channel || 'dashboard'}:${m.userId || 'local'}`;
+          if (!threads.has(key)) {
+            threads.set(key, {
+              channel: m.channel || 'dashboard',
+              user_id: m.userId || null,
+              username: m.username || null,
+              messageCount: 0,
+              lastMessage: m.timestamp,
+              firstMessage: m.timestamp
+            });
+          }
+          const t = threads.get(key);
+          t.messageCount++;
+          if (m.timestamp > t.lastMessage) t.lastMessage = m.timestamp;
+        });
+      return [...threads.values()].sort((a, b) => b.lastMessage.localeCompare(a.lastMessage));
+    }
+
+    return [];
+  }
+
+  /**
+   * Get conversation stats
+   */
+  getStats() {
+    if (this.db) {
+      const total = this.db.prepare('SELECT COUNT(*) as count FROM conversations').get();
+      const byChannel = this.db.prepare(`
+        SELECT channel, COUNT(*) as count FROM conversations GROUP BY channel
+      `).all();
+      const byAgent = this.db.prepare(`
+        SELECT agent, COUNT(*) as count FROM conversations GROUP BY agent
+      `).all();
+      const today = this.db.prepare(`
+        SELECT COUNT(*) as count FROM conversations WHERE timestamp >= date('now')
+      `).get();
+      return {
+        total: total.count,
+        today: today.count,
+        byChannel,
+        byAgent
+      };
+    }
+    return { total: this._jsonStore?.conversations?.length || 0, today: 0, byChannel: [], byAgent: [] };
   }
 
   /**

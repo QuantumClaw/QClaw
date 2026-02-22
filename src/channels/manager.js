@@ -13,6 +13,19 @@ export class ChannelManager {
     this.agents = agents;
     this.secrets = secrets;
     this.channels = [];
+    this._broadcast = null;
+  }
+
+  /**
+   * Set a broadcast callback (called after dashboard starts).
+   * This lets channels send messages to the dashboard in real-time.
+   */
+  setBroadcast(fn) {
+    this._broadcast = fn;
+    // Propagate to all running channels
+    for (const ch of this.channels) {
+      if (ch) ch._broadcast = fn;
+    }
   }
 
   async startAll() {
@@ -24,6 +37,7 @@ export class ChannelManager {
       try {
         const channel = await this._createChannel(name, channelConfig);
         if (channel) {
+          channel._broadcast = this._broadcast;
           await channel.start();
           this.channels.push(channel);
           log.success(`Channel: ${name}`);
@@ -249,6 +263,21 @@ class TelegramChannel {
 
         // Guard against empty/undefined content
         const content = result?.content || '(empty response)';
+
+        // Broadcast to dashboard so messages appear in real-time
+        if (this._broadcast) {
+          this._broadcast({
+            type: 'channel_message',
+            channel: 'telegram',
+            username: username || String(userId),
+            userMessage: ctx.message.text,
+            response: content,
+            agent: agent.name,
+            tier: result.tier,
+            model: result.model,
+            cost: result.cost
+          });
+        }
 
         // Send response (split if too long for Telegram)
         const maxLen = 4096;

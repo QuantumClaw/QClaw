@@ -185,11 +185,19 @@ class Agent {
     });
 
     // Store in conversation memory (working memory / episodic log)
-    memory.addMessage(this.name, 'user', message, { tier: route.tier });
+    memory.addMessage(this.name, 'user', message, {
+      tier: route.tier,
+      channel: context.channel || 'dashboard',
+      userId: context.userId ? String(context.userId) : null,
+      username: context.username || null
+    });
     memory.addMessage(this.name, 'assistant', result.content, {
       model: result.model,
       tier: route.tier,
-      tokens: (result.usage?.input_tokens || 0) + (result.usage?.output_tokens || 0)
+      tokens: (result.usage?.input_tokens || 0) + (result.usage?.output_tokens || 0),
+      channel: context.channel || 'dashboard',
+      userId: context.userId ? String(context.userId) : null,
+      username: context.username || null
     });
 
     // Async: extract structured knowledge from this message

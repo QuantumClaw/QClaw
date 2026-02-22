@@ -173,6 +173,11 @@ class QuantumClaw {
         this.dashboard = new DashboardServer(this);
         const dashUrl = await this.dashboard.start();
 
+        // Wire up dashboard broadcast to channels so Telegram messages appear in dashboard
+        if (this.channels) {
+          this.channels.setBroadcast((data) => this.dashboard.broadcast(data));
+        }
+
         // If we generated a new token, save it to config for `qclaw dashboard` command
         if (this.dashboard.sessionToken && !this.config.dashboard?.authToken) {
           const { saveConfig } = await import('./core/config.js');
@@ -188,15 +193,17 @@ class QuantumClaw {
           writeFileSync(join(this.config._dir, 'dashboard.url'), dashUrl);
         } catch { /* non-fatal */ }
 
-        // If tunnel is active, show it prominently
+        // Show dashboard URL prominently
         if (this.dashboard.tunnelUrl) {
           log.info('');
-          log.success('╔══════════════════════════════════════════════════╗');
-          log.success('║  Dashboard URL (open from any browser/device):  ║');
-          log.success('╚══════════════════════════════════════════════════╝');
+          log.success('┌─────────────────────────────────────────────────┐');
+          log.success('│                                                 │');
+          log.success('│  📡 DASHBOARD (open from any browser/device)    │');
+          log.success('│                                                 │');
+          log.success('└─────────────────────────────────────────────────┘');
           log.info(`  ${dashUrl}`);
           log.info('');
-          log.info('  Re-show anytime: qclaw dashboard');
+          log.info('  Lost this URL? Run: qclaw dashboard');
         }
       } catch (err) {
         log.warn(`Dashboard failed to start: ${err.message}`);
@@ -217,15 +224,31 @@ class QuantumClaw {
     log.success(`QuantumClaw is live. (degradation level ${this.degradationLevel}/5)`);
     this.audit.log('system', 'ready', `Level ${this.degradationLevel} — ${this.agents.count} agents`);
 
-    // Show Telegram pairing instructions if telegram is connected but no users paired
+    // Show Telegram pairing instructions if no users paired yet
     if (this.config.channels?.telegram?.enabled && 
         (!this.config.channels.telegram.allowedUsers || this.config.channels.telegram.allowedUsers.length === 0)) {
       log.info('');
-      log.info('  Telegram pairing:');
-      log.info('  1. Send /start to your bot in Telegram');
-      log.info('  2. Copy the 8-character pairing code');
-      log.info('  3. Run: qclaw pairing approve telegram CODE');
+      log.info('  ┌─────────────────────────────────────────────────┐');
+      log.info('  │  📱 PAIR TELEGRAM (open a new terminal tab)     │');
+      log.info('  │                                                 │');
+      log.info('  │  1. Send /start to your bot in Telegram         │');
+      log.info('  │  2. Copy the 8-letter code it replies with      │');
+      log.info('  │  3. In a new tab run:                           │');
+      log.info('  │                                                 │');
+      log.info('  │     qclaw pairing approve telegram CODE         │');
+      log.info('  │                                                 │');
+      log.info('  └─────────────────────────────────────────────────┘');
     }
+
+    // Quick reference
+    log.info('');
+    log.info('  Quick reference:');
+    log.info('  qclaw dashboard   re-show dashboard URL');
+    log.info('  qclaw chat        chat in this terminal');
+    log.info('  qclaw status      health check');
+    log.info('  qclaw stop        stop agent');
+    log.info('  qclaw help        all commands');
+    log.info('');
 
     // Write PID file for `qclaw stop`
     this.pidFile = join(this.config._dir, 'qclaw.pid');
