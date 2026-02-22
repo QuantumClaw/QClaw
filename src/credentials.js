@@ -326,20 +326,13 @@ export class CredentialManager {
     });
     if (!healthRes.ok) throw new Error(`Hub returned ${healthRes.status}`);
 
-    // Dynamically import the SDK
+    // Import the SDK from npm
     let AgexClient;
     try {
-      // npm package (primary — @agexhq/sdk on npm)
       const sdk = await import('@agexhq/sdk');
       AgexClient = sdk.AgexClient;
-    } catch {
-      try {
-        // Vendored fallback (bundled copy)
-        const sdk = await import('./agex-sdk/index.js');
-        AgexClient = sdk.AgexClient;
-      } catch (vendorErr) {
-        throw new Error(`AGEX SDK not found. Run: npm install @agexhq/sdk (${vendorErr.message})`);
-      }
+    } catch (err) {
+      throw new Error(`AGEX SDK not found. Run: npm install @agexhq/sdk (${err.message})`);
     }
 
     // Load or generate AID
