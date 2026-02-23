@@ -146,6 +146,30 @@ export async function runOnboard() {
     if (p.isCancel(dashPin)) { p.cancel('Cancelled.'); process.exit(0); }
   }
 
+  // Persistent tunnel (optional — keeps same URL across restarts)
+  const wantTunnel = await p.confirm({
+    message: 'Set up a persistent tunnel URL? (same link every time)',
+    initialValue: false
+  });
+  if (p.isCancel(wantTunnel)) { p.cancel('Cancelled.'); process.exit(0); }
+
+  let tunnelToken = null;
+  if (wantTunnel) {
+    console.log('');
+    console.log(`  ${dim}To get a persistent tunnel URL:${reset}`);
+    console.log(`  ${dim}1.${reset} Go to ${cyan}https://one.dash.cloudflare.com${reset}`);
+    console.log(`  ${dim}2.${reset} Networks → Tunnels → Create a tunnel`);
+    console.log(`  ${dim}3.${reset} Name it "qclaw", pick your domain`);
+    console.log(`  ${dim}4.${reset} Set service to ${cyan}http://localhost:3000${reset}`);
+    console.log(`  ${dim}5.${reset} Copy the tunnel token from the install command`);
+    console.log('');
+    tunnelToken = await p.password({
+      message: 'Tunnel token (or Enter to skip):',
+    });
+    if (p.isCancel(tunnelToken)) { p.cancel('Cancelled.'); process.exit(0); }
+    if (!tunnelToken?.trim()) tunnelToken = null;
+  }
+
   // ─── Save ─────────────────────────────────────────────
 
   const s = p.spinner();
@@ -182,6 +206,10 @@ export async function runOnboard() {
   config.dashboard.tokenCreatedAt = Date.now();
   config.dashboard.enabled = true;
   if (dashPin) config.dashboard.pin = dashPin;
+  if (tunnelToken) {
+    config.dashboard.tunnel = 'cloudflare';
+    config.dashboard.tunnelToken = tunnelToken;
+  }
 
   saveConfig(config);
 
@@ -190,6 +218,7 @@ export async function runOnboard() {
   await secrets.load();
   if (apiKey) secrets.set(`${provider}_api_key`, apiKey);
   if (telegramToken) secrets.set('telegram_bot_token', telegramToken);
+  if (tunnelToken) secrets.set('cloudflare_tunnel_token', tunnelToken);
 
   // Trust kernel
   const trustKernel = new TrustKernel(config);

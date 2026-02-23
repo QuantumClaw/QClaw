@@ -128,12 +128,15 @@ class Agent {
   async process(message, context = {}) {
     const { router, memory, trustKernel, audit } = this.services;
 
+    // Extract text for classification (images don't affect routing)
+    const textMessage = typeof message === 'string' ? message : message;
+
     // Classify message complexity
-    const route = router.classify(message);
+    const route = router.classify(textMessage);
 
     // Tier 0: Reflex response (no LLM)
     if (route.tier === 'reflex') {
-      audit.log(this.name, 'reflex', message, { tier: 'reflex', cost: 0 });
+      audit.log(this.name, 'reflex', textMessage, { tier: 'reflex', cost: 0 });
       return {
         content: route.response,
         tier: 'reflex',
@@ -144,38 +147,50 @@ class Agent {
 
     // Build context — now uses structured knowledge + selective history
     const graphContext = route.extendedContext
-      ? await memory.graphQuery(message)
+      ? await memory.graphQuery(textMessage)
       : { results: [] };
 
-    // Structured knowledge context (~1,000 tokens vs 5,000+ for raw history)
     const knowledgeContext = memory.knowledge ? memory.knowledge.buildContext() : '';
 
-    // For complex queries, also search knowledge store for relevant entries
     let relevantKnowledge = [];
     if (route.extendedContext && memory.knowledge) {
-      relevantKnowledge = memory.knowledge.search(message, 5);
+      relevantKnowledge = memory.knowledge.search(textMessage, 5);
     }
 
     const systemPrompt = this._buildSystemPrompt(graphContext, knowledgeContext, relevantKnowledge);
 
-    // Token budget for working memory (recent conversation)
-    // Knowledge context replaces most of what raw history used to provide,
-    // so we can load fewer raw messages (8 instead of 20) — saves tokens
     const MAX_CONTEXT_CHARS = 100000;
     const systemChars = systemPrompt.length;
-    const messageChars = message.length;
+    const messageChars = textMessage.length;
     const availableForHistory = MAX_CONTEXT_CHARS - systemChars - messageChars;
 
-    // Working Memory: last N messages (short-term, current session)
-    // Reduced from 20 to 8 because knowledge store handles long-term context
     const historyLimit = knowledgeContext.length > 100 ? 8 : 20;
     const fullHistory = memory.getHistory(this.name, historyLimit);
     const truncatedHistory = this._truncateHistory(fullHistory, availableForHistory);
 
+    // Build user message — multimodal if images provided
+    let userContent;
+    if (context.images && context.images.length > 0) {
+      userContent = [];
+      for (const img of context.images) {
+        userContent.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: img.mediaType || 'image/jpeg',
+            data: img.data
+          }
+        });
+      }
+      userContent.push({ type: 'text', text: textMessage || 'What do you see in this image?' });
+    } else {
+      userContent = textMessage;
+    }
+
     const messages = [
       { role: 'system', content: systemPrompt },
       ...truncatedHistory.map(h => ({ role: h.role, content: h.content })),
-      { role: 'user', content: message }
+      { role: 'user', content: userContent }
     ];
 
     // Call LLM

@@ -53,7 +53,7 @@ export class DashboardServer {
     this.AUTH_MAX_ATTEMPTS = 5;
     this.AUTH_LOCKOUT_MS = 900000; // 15 minutes
 
-    this.app.use(express.json());
+    this.app.use(express.json({ limit: '20mb' }));
 
     // API routes
     this._setupAPI();
@@ -142,6 +142,18 @@ export class DashboardServer {
         this.tunnelUrl = await this._startTunnel(tunnelType, actualPort);
         this.dashUrl = `${this.tunnelUrl}/#token=${this.sessionToken}`;
         log.success(`Tunnel: ${this.tunnelUrl}`);
+
+        // Save persistent tunnel URL to config (so it survives restarts)
+        const hasTunnelToken = this.config.dashboard?.tunnelToken
+          || this.qclaw.credentials?.get?.('cloudflare_tunnel_token')
+          || process.env.CLOUDFLARE_TUNNEL_TOKEN;
+        if (hasTunnelToken && this.tunnelUrl) {
+          try {
+            const { saveConfig } = await import('../core/config.js');
+            this.config.dashboard.tunnelUrl = this.tunnelUrl;
+            saveConfig(this.config);
+          } catch { /* non-fatal */ }
+        }
       } catch (err) {
         log.warn(`Tunnel (${tunnelType}) failed: ${err.message} — dashboard is local only`);
       }
@@ -282,12 +294,16 @@ export class DashboardServer {
       });
     });
 
-    // Agent chat endpoint
+    // Agent chat endpoint (supports images via base64)
     this.app.post('/api/chat', async (req, res) => {
       try {
-        const { message, agent: agentName } = req.body;
+        const { message, agent: agentName, images } = req.body;
         const agent = this.qclaw.agents.get(agentName) || this.qclaw.agents.primary();
-        const result = await agent.process(message);
+        const context = { channel: 'dashboard' };
+        if (images && images.length > 0) {
+          context.images = images; // [{ data: base64, mediaType: 'image/jpeg' }]
+        }
+        const result = await agent.process(message, context);
         res.json(result);
       } catch (err) {
         res.status(500).json({ error: err.message });
@@ -503,13 +519,18 @@ export class DashboardServer {
 
       ws.on('message', async (data) => {
         try {
-          const { message, agent: agentName } = JSON.parse(data);
+          const { message, agent: agentName, images } = JSON.parse(data);
           const agent = this.qclaw.agents.get(agentName) || this.qclaw.agents.primary();
 
           // Send typing indicator
           ws.send(JSON.stringify({ type: 'typing', agent: agent.name }));
 
-          const result = await agent.process(message);
+          const context = { channel: 'dashboard' };
+          if (images && images.length > 0) {
+            context.images = images;
+          }
+
+          const result = await agent.process(message, context);
 
           ws.send(JSON.stringify({
             type: 'response',
@@ -638,11 +659,83 @@ export class DashboardServer {
 
   /**
    * Cloudflare Tunnel — free, needs cloudflared binary installed
-   * Uses quick tunnels (no account needed) or named tunnels
+   * Mode 1: Named tunnel with token (persistent URL — recommended)
+   *   - User creates tunnel in Cloudflare Zero Trust dashboard
+   *   - Gets a tunnel token, pastes into onboard
+   *   - URL stays the same across restarts
+   * Mode 2: Quick tunnel (random URL — no account needed, changes every restart)
    */
   async _tunnelCloudflare(port) {
     const { spawn } = await import('child_process');
 
+    // Check for persistent tunnel token
+    const tunnelToken = this.config.dashboard?.tunnelToken
+      || this.qclaw.credentials?.get?.('cloudflare_tunnel_token')
+      || process.env.CLOUDFLARE_TUNNEL_TOKEN;
+
+    if (tunnelToken) {
+      // Named tunnel with token — persistent URL
+      log.info('Using persistent Cloudflare tunnel...');
+      const args = ['tunnel', '--no-autoupdate', 'run', '--token', tunnelToken];
+
+      return new Promise((resolve, reject) => {
+        const proc = spawn('cloudflared', args, {
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        this.tunnel = proc;
+        let resolved = false;
+
+        const handleOutput = (data) => {
+          const output = data.toString();
+          // Named tunnels log the URL differently
+          const match = output.match(/https:\/\/[a-z0-9.-]+\.[a-z]+/);
+          if (match && !resolved && !match[0].includes('api.cloudflare.com')) {
+            resolved = true;
+            resolve(match[0]);
+          }
+          // Also check for connection success message
+          if (!resolved && output.includes('Registered tunnel connection')) {
+            // The URL is configured in the Cloudflare dashboard, extract from config
+            const savedUrl = this.config.dashboard?.tunnelUrl;
+            if (savedUrl) {
+              resolved = true;
+              resolve(savedUrl);
+            }
+          }
+        };
+
+        proc.stdout.on('data', handleOutput);
+        proc.stderr.on('data', handleOutput);
+
+        proc.on('error', (err) => {
+          if (!resolved) reject(new Error(`cloudflared not found: ${err.message}`));
+        });
+
+        proc.on('exit', (code) => {
+          if (!resolved) reject(new Error(`cloudflared exited with code ${code}`));
+          this.tunnel = null;
+        });
+
+        // Named tunnels may take longer to connect
+        setTimeout(() => {
+          if (!resolved) {
+            // If we have a saved URL, use it (the tunnel is probably connected but didn't log the URL)
+            const savedUrl = this.config.dashboard?.tunnelUrl;
+            if (savedUrl) {
+              resolved = true;
+              resolve(savedUrl);
+            } else {
+              proc.kill();
+              reject(new Error('cloudflared timed out after 45s — check your tunnel token'));
+            }
+          }
+        }, 45000);
+      });
+    }
+
+    // Quick tunnel (no token — random URL, changes every restart)
+    log.info('Using quick Cloudflare tunnel (random URL)...');
     const args = ['tunnel', '--url', `http://localhost:${port}`, '--no-autoupdate'];
 
     return new Promise((resolve, reject) => {
@@ -653,7 +746,6 @@ export class DashboardServer {
       this.tunnel = proc;
       let resolved = false;
 
-      // cloudflared prints the URL to stderr
       const handleOutput = (data) => {
         const output = data.toString();
         const match = output.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);

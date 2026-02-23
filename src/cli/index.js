@@ -351,6 +351,13 @@ switch (command) {
         ok(`Agents: ${health.agents}`);
         if (health.tunnel) {
           ok(`Tunnel: ${health.tunnel}`);
+          if (config.dashboard?.tunnelToken) {
+            ok('Tunnel type: persistent (named tunnel with token)');
+          } else {
+            warn('Tunnel type: quick (random URL — changes on restart)');
+            info('  Fix: qclaw onboard (set up persistent tunnel) or');
+            info('  qclaw config set dashboard.tunnelToken <your-token>');
+          }
         } else {
           warn('Tunnel: not active (dashboard is localhost only)');
         }
