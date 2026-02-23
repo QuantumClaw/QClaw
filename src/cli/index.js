@@ -1157,17 +1157,27 @@ switch (command) {
 
     const localUrl = `http://${localHost}:${port}/#token=${token}`;
 
+    // Strip query params (e.g. ?project= from IDE) so dashboard always opens the QClaw UI
+    function dashboardUrlClean(u) {
+      try {
+        const parsed = new URL(u.trim());
+        parsed.search = '';
+        return parsed.toString();
+      } catch { return u.trim(); }
+    }
+
     // Check for saved tunnel URL (written by qclaw start)
     let tunnelUrl = null;
     const urlFile = join(config._dir, 'dashboard.url');
     if (existsSync(urlFile)) {
       try {
-        tunnelUrl = readFileSync(urlFile, 'utf-8').trim();
+        tunnelUrl = dashboardUrlClean(readFileSync(urlFile, 'utf-8'));
+        if (!tunnelUrl) tunnelUrl = null;
       } catch { /* non-fatal */ }
     }
 
-    // Determine which URL to show/copy
-    const url = tunnelUrl || localUrl;
+    // Determine which URL to show/copy (no ?project= or other query params)
+    const url = (tunnelUrl ? dashboardUrlClean(tunnelUrl) : null) || localUrl;
 
     console.log('');
     if (tunnelUrl) {

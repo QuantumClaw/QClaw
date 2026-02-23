@@ -141,7 +141,7 @@ export class CredentialManager {
       await this._connectHub();
     } catch (err) {
       log.debug(`AGEX Hub not available: ${err.message}`);
-      log.info('Using local encrypted secrets (AGEX Hub offline)');
+      log.info(`AGEX Hub offline — using local secrets (will auto-reconnect). Tried ${this._hubUrl}; see docs/AGEX_HUB_RAILWAY.md if Hub is on Railway.`);
       this._startReconnectLoop();
     }
 
@@ -320,11 +320,11 @@ export class CredentialManager {
   // ─── AGEX Hub connection ─────────────────────────────
 
   async _connectHub() {
-    // Health check
-    const healthRes = await fetch(`${this._hubUrl}/health`, {
+    const healthUrl = `${this._hubUrl.replace(/\/$/, '')}/health`;
+    const healthRes = await fetch(healthUrl, {
       signal: AbortSignal.timeout(5000)
     });
-    if (!healthRes.ok) throw new Error(`Hub returned ${healthRes.status}`);
+    if (!healthRes.ok) throw new Error(`GET ${healthUrl} returned ${healthRes.status}`);
 
     // Import the SDK from npm
     let AgexClient;

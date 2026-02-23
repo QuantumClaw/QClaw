@@ -188,9 +188,11 @@ class QuantumClaw {
 
         log.success(`Dashboard: ${dashUrl}`);
 
-        // Save dashboard URL to file so `qclaw dashboard` can re-show it
+        // Save dashboard URL to file so `qclaw dashboard` can re-show it (no query params)
         try {
-          writeFileSync(join(this.config._dir, 'dashboard.url'), dashUrl);
+          const u = new URL(dashUrl);
+          u.search = '';
+          writeFileSync(join(this.config._dir, 'dashboard.url'), u.toString());
         } catch { /* non-fatal */ }
 
         // Show dashboard URL prominently (default: your IP + token; tunnel only if chosen/mobile)

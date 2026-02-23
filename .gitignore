@@ -36,3 +36,8 @@ workspace/memory/
 
 # nested clone from WSL
 QClaw/
+
+# Developer / local only (do not push)
+.cursor/
+agent-transcripts/
+*.local.md

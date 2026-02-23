@@ -14,7 +14,8 @@ import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+// Resolve dashboard assets from this module only (never process.cwd()) so we never serve another project's UI
+const DASHBOARD_DIR = dirname(fileURLToPath(import.meta.url));
 
 /** Get first non-internal IPv4 for LAN dashboard URL (e.g. 192.168.1.5). */
 function getLocalIP() {
@@ -76,17 +77,12 @@ export class DashboardServer {
       res.send(this._renderDashboard());
     });
 
-    // Serve terminal onboarding UI
+    // Serve terminal onboarding UI (always from this package, not cwd)
     this.app.get('/onboard', (req, res) => {
       try {
-        const dir = dirname(fileURLToPath(import.meta.url));
-        res.send(readFileSync(join(dir, 'onboard.html'), 'utf-8'));
+        res.send(readFileSync(join(DASHBOARD_DIR, 'onboard.html'), 'utf-8'));
       } catch {
-        try {
-          res.send(readFileSync(join(process.cwd(), 'src', 'dashboard', 'onboard.html'), 'utf-8'));
-        } catch {
-          res.redirect('/');
-        }
+        res.redirect('/');
       }
     });
 
@@ -593,15 +589,11 @@ export class DashboardServer {
   }
 
   _renderDashboard() {
-    const dir = dirname(fileURLToPath(import.meta.url));
     try {
-      return readFileSync(join(dir, 'ui.html'), 'utf-8');
-    } catch {
-      try {
-        return readFileSync(join(process.cwd(), 'src', 'dashboard', 'ui.html'), 'utf-8');
-      } catch {
-        return '<html><body style="background:#0a0a0f;color:#e4e4ef;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh"><h1>Dashboard ui.html not found</h1></body></html>';
-      }
+      return readFileSync(join(DASHBOARD_DIR, 'ui.html'), 'utf-8');
+    } catch (err) {
+      log.warn(`Dashboard UI not found at ${join(DASHBOARD_DIR, 'ui.html')}: ${err.message}`);
+      return '<html><body style="background:#0a0a0f;color:#e4e4ef;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh"><h1>Dashboard ui.html not found</h1><p>Run from the QClaw project directory or reinstall the package.</p></body></html>';
     }
   }
 

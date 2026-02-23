@@ -50,30 +50,35 @@ export class MemoryManager {
       this.db = new Database(join(dir, 'memory.db'));
       this.db.pragma('journal_mode = WAL');
 
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS conversations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        agent TEXT NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        timestamp TEXT DEFAULT (datetime('now')),
-        model TEXT,
-        tier TEXT,
-        tokens INTEGER,
-        channel TEXT DEFAULT 'dashboard',
-        user_id TEXT,
-        username TEXT
-      );
-      CREATE INDEX IF NOT EXISTS idx_conv_agent ON conversations(agent, timestamp);
-      CREATE INDEX IF NOT EXISTS idx_conv_channel ON conversations(channel, timestamp);
-      CREATE INDEX IF NOT EXISTS idx_conv_thread ON conversations(agent, channel, user_id);
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS conversations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          agent TEXT NOT NULL,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          timestamp TEXT DEFAULT (datetime('now')),
+          model TEXT,
+          tier TEXT,
+          tokens INTEGER,
+          channel TEXT DEFAULT 'dashboard',
+          user_id TEXT,
+          username TEXT
+        );
+        CREATE TABLE IF NOT EXISTS context (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated TEXT DEFAULT (datetime('now'))
+        );
+      `);
 
-      CREATE TABLE IF NOT EXISTS context (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        updated TEXT DEFAULT (datetime('now'))
-      );
-    `);
+      // Migrate existing DBs that were created before channel / user_id / username columns
+      this._migrateConversationsSchema();
+
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_conv_agent ON conversations(agent, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_conv_channel ON conversations(channel, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_conv_thread ON conversations(agent, channel, user_id);
+      `);
 
       log.debug('Memory: using SQLite (native)');
     } else {
@@ -127,6 +132,28 @@ export class MemoryManager {
       graph: graphStats,
       entities
     };
+  }
+
+  /**
+   * Add missing columns to conversations table (for DBs created before channel/user_id/username).
+   * Run after CREATE TABLE IF NOT EXISTS so indexes on these columns can be created safely.
+   */
+  _migrateConversationsSchema() {
+    if (!this.db) return;
+    const info = this.db.prepare('PRAGMA table_info(conversations)').all();
+    const columns = new Set(info.map(r => r.name));
+    if (!columns.has('channel')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN channel TEXT DEFAULT 'dashboard'`);
+      log.debug('Memory: migrated conversations table (added channel)');
+    }
+    if (!columns.has('user_id')) {
+      this.db.exec('ALTER TABLE conversations ADD COLUMN user_id TEXT');
+      log.debug('Memory: migrated conversations table (added user_id)');
+    }
+    if (!columns.has('username')) {
+      this.db.exec('ALTER TABLE conversations ADD COLUMN username TEXT');
+      log.debug('Memory: migrated conversations table (added username)');
+    }
   }
 
   /**
