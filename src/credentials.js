@@ -136,12 +136,15 @@ export class CredentialManager {
     // Local secrets always load first (guaranteed to work)
     await this.localSecrets.load();
 
-    // Try AGEX Hub
+    // Try AGEX Hub (optional — SDK must be published to npm first)
     try {
       await this._connectHub();
     } catch (err) {
-      log.debug(`AGEX Hub not available: ${err.message}`);
-      log.info('AGEX Hub offline — using local secrets (will auto-reconnect)');
+      if (err.message?.includes('SDK not found') || err.message?.includes('Cannot find')) {
+        log.debug('AGEX SDK not installed — using local secrets');
+      } else {
+        log.debug(`AGEX Hub: ${err.message} — using local secrets`);
+      }
       this._startReconnectLoop();
     }
 
@@ -320,11 +323,11 @@ export class CredentialManager {
   // ─── AGEX Hub connection ─────────────────────────────
 
   async _connectHub() {
-    const healthUrl = `${this._hubUrl.replace(/\/$/, '')}/health`;
-    const healthRes = await fetch(healthUrl, {
+    // Health check
+    const healthRes = await fetch(`${this._hubUrl}/health`, {
       signal: AbortSignal.timeout(5000)
     });
-    if (!healthRes.ok) throw new Error(`GET ${healthUrl} returned ${healthRes.status}`);
+    if (!healthRes.ok) throw new Error(`Hub returned ${healthRes.status}`);
 
     // Import the SDK from npm
     let AgexClient;

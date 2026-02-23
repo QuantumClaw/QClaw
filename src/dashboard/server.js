@@ -8,25 +8,12 @@
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
-import { networkInterfaces } from 'os';
 import { log } from '../core/logger.js';
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-// Resolve dashboard assets from this module only (never process.cwd()) so we never serve another project's UI
-const DASHBOARD_DIR = dirname(fileURLToPath(import.meta.url));
-
-/** Get first non-internal IPv4 for LAN dashboard URL (e.g. 192.168.1.5). */
-function getLocalIP() {
-  const nets = networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const n of nets[name] || []) {
-      if (n.family === 'IPv4' && !n.internal) return n.address;
-    }
-  }
-  return null;
-}
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export class DashboardServer {
   constructor(qclaw) {
@@ -42,9 +29,8 @@ export class DashboardServer {
   async start() {
     const port = this.config.dashboard?.port || 3000;
     const isTermux = existsSync('/data/data/com.termux');
-    // Bind 0.0.0.0 by default so dashboard is reachable at your LAN IP (e.g. from phone on same WiFi).
-    // Tunnel is only used when explicitly chosen or on Termux where localhost is useless.
-    const host = this.config.dashboard?.host ?? (isTermux ? '0.0.0.0' : '0.0.0.0');
+    // Desktop: localhost only. Mobile/Termux: bind all interfaces for tunnel
+    const host = this.config.dashboard?.host || (isTermux ? '0.0.0.0' : '127.0.0.1');
 
     // Generate session auth token with expiry
     const tokenAge = this.config.dashboard?.tokenExpiry || 86400000; // 24h default
@@ -77,12 +63,17 @@ export class DashboardServer {
       res.send(this._renderDashboard());
     });
 
-    // Serve terminal onboarding UI (always from this package, not cwd)
+    // Serve terminal onboarding UI
     this.app.get('/onboard', (req, res) => {
       try {
-        res.send(readFileSync(join(DASHBOARD_DIR, 'onboard.html'), 'utf-8'));
+        const dir = dirname(fileURLToPath(import.meta.url));
+        res.send(readFileSync(join(dir, 'onboard.html'), 'utf-8'));
       } catch {
-        res.redirect('/');
+        try {
+          res.send(readFileSync(join(process.cwd(), 'src', 'dashboard', 'onboard.html'), 'utf-8'));
+        } catch {
+          res.redirect('/');
+        }
       }
     });
 
@@ -127,34 +118,35 @@ export class DashboardServer {
     // Find available port
     const actualPort = await this._listen(host, port);
     this.actualPort = actualPort;
+    const localHost = (host === '0.0.0.0' || host === '127.0.0.1') ? 'localhost' : host;
+    const localUrl = `http://${localHost}:${actualPort}`;
 
-    // Default URL: your machine's LAN IP + token so you can open from phone/tablet on same network.
-    // Only overwrite with tunnel URL when user explicitly chose a tunnel or on Termux.
-    const localIP = getLocalIP();
-    const baseUrl = localIP
-      ? `http://${localIP}:${actualPort}`
-      : `http://${host === '0.0.0.0' ? 'localhost' : host}:${actualPort}`;
-    this.dashUrl = `${baseUrl}/#token=${this.sessionToken}`;
+    // Build the clickable URL with token as query param (more reliable than hash across shells)
+    this.dashUrl = `${localUrl}/?token=${this.sessionToken}`;
 
-    // Tunnel: only when explicitly chosen (token/config) or on mobile (Termux).
-    // First-time desktop users see their own IP with token, not Cloudflare.
+    // Start tunnel — smart defaults:
+    // - Termux/Android: always tunnel (can't access localhost from phone browser)
+    // - Desktop: localhost only (unless explicitly configured or has tunnel token)
     let tunnelType = process.env.QCLAW_TUNNEL || this.config.dashboard?.tunnel || 'auto';
     if (tunnelType === 'auto') {
       const hasTunnelToken = this.config.dashboard?.tunnelToken
         || process.env.CLOUDFLARE_TUNNEL_TOKEN;
 
       if (hasTunnelToken) {
+        // Persistent tunnel token exists — always use it
         tunnelType = 'cloudflare';
       } else if (isTermux) {
+        // Termux: need tunnel for mobile access
         try {
           const { execSync } = await import('child_process');
           execSync('cloudflared --version', { stdio: 'ignore' });
           tunnelType = 'cloudflare';
         } catch {
           tunnelType = 'none';
-          log.warn('cloudflared not found — dashboard is local only');
+          log.warn('cloudflared not found — dashboard is localhost only');
         }
       } else {
+        // Desktop: localhost is fine, no tunnel needed
         tunnelType = 'none';
       }
     }
@@ -162,7 +154,7 @@ export class DashboardServer {
     if (tunnelType && tunnelType !== 'none') {
       try {
         this.tunnelUrl = await this._startTunnel(tunnelType, actualPort);
-        this.dashUrl = `${this.tunnelUrl}/#token=${this.sessionToken}`;
+        this.dashUrl = `${this.tunnelUrl}/?token=${this.sessionToken}`;
         log.success(`Tunnel: ${this.tunnelUrl}`);
 
         // Save persistent tunnel URL to config (so it survives restarts)
@@ -589,11 +581,15 @@ export class DashboardServer {
   }
 
   _renderDashboard() {
+    const dir = dirname(fileURLToPath(import.meta.url));
     try {
-      return readFileSync(join(DASHBOARD_DIR, 'ui.html'), 'utf-8');
-    } catch (err) {
-      log.warn(`Dashboard UI not found at ${join(DASHBOARD_DIR, 'ui.html')}: ${err.message}`);
-      return '<html><body style="background:#0a0a0f;color:#e4e4ef;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh"><h1>Dashboard ui.html not found</h1><p>Run from the QClaw project directory or reinstall the package.</p></body></html>';
+      return readFileSync(join(dir, 'ui.html'), 'utf-8');
+    } catch {
+      try {
+        return readFileSync(join(process.cwd(), 'src', 'dashboard', 'ui.html'), 'utf-8');
+      } catch {
+        return '<html><body style="background:#0a0a0f;color:#e4e4ef;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh"><h1>Dashboard ui.html not found</h1></body></html>';
+      }
     }
   }
 
@@ -876,8 +872,6 @@ export class DashboardServer {
             if (err.code === 'EADDRINUSE' && this.config.dashboard?.autoPort) {
               log.debug(`Port ${p} in use, trying ${p + 1}`);
               tryPort(p + 1);
-            } else if (err.code === 'EADDRINUSE') {
-              reject(new Error(`Port ${p} is in use by another app. Set a different port: qclaw config set dashboard.port 3010`));
             } else {
               reject(err);
             }

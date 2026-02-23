@@ -113,6 +113,15 @@ else
         fail "Node.js not found. Install from https://nodejs.org"
         exit 1
     fi
+    # Install build tools for better-sqlite3 (if not present)
+    if $IS_LINUX && ! command -v make &>/dev/null; then
+        info "Installing build tools for native modules..."
+        if command -v apt &>/dev/null; then
+            sudo apt install -y build-essential python3 2>/dev/null || warn "Could not install build tools (try: sudo apt install build-essential)"
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install -y gcc gcc-c++ make python3 2>/dev/null || true
+        fi
+    fi
 fi
 
 NODE_VER=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
@@ -430,18 +439,17 @@ fi
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════
-# AUTO-CONFIGURE: set tunnel=cloudflare in config if available
+# AUTO-CONFIGURE: tunnel only on Termux (desktop uses localhost)
 # ═══════════════════════════════════════════════════════════════════
-if command -v cloudflared &>/dev/null; then
+if $IS_TERMUX && command -v cloudflared &>/dev/null; then
     mkdir -p "$CONFIG_DIR"
     if [ -f "$CONFIG_DIR/config.json" ] && command -v node &>/dev/null; then
         node -e "
           const fs=require('fs'),f='$CONFIG_DIR/config.json';
           try{const c=JSON.parse(fs.readFileSync(f,'utf-8'));
           if(!c.dashboard)c.dashboard={};
-          if(!c.dashboard.tunnel||c.dashboard.tunnel==='none'||c.dashboard.tunnel==='auto'){
-            c.dashboard.tunnel='cloudflare';c.dashboard.host='0.0.0.0';
-            fs.writeFileSync(f,JSON.stringify(c,null,2));}
+          c.dashboard.tunnel='cloudflare';c.dashboard.host='0.0.0.0';
+          fs.writeFileSync(f,JSON.stringify(c,null,2));
           }catch{}
         " 2>/dev/null || true
     fi

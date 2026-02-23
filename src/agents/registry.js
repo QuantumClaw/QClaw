@@ -40,7 +40,6 @@ export class AgentRegistry {
     for (const name of dirs) {
       const agent = new Agent(name, join(agentsDir, name), this.services);
       await agent.load();
-      agent.registry = this;
       this.agents.set(name, agent);
     }
 
@@ -48,7 +47,6 @@ export class AgentRegistry {
       await this._createDefault();
       const agent = new Agent('echo', join(agentsDir, 'echo'), this.services);
       await agent.load();
-      agent.registry = this;
       this.agents.set('echo', agent);
     }
   }
@@ -96,9 +94,6 @@ Direct, efficient, no waffle. Gets things done.
   }
 }
 
-/** Delegation block format in assistant reply: DELEGATE_TO=name, TASK=..., END_DELEGATE */
-const DELEGATION_REGEX = /DELEGATE_TO\s*=\s*(\S+)\s*\nTASK\s*=\s*([\s\S]*?)\s*END_DELEGATE/i;
-
 class Agent {
   constructor(name, dir, services) {
     this.name = name;
@@ -106,8 +101,6 @@ class Agent {
     this.services = services;
     this.soul = '';
     this.skills = [];
-    this.purpose = '';
-    this.registry = null;
   }
 
   async load() {
@@ -115,8 +108,6 @@ class Agent {
     const soulFile = join(this.dir, 'SOUL.md');
     if (existsSync(soulFile)) {
       this.soul = readFileSync(soulFile, 'utf-8');
-      const purposeMatch = this.soul.match(/##\s*Purpose\s*\n+([^\n#]+)/i);
-      this.purpose = purposeMatch ? purposeMatch[1].trim() : 'No purpose specified.';
     }
 
     // Load skills
@@ -203,31 +194,10 @@ class Agent {
     ];
 
     // Call LLM
-    let result = await router.complete(messages, {
+    const result = await router.complete(messages, {
       model: route.model,
       system: systemPrompt
     });
-
-    // Orchestrator: if primary delegated to a sub-agent, run that agent and return combined response
-    const delegation = this.registry && this === this.registry.primary()
-      ? Agent._parseDelegation(result.content)
-      : null;
-    if (delegation && delegation.task) {
-      const sub = this.registry.get(delegation.to);
-      if (sub && sub !== this) {
-        audit.log(this.name, 'delegate', delegation.to, { task: delegation.task.slice(0, 80) });
-        const subResult = await sub.process(delegation.task, { ...context, delegatedBy: this.name });
-        const combined = `I asked **${delegation.to}** to handle this. Here's their response:\n\n${subResult.content}`;
-        result = {
-          content: combined,
-          model: result.model,
-          tier: route.tier,
-          cost: (result.cost || 0) + (subResult.cost || 0),
-          duration: (result.duration || 0) + (subResult.duration || 0),
-          usage: result.usage
-        };
-      }
-    }
 
     // Store in conversation memory (working memory / episodic log)
     memory.addMessage(this.name, 'user', message, {
@@ -333,43 +303,6 @@ class Agent {
       }
     }
 
-    // Orchestrator: list sub-agents so the primary can delegate
-    if (this.registry && this === this.registry.primary() && this.registry.count > 1) {
-      parts.push(this._getSubAgentsSection());
-    }
-
     return parts.join('\n');
-  }
-
-  _getSubAgentsSection() {
-    const others = this.registry.list()
-      .filter(n => n !== this.name)
-      .map(n => this.registry.get(n))
-      .filter(a => a && a.purpose);
-    if (others.length === 0) return '';
-    const lines = [
-      '\n## Sub-agents',
-      'You can delegate part of the user\'s request to a specialist. Choose the best sub-agent for the task to save resources.',
-      '',
-      ...others.map(a => `- **${a.name}**: ${a.purpose}`),
-      '',
-      'To delegate, reply with exactly this block (no other text before or after):',
-      'DELEGATE_TO=<agent_name>',
-      'TASK=<clear task for that agent>',
-      'END_DELEGATE',
-      '',
-      'If you answer yourself, reply normally. Do not use the block unless you are delegating.'
-    ];
-    return lines.join('\n');
-  }
-
-  /**
-   * If content contains a delegation block, return { to, task }; otherwise null.
-   */
-  static _parseDelegation(content) {
-    if (!content || typeof content !== 'string') return null;
-    const m = content.match(DELEGATION_REGEX);
-    if (!m) return null;
-    return { to: m[1].trim(), task: (m[2] || '').trim() };
   }
 }

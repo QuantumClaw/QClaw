@@ -71,10 +71,10 @@ class QuantumClaw {
         log.success(`AGEX Hub connected (AID: ${status.aidId?.slice(0, 8)}..., Tier ${status.trustTier})`);
         this.audit.log('system', 'agex_connected', `Hub: ${status.hubUrl}`);
       } else {
-        log.info('AGEX Hub offline — using local secrets (will auto-reconnect)');
+        log.debug('AGEX Hub not configured — using local secrets');
       }
     } catch (err) {
-      log.warn(`AGEX init failed: ${err.message} — using local secrets`);
+      log.debug(`AGEX: ${err.message} — using local secrets`);
       // CredentialManager wraps SecretStore, so fall back to raw secrets
       this.credentials = this.secrets;
     }
@@ -90,11 +90,10 @@ class QuantumClaw {
       if (memoryStatus.cognee) {
         log.success(`Knowledge graph connected (${memoryStatus.entities} entities)`);
       } else {
-        log.warn('Knowledge graph offline — using SQLite memory');
-        log.info('Will auto-reconnect when Cognee is available');
+        log.info('Memory: SQLite + vector (local)');
       }
     } catch (err) {
-      log.error(`Memory init failed: ${err.message}`);
+      log.warn(`Memory init: ${err.message} — continuing with basic memory`);
       log.warn('Continuing with no persistent memory — conversations will not be saved');
       this.degradationLevel = 4;
       // Create a minimal memory stub so downstream code doesn't crash
@@ -188,39 +187,41 @@ class QuantumClaw {
 
         log.success(`Dashboard: ${dashUrl}`);
 
-        // Save dashboard URL to file so `qclaw dashboard` can re-show it (no query params)
+        // Save dashboard URL to file so `qclaw dashboard` can re-show it
         try {
-          const u = new URL(dashUrl);
-          u.search = '';
-          writeFileSync(join(this.config._dir, 'dashboard.url'), u.toString());
+          writeFileSync(join(this.config._dir, 'dashboard.url'), dashUrl);
         } catch { /* non-fatal */ }
 
-        // Show dashboard URL prominently (default: your IP + token; tunnel only if chosen/mobile)
+        // Auto-open in default browser (desktop only, not Termux)
+        const isTermux = (await import('fs')).existsSync('/data/data/com.termux');
+        if (!isTermux) {
+          try {
+            const { exec } = await import('child_process');
+            const platform = process.platform;
+            const cmd = platform === 'win32' ? `start "" "${dashUrl}"`
+                      : platform === 'darwin' ? `open "${dashUrl}"`
+                      : `xdg-open "${dashUrl}" 2>/dev/null || true`;
+            exec(cmd);
+          } catch { /* non-fatal */ }
+        }
+
+        // Show dashboard URL prominently
         log.info('');
         if (this.dashboard.tunnelUrl) {
           log.success('┌─────────────────────────────────────────────────┐');
-          log.success('│  📡 DASHBOARD (tunnel — any device)            │');
+          log.success('│  📡 DASHBOARD (any browser/device)              │');
           log.success('└─────────────────────────────────────────────────┘');
           log.info(`  ${dashUrl}`);
         } else {
           log.success('┌─────────────────────────────────────────────────┐');
-          log.success('│  💻 DASHBOARD (this network)                    │');
+          log.success('│  💻 DASHBOARD (local)                           │');
           log.success('└─────────────────────────────────────────────────┘');
           log.info(`  ${dashUrl}`);
-          log.info('');
-          log.info('  Open from this machine or any device on the same WiFi.');
-          log.warn('  If the link opens a different app (e.g. another tool), that app is using this port.');
-          log.warn('  Fix: qclaw config set dashboard.port 3010   then   qclaw restart');
-          log.info('  For a public URL (e.g. Cloudflare):');
-          log.info('  qclaw config set dashboard.tunnel cloudflare');
         }
         log.info('');
         log.info('  Lost this URL? Run: qclaw dashboard');
       } catch (err) {
         log.warn(`Dashboard failed to start: ${err.message}`);
-        if (err.message && (err.message.includes('EADDRINUSE') || err.message.includes('address already in use'))) {
-          log.warn('  Port is in use by another app. Fix: qclaw config set dashboard.port 3010   then   qclaw start');
-        }
         log.info('Agent is still running on connected channels.');
       }
     }
@@ -257,21 +258,11 @@ class QuantumClaw {
     // Quick reference
     log.info('');
     log.info('  Quick reference:');
-    log.info('  qclaw start       start agent (or restart)');
+    log.info('  qclaw dashboard   re-show dashboard URL');
+    log.info('  qclaw chat        chat in this terminal');
+    log.info('  qclaw status      health check');
     log.info('  qclaw stop        stop agent');
-    log.info('  qclaw dashboard   re-show dashboard URL (copy/open)');
-    log.info('  qclaw chat        chat in terminal (or: chat "message")');
-    log.info('  qclaw diagnose    full health check (Node, config, Cognee, AGEX, channels)');
-    log.info('  qclaw status      show config summary');
-    log.info('  qclaw logs        recent audit entries (logs --errors for errors only)');
-    log.info('  qclaw onboard     setup wizard (safe to re-run)');
-    log.info('  qclaw config show / config set KEY VAL');
-    log.info('  qclaw secret list / secret set KEY / secret delete KEY');
-    log.info('  qclaw pairing list [channel] / pairing approve CHAN CODE');
-    log.info('  qclaw channel list / channel test tg');
-    log.info('  qclaw cognee status / cognee reconnect / cognee stats');
-    log.info('  qclaw skill list   agex status   autolearn on|off   update   install');
-    log.info('  qclaw help        full command list');
+    log.info('  qclaw help        all commands');
     log.info('');
 
     // Write PID file for `qclaw stop`

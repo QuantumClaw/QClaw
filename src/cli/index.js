@@ -8,7 +8,8 @@
 
 import { smallBanner } from './brand.js';
 import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -1122,21 +1123,8 @@ switch (command) {
     smallBanner();
     const { config, secrets } = await loadCore();
     const port = config.dashboard?.port || 3000;
-    const host = config.dashboard?.host ?? '0.0.0.0';
-    // Prefer LAN IP so URL works from phone/tablet on same network
-    const { networkInterfaces } = await import('os');
-    let localHost = host === '0.0.0.0' ? 'localhost' : host;
-    if (host === '0.0.0.0') {
-      for (const nets of Object.values(networkInterfaces())) {
-        for (const n of nets || []) {
-          if (n.family === 'IPv4' && !n.internal) {
-            localHost = n.address;
-            break;
-          }
-        }
-        if (localHost !== 'localhost') break;
-      }
-    }
+    const host = config.dashboard?.host || '127.0.0.1';
+    const localHost = (host === '0.0.0.0' || host === '127.0.0.1') ? 'localhost' : host;
 
     // Get or generate auth token (refresh if expired)
     let token = config.dashboard?.authToken || process.env.DASHBOARD_AUTH_TOKEN;
@@ -1155,29 +1143,19 @@ switch (command) {
       if (tokenExpired) console.log(`  \x1b[33mToken expired — new token generated.\x1b[0m\n`);
     }
 
-    const localUrl = `http://${localHost}:${port}/#token=${token}`;
-
-    // Strip query params (e.g. ?project= from IDE) so dashboard always opens the QClaw UI
-    function dashboardUrlClean(u) {
-      try {
-        const parsed = new URL(u.trim());
-        parsed.search = '';
-        return parsed.toString();
-      } catch { return u.trim(); }
-    }
+    const localUrl = `http://${localHost}:${port}/?token=${token}`;
 
     // Check for saved tunnel URL (written by qclaw start)
     let tunnelUrl = null;
     const urlFile = join(config._dir, 'dashboard.url');
     if (existsSync(urlFile)) {
       try {
-        tunnelUrl = dashboardUrlClean(readFileSync(urlFile, 'utf-8'));
-        if (!tunnelUrl) tunnelUrl = null;
+        tunnelUrl = readFileSync(urlFile, 'utf-8').trim();
       } catch { /* non-fatal */ }
     }
 
-    // Determine which URL to show/copy (no ?project= or other query params)
-    const url = (tunnelUrl ? dashboardUrlClean(tunnelUrl) : null) || localUrl;
+    // Determine which URL to show/copy
+    const url = tunnelUrl || localUrl;
 
     console.log('');
     if (tunnelUrl) {
@@ -1185,15 +1163,11 @@ switch (command) {
       console.log(`  ${tunnelUrl}`);
       console.log('');
       console.log(`  ${'\x1b[2m'}Local: ${localUrl}${'\x1b[0m'}`);
-      console.log(`  ${'\x1b[33m'}If the local link opens a different app: ${'\x1b[36m'}qclaw config set dashboard.port 3010${'\x1b[0m'}  then  ${'\x1b[36m'}qclaw start${'\x1b[0m'}`);
     } else {
-      console.log(`  ${'\x1b[1m'}Dashboard (this network):${'\x1b[0m'}`);
+      console.log(`  ${'\x1b[1m'}Dashboard:${'\x1b[0m'}`);
       console.log(`  ${localUrl}`);
       console.log('');
-      console.log(`  ${'\x1b[2m'}Open from this machine or any device on the same WiFi.${'\x1b[0m'}`);
-      console.log(`  ${'\x1b[33m'}If this link opens a different app (e.g. another tool), that app is using port ${port}.${'\x1b[0m'}`);
-      console.log(`  ${'\x1b[33m'}Fix: ${'\x1b[36m'}qclaw config set dashboard.port 3010${'\x1b[0m'}  then  ${'\x1b[36m'}qclaw start${'\x1b[0m'}`);
-      console.log(`  ${'\x1b[2m'}For a public URL: ${'\x1b[36m'}qclaw config set dashboard.tunnel cloudflare${'\x1b[0m'}`);
+      console.log(`  ${'\x1b[33m'}No tunnel active.${'\x1b[0m'} Run ${'\x1b[36m'}qclaw start${'\x1b[0m'} to open a public URL.`);
     }
     console.log('');
 
@@ -1435,7 +1409,13 @@ Dashboard: http://localhost:3000 (when agent is running)
     const LP = '\x1b[38;5;177m';
 
     const { execSync } = await import('child_process');
-    const run = (cmd, opts = {}) => execSync(cmd, { cwd: process.cwd(), stdio: 'pipe', ...opts }).toString().trim();
+
+    // Find the QClaw install directory (where this script lives, not where the user is)
+    const scriptDir = dirname(fileURLToPath(import.meta.url));
+    const qclawDir = join(scriptDir, '..', '..'); // src/cli -> src -> QClaw root
+    const run = (cmd, opts = {}) => execSync(cmd, { cwd: qclawDir, stdio: 'pipe', ...opts }).toString().trim();
+
+    console.log(`  ${D}QClaw directory: ${qclawDir}${RS}`);
 
     // Check we're in a git repo
     try {
@@ -1449,7 +1429,7 @@ Dashboard: http://localhost:3000 (when agent is running)
     // Get current version from package.json before pulling
     let beforeVersion = 'unknown';
     try {
-      const pkgBefore = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
+      const pkgBefore = JSON.parse(readFileSync(join(qclawDir, 'package.json'), 'utf8'));
       beforeVersion = pkgBefore.version || 'unknown';
     } catch {}
 
@@ -1508,7 +1488,7 @@ Dashboard: http://localhost:3000 (when agent is running)
     // Get new version from updated package.json
     let afterVersion = 'unknown';
     try {
-      const pkgAfter = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
+      const pkgAfter = JSON.parse(readFileSync(join(qclawDir, 'package.json'), 'utf8'));
       afterVersion = pkgAfter.version || 'unknown';
     } catch {}
 
@@ -1517,23 +1497,23 @@ Dashboard: http://localhost:3000 (when agent is running)
     console.log('');
     try {
       execSync('bash scripts/install.sh', {
-        cwd: process.cwd(),
-        stdio: 'inherit',  // show output live
+        cwd: qclawDir,
+        stdio: 'inherit',
         env: { ...process.env }
       });
     } catch {
       console.log(`  ${Y}!${RS} Installer had issues — trying npm install as fallback...`);
       try {
-        try { execSync('yarn install', { cwd: process.cwd(), stdio: 'ignore' }); }
-        catch { execSync('npm install', { cwd: process.cwd(), stdio: 'ignore' }); }
+        try { execSync('yarn install', { cwd: qclawDir, stdio: 'ignore' }); }
+        catch { execSync('npm install', { cwd: qclawDir, stdio: 'ignore' }); }
       } catch {
-        try { execSync('npm install --ignore-scripts', { cwd: process.cwd(), stdio: 'ignore' }); }
+        try { execSync('npm install --ignore-scripts', { cwd: qclawDir, stdio: 'ignore' }); }
         catch { /* best effort */ }
       }
     }
 
     // 5. Re-link global command
-    try { execSync('npm link --force', { cwd: process.cwd(), stdio: 'ignore' }); } catch {}
+    try { execSync('npm link --force', { cwd: qclawDir, stdio: 'ignore' }); } catch {}
 
     // 6. Show branded completion screen
     console.log('');
