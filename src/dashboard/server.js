@@ -876,6 +876,8 @@ export class DashboardServer {
             if (err.code === 'EADDRINUSE' && this.config.dashboard?.autoPort) {
               log.debug(`Port ${p} in use, trying ${p + 1}`);
               tryPort(p + 1);
+            } else if (err.code === 'EADDRINUSE') {
+              reject(new Error(`Port ${p} is in use by another app. Set a different port: qclaw config set dashboard.port 3010`));
             } else {
               reject(err);
             }

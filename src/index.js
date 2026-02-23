@@ -209,6 +209,8 @@ class QuantumClaw {
           log.info(`  ${dashUrl}`);
           log.info('');
           log.info('  Open from this machine or any device on the same WiFi.');
+          log.warn('  If the link opens a different app (e.g. another tool), that app is using this port.');
+          log.warn('  Fix: qclaw config set dashboard.port 3010   then   qclaw restart');
           log.info('  For a public URL (e.g. Cloudflare):');
           log.info('  qclaw config set dashboard.tunnel cloudflare');
         }
@@ -216,6 +218,9 @@ class QuantumClaw {
         log.info('  Lost this URL? Run: qclaw dashboard');
       } catch (err) {
         log.warn(`Dashboard failed to start: ${err.message}`);
+        if (err.message && (err.message.includes('EADDRINUSE') || err.message.includes('address already in use'))) {
+          log.warn('  Port is in use by another app. Fix: qclaw config set dashboard.port 3010   then   qclaw start');
+        }
         log.info('Agent is still running on connected channels.');
       }
     }

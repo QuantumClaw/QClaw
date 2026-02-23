@@ -1185,12 +1185,14 @@ switch (command) {
       console.log(`  ${tunnelUrl}`);
       console.log('');
       console.log(`  ${'\x1b[2m'}Local: ${localUrl}${'\x1b[0m'}`);
+      console.log(`  ${'\x1b[33m'}If the local link opens a different app: ${'\x1b[36m'}qclaw config set dashboard.port 3010${'\x1b[0m'}  then  ${'\x1b[36m'}qclaw start${'\x1b[0m'}`);
     } else {
       console.log(`  ${'\x1b[1m'}Dashboard (this network):${'\x1b[0m'}`);
       console.log(`  ${localUrl}`);
       console.log('');
       console.log(`  ${'\x1b[2m'}Open from this machine or any device on the same WiFi.${'\x1b[0m'}`);
-      console.log(`  ${'\x1b[2m'}Seeing a different app? Another service may be using port ${port}. Use: ${'\x1b[36m'}qclaw config set dashboard.port 3010${'\x1b[0m'}`);
+      console.log(`  ${'\x1b[33m'}If this link opens a different app (e.g. another tool), that app is using port ${port}.${'\x1b[0m'}`);
+      console.log(`  ${'\x1b[33m'}Fix: ${'\x1b[36m'}qclaw config set dashboard.port 3010${'\x1b[0m'}  then  ${'\x1b[36m'}qclaw start${'\x1b[0m'}`);
       console.log(`  ${'\x1b[2m'}For a public URL: ${'\x1b[36m'}qclaw config set dashboard.tunnel cloudflare${'\x1b[0m'}`);
     }
     console.log('');
