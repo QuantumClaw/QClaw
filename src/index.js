@@ -194,17 +194,23 @@ class QuantumClaw {
         } catch { /* non-fatal */ }
 
         // Show dashboard URL prominently
+        log.info('');
         if (this.dashboard.tunnelUrl) {
-          log.info('');
           log.success('┌─────────────────────────────────────────────────┐');
-          log.success('│                                                 │');
-          log.success('│  📡 DASHBOARD (open from any browser/device)    │');
-          log.success('│                                                 │');
+          log.success('│  📡 DASHBOARD (any browser/device)              │');
+          log.success('└─────────────────────────────────────────────────┘');
+          log.info(`  ${dashUrl}`);
+        } else {
+          log.success('┌─────────────────────────────────────────────────┐');
+          log.success('│  💻 DASHBOARD (local)                           │');
           log.success('└─────────────────────────────────────────────────┘');
           log.info(`  ${dashUrl}`);
           log.info('');
-          log.info('  Lost this URL? Run: qclaw dashboard');
+          log.info('  Want remote access? Set a tunnel token:');
+          log.info('  qclaw config set dashboard.tunnel cloudflare');
         }
+        log.info('');
+        log.info('  Lost this URL? Run: qclaw dashboard');
       } catch (err) {
         log.warn(`Dashboard failed to start: ${err.message}`);
         log.info('Agent is still running on connected channels.');

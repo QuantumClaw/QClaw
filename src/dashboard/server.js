@@ -124,15 +124,29 @@ export class DashboardServer {
     // Hash fragment is never sent to the server in HTTP requests — stays client-side only
     this.dashUrl = `${localUrl}/#token=${this.sessionToken}`;
 
-    // Start tunnel if configured or auto-detect
+    // Start tunnel — smart defaults:
+    // - Termux/Android: always tunnel (can't access localhost from phone browser)
+    // - Desktop: localhost only (unless explicitly configured or has tunnel token)
     let tunnelType = process.env.QCLAW_TUNNEL || this.config.dashboard?.tunnel || 'auto';
     if (tunnelType === 'auto') {
-      // Auto-detect: try cloudflared first
-      try {
-        const { execSync } = await import('child_process');
-        execSync('cloudflared --version', { stdio: 'ignore' });
+      const hasTunnelToken = this.config.dashboard?.tunnelToken
+        || process.env.CLOUDFLARE_TUNNEL_TOKEN;
+
+      if (hasTunnelToken) {
+        // Persistent tunnel token exists — always use it
         tunnelType = 'cloudflare';
-      } catch {
+      } else if (isTermux) {
+        // Termux: need tunnel for mobile access
+        try {
+          const { execSync } = await import('child_process');
+          execSync('cloudflared --version', { stdio: 'ignore' });
+          tunnelType = 'cloudflare';
+        } catch {
+          tunnelType = 'none';
+          log.warn('cloudflared not found — dashboard is localhost only');
+        }
+      } else {
+        // Desktop: localhost is fine, no tunnel needed
         tunnelType = 'none';
       }
     }
