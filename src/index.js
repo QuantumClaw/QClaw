@@ -252,11 +252,21 @@ class QuantumClaw {
     // Quick reference
     log.info('');
     log.info('  Quick reference:');
-    log.info('  qclaw dashboard   re-show dashboard URL');
-    log.info('  qclaw chat        chat in this terminal');
-    log.info('  qclaw status      health check');
+    log.info('  qclaw start       start agent (or restart)');
     log.info('  qclaw stop        stop agent');
-    log.info('  qclaw help        all commands');
+    log.info('  qclaw dashboard   re-show dashboard URL (copy/open)');
+    log.info('  qclaw chat        chat in terminal (or: chat "message")');
+    log.info('  qclaw diagnose    full health check (Node, config, Cognee, AGEX, channels)');
+    log.info('  qclaw status      show config summary');
+    log.info('  qclaw logs        recent audit entries (logs --errors for errors only)');
+    log.info('  qclaw onboard     setup wizard (safe to re-run)');
+    log.info('  qclaw config show / config set KEY VAL');
+    log.info('  qclaw secret list / secret set KEY / secret delete KEY');
+    log.info('  qclaw pairing list [channel] / pairing approve CHAN CODE');
+    log.info('  qclaw channel list / channel test tg');
+    log.info('  qclaw cognee status / cognee reconnect / cognee stats');
+    log.info('  qclaw skill list   agex status   autolearn on|off   update   install');
+    log.info('  qclaw help        full command list');
     log.info('');
 
     // Write PID file for `qclaw stop`
