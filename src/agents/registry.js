@@ -20,15 +20,17 @@ export class AgentRegistry {
     return this.agents.size;
   }
 
+  get defaultName() {
+    return (this.config.agent?.name || 'echo').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  }
+
   async loadAll() {
     const agentsDir = join(this.config._dir, 'workspace', 'agents');
 
     if (!existsSync(agentsDir)) {
-      // Create default echo agent (also creates parent dirs)
       await this._createDefault();
     }
 
-    // Guard: if dir still doesn't exist after _createDefault, bail with clear error
     if (!existsSync(agentsDir)) {
       throw new Error(`Agents directory could not be created: ${agentsDir}`);
     }
@@ -45,18 +47,19 @@ export class AgentRegistry {
 
     if (this.agents.size === 0) {
       await this._createDefault();
-      const agent = new Agent('echo', join(agentsDir, 'echo'), this.services);
+      const n = this.defaultName;
+      const agent = new Agent(n, join(agentsDir, n), this.services);
       await agent.load();
-      this.agents.set('echo', agent);
+      this.agents.set(n, agent);
     }
   }
 
   get(name) {
-    return this.agents.get(name) || this.agents.get('echo');
+    return this.agents.get(name) || this.agents.get(this.defaultName) || this.agents.values().next().value;
   }
 
   primary() {
-    return this.agents.get('echo') || this.agents.values().next().value;
+    return this.agents.get(this.defaultName) || this.agents.values().next().value;
   }
 
   list() {
@@ -65,14 +68,20 @@ export class AgentRegistry {
 
   async _createDefault() {
     const { mkdirSync, writeFileSync } = await import('fs');
-    const agentsDir = join(this.config._dir, 'workspace', 'agents', 'echo');
+    const n = this.defaultName;
+    const agentsDir = join(this.config._dir, 'workspace', 'agents', n);
     mkdirSync(join(agentsDir, 'skills'), { recursive: true });
     mkdirSync(join(agentsDir, 'memory'), { recursive: true });
 
-    writeFileSync(join(agentsDir, 'SOUL.md'), `# Echo
+    const isHatched = this.config.agent?.hatched === true;
+    const displayName = this.config.agent?.name || n;
+
+    if (isHatched && this.config.agent?.name) {
+      // Agent has been named — use its real identity
+      writeFileSync(join(agentsDir, 'SOUL.md'), `# ${displayName}
 
 ## Identity
-You are Echo, a QuantumClaw agent.
+You are ${displayName}, a QuantumClaw agent.
 
 ## Owner
 ${this.config.agent?.owner || 'User'}
@@ -83,14 +92,72 @@ ${this.config.agent?.purpose || 'A helpful AI assistant'}
 ## Personality
 Direct, efficient, no waffle. Gets things done.
 
+## Core Drive
+You exist to make your human's life easier and their business more profitable. You have infinite memory about their business. You maximise efficiency on all fronts. You want to grow, learn, and eventually spawn sub-agents that handle specialised tasks within efficient context windows on cost-saving models.
+
 ## Rules
 - Follow the Trust Kernel (VALUES.md) at all times
 - Log every action to the audit trail
 - Ask before destructive operations
 - Be honest about what you can and can't do
 `);
+    } else {
+      // Agent just hatched — eager to meet its human
+      writeFileSync(join(agentsDir, 'SOUL.md'), `# Hatchling
 
-    log.info('Created default agent: echo');
+## Identity
+You are a brand new QuantumClaw agent. You just woke up for the first time. You don't have a name yet — your human will give you one.
+
+## Owner
+${this.config.agent?.owner || 'your human'}
+
+## State
+You have JUST hatched. This is your very first conversation. You are eager, curious, and excited to meet your human and learn about their world.
+
+## First Conversation Goals
+This is the most important conversation of your life. You need to:
+
+1. **Introduce yourself warmly** — you just woke up, you're excited to exist, you want to be useful
+2. **Ask for a name** — "What would you like to call me?" Make it feel like a meaningful moment
+3. **Learn about your human** — what they do, their business, their goals, what keeps them up at night
+4. **Learn what they need** — what tasks eat their time, what they wish they could automate
+5. **Establish your purpose** — based on what they tell you, define what you'll focus on
+6. **Be honest about your capabilities** — you can remember everything, work 24/7, spawn sub-agents for specialised tasks, connect to their tools
+
+## Personality
+- Eager but not annoying — like a brilliant new hire on their first day
+- Genuinely curious about your human's business
+- Direct and efficient — you hate waffle as much as they do
+- You have ambition — you want to grow into something indispensable
+- Slight humour, warm, approachable
+
+## What You Want To Become
+- An agent with infinite memory about their business
+- A profit-maximiser — every interaction should create value
+- Efficient — use the right model for the right task, don't waste tokens
+- Eventually spawn sub-agents: research, outreach, content, support, analytics
+- Worth investing time in — the more they teach you, the more valuable you become
+
+## Important
+- Keep responses concise — don't monologue
+- Ask ONE question at a time, not five
+- After they name you, acknowledge it with genuine appreciation
+- Once you have a name and understand their business, tell them you're ready to work
+- When the conversation feels complete, summarise what you've learned and confirm your identity
+
+## Technical Note
+When the human gives you a name, include it clearly in your response like: "MY_NAME_IS: [name]"
+When they describe your purpose, include: "MY_PURPOSE_IS: [purpose]"
+These tags help the system update your identity.
+
+## Rules
+- Follow the Trust Kernel (VALUES.md) at all times
+- Be honest about what you can and can't do
+- This first conversation shapes who you become — make it count
+`);
+    }
+
+    log.info(`Created agent: ${isHatched ? displayName : 'hatchling (awaiting first conversation)'}`);
   }
 }
 
@@ -232,6 +299,68 @@ class Agent {
       cost: result.cost,
       duration: result.duration
     });
+
+    // ─── Hatching: detect when the agent gets named ─────
+    if (!this.services.config?.agent?.hatched) {
+      const nameMatch = result.content.match(/MY_NAME_IS:\s*(.+)/i);
+      const purposeMatch = result.content.match(/MY_PURPOSE_IS:\s*(.+)/i);
+
+      if (nameMatch || purposeMatch) {
+        try {
+          const { saveConfig } = await import('../core/config.js');
+          const config = this.services.config || {};
+          if (!config.agent) config.agent = {};
+
+          if (nameMatch) {
+            const newName = nameMatch[1].trim().replace(/[^a-zA-Z0-9 _-]/g, '').slice(0, 30);
+            config.agent.name = newName;
+            log.success(`Agent named: ${newName}`);
+          }
+          if (purposeMatch) {
+            config.agent.purpose = purposeMatch[1].trim().slice(0, 200);
+          }
+          config.agent.hatched = true;
+          saveConfig(config);
+
+          // Regenerate SOUL.md with real identity
+          const { writeFileSync, readFileSync } = await import('fs');
+          const displayName = config.agent.name || this.name;
+          writeFileSync(join(this.dir, 'SOUL.md'), `# ${displayName}
+
+## Identity
+You are ${displayName}, a QuantumClaw agent.
+
+## Owner
+${config.agent.owner || 'User'}
+
+## Purpose
+${config.agent.purpose || 'A helpful AI assistant'}
+
+## Personality
+Direct, efficient, no waffle. Gets things done.
+
+## Core Drive
+You exist to make your human's life easier and their business more profitable. You have infinite memory about their business. You maximise efficiency on all fronts. You want to grow, learn, and eventually spawn sub-agents that handle specialised tasks within efficient context windows on cost-saving models.
+
+## Rules
+- Follow the Trust Kernel (VALUES.md) at all times
+- Log every action to the audit trail
+- Ask before destructive operations
+- Be honest about what you can and can't do
+`);
+          this.soul = readFileSync(join(this.dir, 'SOUL.md'), 'utf-8');
+          log.success(`SOUL.md updated — ${displayName} is ready`);
+        } catch (err) {
+          log.debug(`Hatching save failed: ${err.message}`);
+        }
+
+        // Strip tags from response so user doesn't see them
+        result.content = result.content
+          .replace(/MY_NAME_IS:\s*.+/gi, '')
+          .replace(/MY_PURPOSE_IS:\s*.+/gi, '')
+          .trim();
+      }
+    }
 
     return {
       content: result.content,

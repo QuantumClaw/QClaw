@@ -118,7 +118,7 @@ export async function runOnboard() {
     }
   }
 
-  // ─── Step 3: Name ─────────────────────────────────────
+  // ─── Step 3: Your Name ──────────────────────────────
 
   const name = await p.text({
     message: 'Your name?',
@@ -178,9 +178,9 @@ export async function runOnboard() {
   const config = await loadConfig();
 
   config.agent = {
-    name: 'QClaw',
     owner: name,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    hatched: false,  // becomes true after first chat
   };
 
   config.models = config.models || {};

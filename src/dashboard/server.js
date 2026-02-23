@@ -9,7 +9,7 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import { log } from '../core/logger.js';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, readdirSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -173,11 +173,35 @@ export class DashboardServer {
       }
     }
 
+    // Poll delivery queue for autolearn messages and broadcast to dashboard
+    this._deliveryPoller = setInterval(async () => {
+      try {
+        const queueDir = join(this.config._dir, 'workspace', 'delivery-queue');
+        if (!existsSync(queueDir)) return;
+        const files = readdirSync(queueDir).filter(f => f.startsWith('autolearn_') && f.endsWith('.json'));
+        for (const file of files) {
+          try {
+            const data = JSON.parse(readFileSync(join(queueDir, file), 'utf-8'));
+            // Broadcast to dashboard
+            this.broadcast({
+              type: 'autolearn',
+              question: data.question,
+              agent: data.agent,
+              timestamp: data.timestamp
+            });
+            // Delete after delivery
+            unlinkSync(join(queueDir, file));
+          } catch { /* corrupted file, skip */ }
+        }
+      } catch { /* queue dir doesn't exist yet */ }
+    }, 15000); // check every 15s
+
     return this.dashUrl;
   }
 
   async stop() {
     if (this._wsHeartbeat) clearInterval(this._wsHeartbeat);
+    if (this._deliveryPoller) clearInterval(this._deliveryPoller);
     if (this.tunnel) {
       try { await this._stopTunnel(); } catch { /* best effort */ }
     }
@@ -349,7 +373,7 @@ export class DashboardServer {
           skills: agent.skills?.length || 0,
           threads: threads.length,
           messages: totalMessages,
-          isPrimary: name === 'echo'
+          isPrimary: agent.name === this.qclaw.agents.primary()?.name
         });
       }
       res.json(agents);

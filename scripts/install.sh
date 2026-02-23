@@ -375,6 +375,7 @@ if $IS_TERMUX; then
     echo -e "  ${D}└──────────────────────────────────────────────────┘${RS}"
 else
     DONE=false
+    # Method 1: Docker (best)
     if ! $DONE && command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
         info "Docker found — installing Cognee..."
         docker pull cognee/cognee:latest 2>&1 | tail -2
@@ -383,26 +384,38 @@ else
             -p 8000:8000 -e VECTOR_DB_PROVIDER=lancedb \
             -e ENABLE_BACKEND_ACCESS_CONTROL=false \
             -v quantumclaw-cognee-data:/app/cognee/.cognee_system \
-            cognee/cognee:latest >/dev/null
+            cognee/cognee:latest >/dev/null 2>&1
         DONE=true; ok "Cognee (Docker)"
     fi
+    # Method 2: pip (with --break-system-packages for modern Python)
     if ! $DONE; then
         PIP=""
         command -v pip3 &>/dev/null && PIP="pip3"
         [ -z "$PIP" ] && command -v pip &>/dev/null && PIP="pip"
         if [ -n "$PIP" ]; then
             info "Installing Cognee via pip..."
-            if $PIP install cognee uvicorn 2>&1 | tail -3; then
+            if $PIP install cognee uvicorn --break-system-packages 2>&1 | tail -3; then
                 PY="python3"; command -v python3 &>/dev/null || PY="python"
                 nohup $PY -m uvicorn cognee.api.server:app --host 0.0.0.0 --port 8000 \
                     > "$CONFIG_DIR/cognee.log" 2>&1 &
                 echo $! > "$CONFIG_DIR/cognee.pid"
-                DONE=true; ok "Cognee (pip)"
+                sleep 2
+                if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+                    DONE=true; ok "Cognee (pip)"
+                else
+                    warn "Cognee installed but not responding — check $CONFIG_DIR/cognee.log"
+                fi
             else
-                warn "pip install failed — local graph still works"
+                warn "pip install failed"
             fi
         fi
     fi
+    if ! $DONE; then
+        info "Cognee not installed — local vector + SQLite memory active"
+        info "To install later: docker run -d -p 8000:8000 cognee/cognee:latest"
+        info "Or: pip3 install cognee uvicorn --break-system-packages"
+    fi
+fi
     if $DONE; then
         info "Waiting for Cognee..."
         for i in $(seq 1 20); do

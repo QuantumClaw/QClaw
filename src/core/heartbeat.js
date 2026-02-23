@@ -263,7 +263,7 @@ export class Heartbeat {
     // Pick a question — contextual if we have recent memory, random otherwise
     let question;
     try {
-      const recent = this.memory.getHistory('echo', 10);
+      const recent = this.memory.getHistory(agent.name, 10);
       const recentText = recent.map(m => m.content).join(' ').slice(0, 500);
 
       if (recentText.length > 50) {

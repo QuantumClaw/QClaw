@@ -148,7 +148,8 @@ class QuantumClaw {
         skills: this.skills,
         trustKernel: this.trustKernel,
         audit: this.audit,
-        secrets: this.credentials
+        secrets: this.credentials,
+        config: this.config
       });
       await this.agents.loadAll();
       log.success(`${this.agents.count} agent(s) ready`);
@@ -228,6 +229,19 @@ class QuantumClaw {
 
     // ── Layer 8: Heartbeat (non-fatal) ──
     try {
+      // Auto-enable learn mode if agent hasn't hatched yet (first boot experience)
+      if (!this.config.agent?.hatched) {
+        if (!this.config.heartbeat) this.config.heartbeat = {};
+        if (!this.config.heartbeat.autoLearn) {
+          this.config.heartbeat.autoLearn = {
+            enabled: true,
+            maxQuestionsPerDay: 5,
+            minIntervalHours: 2,
+            quietHoursStart: 22,
+            quietHoursEnd: 8
+          };
+        }
+      }
       this.heartbeat = new Heartbeat(this.config, this.agents, this.memory, this.audit);
       await this.heartbeat.start();
     } catch (err) {
