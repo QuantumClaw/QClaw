@@ -1,0 +1,59 @@
+name: Skill Submission
+description: Share a skill you've built
+title: "[Skill] "
+labels: ["skill"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Built a skill for QuantumClaw? Share it here. If it's good, we'll add it to the community skills collection.
+
+  - type: input
+    attributes:
+      label: Skill name
+      placeholder: "e.g. GoHighLevel CRM, Stripe Payments, Notion Sync"
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: What does it do?
+      description: One paragraph.
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: Services / APIs it connects to
+      placeholder: "e.g. Stripe API, GoHighLevel, Notion"
+    validations:
+      required: true
+
+  - type: dropdown
+    attributes:
+      label: Auth type
+      options:
+        - API Key
+        - OAuth2
+        - Bearer Token
+        - None
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    attributes:
+      label: Tested on
+      options:
+        - label: Linux
+        - label: macOS
+        - label: Windows (WSL2)
+        - label: Android (Termux)
+
+  - type: textarea
+    attributes:
+      label: Skill file
+      description: Paste your SKILL.md content or link to a gist/repo
+      render: markdown
+    validations:
+      required: true

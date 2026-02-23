@@ -1,0 +1,48 @@
+name: Feature Request
+description: Suggest something new
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Good feature requests explain the problem, not just the solution. What are you trying to do that QuantumClaw doesn't support yet?
+
+  - type: textarea
+    attributes:
+      label: What problem does this solve?
+      description: Describe the problem or use case.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Proposed solution
+      description: How you think it should work.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Alternatives considered
+      description: Other ways to solve this (if any).
+    validations:
+      required: false
+
+  - type: dropdown
+    attributes:
+      label: Area
+      options:
+        - CLI / Commands
+        - Agent / Routing
+        - Knowledge Graph / Memory
+        - Skills System
+        - Channels (Telegram, Discord, etc.)
+        - Dashboard
+        - Security / Trust Kernel
+        - AGEX Protocol
+        - Documentation
+        - Performance
+        - Other
+    validations:
+      required: true
