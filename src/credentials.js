@@ -141,7 +141,7 @@ export class CredentialManager {
       await this._connectHub();
     } catch (err) {
       log.debug(`AGEX Hub not available: ${err.message}`);
-      log.info(`AGEX Hub offline — using local secrets (will auto-reconnect). Tried ${this._hubUrl}; see docs/AGEX_HUB_RAILWAY.md if Hub is on Railway.`);
+      log.info('AGEX Hub offline — using local secrets (will auto-reconnect)');
       this._startReconnectLoop();
     }
 
