@@ -4,6 +4,12 @@ All notable changes to QuantumClaw will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.3] - 2026-02-24
+
+### Fixed
+- **AGEX SDK crash on Node 20** — `@agexhq/core` uses top-level `await` syntax that causes `SyntaxError: Unexpected reserved word` on Node 20.x. All AGEX imports are now dynamic with try/catch, so the agent starts cleanly and falls back to local secrets when AGEX SDK can't load.
+- **AGEX packages moved back to optionalDependencies** — prevents `npm install` failures if the packages have native/syntax issues on the host platform.
+
 ## [1.3.2] - 2026-02-24
 
 ### Added

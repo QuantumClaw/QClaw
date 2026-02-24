@@ -21,8 +21,25 @@
 
 import { log } from './core/logger.js';
 import { SecretStore } from './security/secrets.js';
-import { AgexClient } from '@agexhq/sdk';
-import { startHubLite } from '@agexhq/hub-lite';
+// AGEX SDK loaded dynamically — @agexhq/core uses syntax not all Node versions support
+let AgexClient = null;
+let startHubLite = null;
+let _agexLoadAttempted = false;
+
+async function loadAgexSDK() {
+  if (_agexLoadAttempted) return !!AgexClient;
+  _agexLoadAttempted = true;
+  try {
+    const sdk = await import('@agexhq/sdk');
+    AgexClient = sdk.AgexClient || sdk.default;
+    const hub = await import('@agexhq/hub-lite');
+    startHubLite = hub.startHubLite || hub.default;
+    return true;
+  } catch (err) {
+    log.debug(`AGEX SDK not loadable: ${err.message}`);
+    return false;
+  }
+}
 
 // Map from QuantumClaw tool names to AGEX service IDs and scopes
 const SERVICE_MAP = {
@@ -333,6 +350,10 @@ export class CredentialManager {
   // ─── AGEX Hub connection ─────────────────────────────
 
   async _connectHub() {
+    // Load AGEX SDK dynamically (may fail on some Node versions)
+    const sdkLoaded = await loadAgexSDK();
+    if (!sdkLoaded) throw new Error('AGEX SDK not available');
+
     // Try health check — if hub isn't running, start hub-lite automatically
     let hubRunning = false;
     try {
@@ -447,6 +468,12 @@ export class CredentialManager {
    * Generate a child AID for a sub-agent, delegated from the primary
    */
   async generateChildAID(agentName, role = 'worker', scopes = []) {
+    // Ensure SDK is loaded
+    if (!AgexClient) {
+      const loaded = await loadAgexSDK();
+      if (!loaded) throw new Error('AGEX SDK not available — cannot generate AID');
+    }
+
     const childAid = await this._loadOrCreateAID(agentName);
 
     // If AGEX is available, register the child and delegate
