@@ -71,7 +71,7 @@ export class ModelRouter {
     }
 
     // Verify fast model
-    if (this.fast.provider) {
+    if (this.fast && this.fast.provider) {
       try {
         await this._testProvider(this.fast);
         models.push(`${this.fast.provider}/${this.fast.model} (fast)`);
@@ -288,7 +288,7 @@ export class ModelRouter {
 
     for (const m of messages) {
       if (m.role === 'system') {
-        systemParts.push(m.content);
+        systemParts.push(typeof m.content === 'string' ? m.content : m.content);
       } else {
         chatMessages.push({ role: m.role, content: m.content });
       }
@@ -303,7 +303,16 @@ export class ModelRouter {
     const merged = [];
     for (const msg of chatMessages) {
       if (merged.length > 0 && merged[merged.length - 1].role === msg.role) {
-        merged[merged.length - 1].content += '\n\n' + msg.content;
+        // Only merge string content; arrays (multimodal) stay separate
+        const prev = merged[merged.length - 1];
+        if (typeof prev.content === 'string' && typeof msg.content === 'string') {
+          prev.content += '\n\n' + msg.content;
+        } else {
+          // Convert both to arrays and concat
+          const prevArr = Array.isArray(prev.content) ? prev.content : [{ type: 'text', text: prev.content }];
+          const msgArr = Array.isArray(msg.content) ? msg.content : [{ type: 'text', text: msg.content }];
+          prev.content = [...prevArr, ...msgArr];
+        }
       } else {
         merged.push({ ...msg });
       }

@@ -53,7 +53,7 @@ const DEFAULTS = {
     port: 3000,
     host: '127.0.0.1',
     autoPort: true,
-    tunnel: 'none',
+    tunnel: 'auto',
     tunnel_subdomain: null
   },
   channels: {},
@@ -76,7 +76,15 @@ const DEFAULTS = {
     eventDriven: true,
     graphDriven: false, // Off by default — costs money (LLM calls per query)
     graphDiscoveryIntervalHours: 4,
-    maxDailyCost: 0.50
+    maxDailyCost: 0.50,
+    autoLearn: {
+      enabled: false,       // Off by default — user opts in via CLI or dashboard
+      maxQuestionsPerDay: 3,
+      minIntervalHours: 4,  // Minimum gap between questions
+      useFastModel: true,   // Use fast/free model to save costs
+      quietHoursStart: 22,  // Don't message after 10pm
+      quietHoursEnd: 8,     // Don't message before 8am
+    }
   },
   evolution: {
     enabled: false // off by default, user opts in
@@ -93,7 +101,11 @@ export async function loadConfig() {
 
   // If no config, return defaults (onboard hasn't run yet)
   if (!existsSync(CONFIG_FILE)) {
-    log.warn('No config found. Run `npx qclaw onboard` first.');
+    // Don't warn if we're already running onboard
+    const isOnboarding = process.argv.some(a => a === 'onboard');
+    if (!isOnboarding) {
+      log.warn('No config found. Run `qclaw onboard` first.');
+    }
     return { ...DEFAULTS, _dir: CONFIG_DIR, _file: CONFIG_FILE };
   }
 

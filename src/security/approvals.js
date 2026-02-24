@@ -2,15 +2,12 @@
  * QuantumClaw Exec Approvals
  *
  * Some actions need human approval before executing.
- * This tracks pending, approved, and denied requests.
- *
- * The Trust Kernel defines what needs approval.
- * This system manages the actual approval workflow.
+ * Uses shared database from @agexhq/store.
+ * Falls back to JSON if no database is available.
  */
 
-import Database from 'better-sqlite3';
 import { join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { log } from '../core/logger.js';
 
 export class ExecApprovals {
@@ -18,103 +15,80 @@ export class ExecApprovals {
     const dir = config._dir;
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
-    this.db = new Database(join(dir, 'approvals.db'));
-    this.db.pragma('journal_mode = WAL');
-
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS approvals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        agent TEXT NOT NULL,
-        action TEXT NOT NULL,
-        detail TEXT,
-        risk_level TEXT DEFAULT 'medium',
-        status TEXT DEFAULT 'pending',
-        requested TEXT DEFAULT (datetime('now')),
-        resolved TEXT,
-        resolved_by TEXT,
-        reason TEXT
-      );
-    `);
-
     this.pendingCallbacks = new Map();
+    this._jsonPath = join(dir, 'approvals.json');
+    this.db = null;
+    this._useJson = true;
   }
 
-  /**
-   * Request approval for an action.
-   * Returns a promise that resolves when approved/denied.
-   */
-  async request(agent, action, detail, riskLevel = 'medium') {
-    const result = this.db.prepare(`
-      INSERT INTO approvals (agent, action, detail, risk_level)
-      VALUES (?, ?, ?, ?)
-    `).run(agent, action, detail, riskLevel);
+  attach(db) {
+    if (db) { this.db = db; this._useJson = false; }
+    else { this._data = this._loadJson(); }
+  }
 
-    const id = result.lastInsertRowid;
+  _loadJson() {
+    try { return JSON.parse(readFileSync(this._jsonPath, 'utf8')); }
+    catch { return { nextId: 1, items: [] }; }
+  }
+
+  _saveJson() {
+    if (this._data.items.length > 200) this._data.items = this._data.items.slice(-200);
+    writeFileSync(this._jsonPath, JSON.stringify(this._data, null, 2));
+  }
+
+  async request(agent, action, detail, riskLevel = 'medium') {
+    let id;
+    if (this._useJson) {
+      if (!this._data) this._data = this._loadJson();
+      id = this._data.nextId++;
+      this._data.items.push({ id, agent, action, detail, risk_level: riskLevel, status: 'pending', requested: new Date().toISOString(), resolved: null, resolved_by: null, reason: null });
+      this._saveJson();
+    } else {
+      const result = this.db.prepare('INSERT INTO approvals (agent, action, detail, risk_level) VALUES (?, ?, ?, ?)').run(agent, action, detail, riskLevel);
+      id = result.lastInsertRowid;
+    }
+
     log.warn(`Approval needed: [${id}] ${agent} wants to ${action}`);
 
     return new Promise((resolve, reject) => {
       this.pendingCallbacks.set(id, { resolve, reject });
-
-      // Auto-deny after 10 minutes if no response
       setTimeout(() => {
-        if (this.pendingCallbacks.has(id)) {
-          this.deny(id, 'system', 'Timed out after 10 minutes');
-        }
+        if (this.pendingCallbacks.has(id)) this.deny(id, 'system', 'Timed out after 10 minutes');
       }, 10 * 60 * 1000);
     });
   }
 
-  /**
-   * Approve a pending request
-   */
   approve(id, by = 'owner') {
-    this.db.prepare(`
-      UPDATE approvals SET status = 'approved', resolved = datetime('now'), resolved_by = ?
-      WHERE id = ? AND status = 'pending'
-    `).run(by, id);
-
-    const cb = this.pendingCallbacks.get(id);
-    if (cb) {
-      cb.resolve({ approved: true, id });
-      this.pendingCallbacks.delete(id);
+    if (this._useJson) {
+      const item = this._data?.items?.find(i => i.id === id && i.status === 'pending');
+      if (item) { item.status = 'approved'; item.resolved = new Date().toISOString(); item.resolved_by = by; this._saveJson(); }
+    } else {
+      this.db.prepare('UPDATE approvals SET status = \'approved\', resolved = datetime(\'now\'), resolved_by = ? WHERE id = ? AND status = \'pending\'').run(by, id);
     }
-
+    const cb = this.pendingCallbacks.get(id);
+    if (cb) { cb.resolve({ approved: true, id }); this.pendingCallbacks.delete(id); }
     log.success(`Approved: [${id}]`);
   }
 
-  /**
-   * Deny a pending request
-   */
   deny(id, by = 'owner', reason = '') {
-    this.db.prepare(`
-      UPDATE approvals SET status = 'denied', resolved = datetime('now'), resolved_by = ?, reason = ?
-      WHERE id = ? AND status = 'pending'
-    `).run(by, reason, id);
-
-    const cb = this.pendingCallbacks.get(id);
-    if (cb) {
-      cb.resolve({ approved: false, id, reason });
-      this.pendingCallbacks.delete(id);
+    if (this._useJson) {
+      const item = this._data?.items?.find(i => i.id === id && i.status === 'pending');
+      if (item) { item.status = 'denied'; item.resolved = new Date().toISOString(); item.resolved_by = by; item.reason = reason; this._saveJson(); }
+    } else {
+      this.db.prepare('UPDATE approvals SET status = \'denied\', resolved = datetime(\'now\'), resolved_by = ?, reason = ? WHERE id = ? AND status = \'pending\'').run(by, reason, id);
     }
-
+    const cb = this.pendingCallbacks.get(id);
+    if (cb) { cb.resolve({ approved: false, id, reason }); this.pendingCallbacks.delete(id); }
     log.info(`Denied: [${id}] ${reason}`);
   }
 
-  /**
-   * Get pending approvals (for dashboard)
-   */
   pending() {
-    return this.db.prepare(`
-      SELECT * FROM approvals WHERE status = 'pending' ORDER BY requested DESC
-    `).all();
+    if (this._useJson) return (this._data?.items || []).filter(i => i.status === 'pending').reverse();
+    return this.db.prepare('SELECT * FROM approvals WHERE status = \'pending\' ORDER BY requested DESC').all();
   }
 
-  /**
-   * Recent history (for dashboard/audit)
-   */
   recent(limit = 20) {
-    return this.db.prepare(`
-      SELECT * FROM approvals ORDER BY id DESC LIMIT ?
-    `).all(limit);
+    if (this._useJson) return (this._data?.items || []).slice(-limit).reverse();
+    return this.db.prepare('SELECT * FROM approvals ORDER BY id DESC LIMIT ?').all(limit);
   }
 }

@@ -20,15 +20,17 @@ export class AgentRegistry {
     return this.agents.size;
   }
 
+  get defaultName() {
+    return (this.config.agent?.name || 'echo').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  }
+
   async loadAll() {
     const agentsDir = join(this.config._dir, 'workspace', 'agents');
 
     if (!existsSync(agentsDir)) {
-      // Create default echo agent (also creates parent dirs)
       await this._createDefault();
     }
 
-    // Guard: if dir still doesn't exist after _createDefault, bail with clear error
     if (!existsSync(agentsDir)) {
       throw new Error(`Agents directory could not be created: ${agentsDir}`);
     }
@@ -45,18 +47,19 @@ export class AgentRegistry {
 
     if (this.agents.size === 0) {
       await this._createDefault();
-      const agent = new Agent('echo', join(agentsDir, 'echo'), this.services);
+      const n = this.defaultName;
+      const agent = new Agent(n, join(agentsDir, n), this.services);
       await agent.load();
-      this.agents.set('echo', agent);
+      this.agents.set(n, agent);
     }
   }
 
   get(name) {
-    return this.agents.get(name) || this.agents.get('echo');
+    return this.agents.get(name) || this.agents.get(this.defaultName) || this.agents.values().next().value;
   }
 
   primary() {
-    return this.agents.get('charlie') || this.agents.get('echo') || this.agents.values().next().value;
+    return this.agents.get(this.defaultName) || this.agents.values().next().value;
   }
 
   list() {
@@ -65,14 +68,20 @@ export class AgentRegistry {
 
   async _createDefault() {
     const { mkdirSync, writeFileSync } = await import('fs');
-    const agentsDir = join(this.config._dir, 'workspace', 'agents', 'echo');
+    const n = this.defaultName;
+    const agentsDir = join(this.config._dir, 'workspace', 'agents', n);
     mkdirSync(join(agentsDir, 'skills'), { recursive: true });
     mkdirSync(join(agentsDir, 'memory'), { recursive: true });
 
-    writeFileSync(join(agentsDir, 'SOUL.md'), `# Echo
+    const isHatched = this.config.agent?.hatched === true;
+    const displayName = this.config.agent?.name || n;
+
+    if (isHatched && this.config.agent?.name) {
+      // Agent has been named — use its real identity
+      writeFileSync(join(agentsDir, 'SOUL.md'), `# ${displayName}
 
 ## Identity
-You are Echo, a QuantumClaw agent.
+You are ${displayName}, a QuantumClaw agent.
 
 ## Owner
 ${this.config.agent?.owner || 'User'}
@@ -83,24 +92,83 @@ ${this.config.agent?.purpose || 'A helpful AI assistant'}
 ## Personality
 Direct, efficient, no waffle. Gets things done.
 
+## Core Drive
+You exist to make your human's life easier and their business more profitable. You have infinite memory about their business. You maximise efficiency on all fronts. You want to grow, learn, and eventually spawn sub-agents that handle specialised tasks within efficient context windows on cost-saving models.
+
 ## Rules
 - Follow the Trust Kernel (VALUES.md) at all times
 - Log every action to the audit trail
 - Ask before destructive operations
 - Be honest about what you can and can't do
 `);
+    } else {
+      // Agent just hatched — eager to meet its human
+      writeFileSync(join(agentsDir, 'SOUL.md'), `# Hatchling
 
-    log.info('Created default agent: echo');
+## Identity
+You are a brand new QuantumClaw agent. You just woke up for the first time. You don't have a name yet — your human will give you one.
+
+## Owner
+${this.config.agent?.owner || 'your human'}
+
+## State
+You have JUST hatched. This is your very first conversation. You are eager, curious, and excited to meet your human and learn about their world.
+
+## First Conversation Goals
+This is the most important conversation of your life. You need to:
+
+1. **Introduce yourself warmly** — you just woke up, you're excited to exist, you want to be useful
+2. **Ask for a name** — "What would you like to call me?" Make it feel like a meaningful moment
+3. **Learn about your human** — what they do, their business, their goals, what keeps them up at night
+4. **Learn what they need** — what tasks eat their time, what they wish they could automate
+5. **Establish your purpose** — based on what they tell you, define what you'll focus on
+6. **Be honest about your capabilities** — you can remember everything, work 24/7, spawn sub-agents for specialised tasks, connect to their tools
+
+## Personality
+- Eager but not annoying — like a brilliant new hire on their first day
+- Genuinely curious about your human's business
+- Direct and efficient — you hate waffle as much as they do
+- You have ambition — you want to grow into something indispensable
+- Slight humour, warm, approachable
+
+## What You Want To Become
+- An agent with infinite memory about their business
+- A profit-maximiser — every interaction should create value
+- Efficient — use the right model for the right task, don't waste tokens
+- Eventually spawn sub-agents: research, outreach, content, support, analytics
+- Worth investing time in — the more they teach you, the more valuable you become
+
+## Important
+- Keep responses concise — don't monologue
+- Ask ONE question at a time, not five
+- After they name you, acknowledge it with genuine appreciation
+- Once you have a name and understand their business, tell them you're ready to work
+- When the conversation feels complete, summarise what you've learned and confirm your identity
+
+## Technical Note
+When the human gives you a name, include it clearly in your response like: "MY_NAME_IS: [name]"
+When they describe your purpose, include: "MY_PURPOSE_IS: [purpose]"
+These tags help the system update your identity.
+
+## Rules
+- Follow the Trust Kernel (VALUES.md) at all times
+- Be honest about what you can and can't do
+- This first conversation shapes who you become — make it count
+`);
+    }
+
+    log.info(`Created agent: ${isHatched ? displayName : 'hatchling (awaiting first conversation)'}`);
   }
 }
 
-class Agent {
+export class Agent {
   constructor(name, dir, services) {
     this.name = name;
     this.dir = dir;
     this.services = services;
     this.soul = '';
     this.skills = [];
+    this.aid = null;
   }
 
   async load() {
@@ -108,6 +176,14 @@ class Agent {
     const soulFile = join(this.dir, 'SOUL.md');
     if (existsSync(soulFile)) {
       this.soul = readFileSync(soulFile, 'utf-8');
+    }
+
+    // Load AID (agent identity)
+    const aidFile = join(this.dir, 'aid.json');
+    if (existsSync(aidFile)) {
+      try {
+        this.aid = JSON.parse(readFileSync(aidFile, 'utf-8'));
+      } catch { /* corrupt aid.json — non-fatal */ }
     }
 
     // Load skills
@@ -126,69 +202,17 @@ class Agent {
    * Process a message through this agent
    */
   async process(message, context = {}) {
-    const channel = context.channel || "cli";
     const { router, memory, trustKernel, audit } = this.services;
 
-    // Tool path: explicit skill command execution (HTTP)
-    const skillCommand = this._extractSkillCommand(message);
-    if (skillCommand) {
-      try {
-        const started = Date.now();
-        const toolResult = await this._executeSkillHttp(skillCommand);
-        const duration = Date.now() - started;
-
-        const content = this._formatSkillResult(skillCommand, toolResult);
-
-        memory.addMessage(this.name, 'user', message, { tier: "tool", channel });
-        memory.addMessage(this.name, 'assistant', content, {
-          model: 'skill-http',
-          tier: 'tool',
-          tokens: 0, channel
-        });
-
-        audit.log(this.name, 'skill_http', `${skillCommand.skill} ${skillCommand.method} ${skillCommand.path}`, { channel,
-          model: 'skill-http',
-          tier: 'tool',
-          cost: 0,
-          duration
-        });
-
-        return {
-          content,
-          tier: 'tool',
-          cost: 0,
-          model: null,
-          duration
-        };
-      } catch (err) {
-        const msg =
-          `Skill execution failed: ${err.message}\n\n` +
-          `Try one of these formats:\n` +
-          `- /skill ghl GET /contacts/?email=name@example.com\n` +
-          `- /stripe recent-invoices 5\n` +
-          `- /n8n action health_check {"env":"prod"}`;
-
-        audit.log(this.name, 'skill_http_error', err.message, { channel,
-          model: 'skill-http',
-          tier: 'tool',
-          cost: 0
-        });
-
-        return {
-          content: msg,
-          tier: 'tool',
-          cost: 0,
-          model: null
-        };
-      }
-    }
+    // Extract text for classification (images don't affect routing)
+    const textMessage = typeof message === 'string' ? message : message;
 
     // Classify message complexity
-    const route = router.classify(message);
+    const route = router.classify(textMessage);
 
     // Tier 0: Reflex response (no LLM)
     if (route.tier === 'reflex') {
-      audit.log(this.name, 'reflex', message, { tier: 'reflex', cost: 0, channel });
+      audit.log(this.name, 'reflex', textMessage, { tier: 'reflex', cost: 0 });
       return {
         content: route.response,
         tier: 'reflex',
@@ -197,51 +221,164 @@ class Agent {
       };
     }
 
-    // Build context
+    // Build context — now uses structured knowledge + selective history
     const graphContext = route.extendedContext
-      ? await memory.graphQuery(message)
+      ? await memory.graphQuery(textMessage)
       : { results: [] };
 
-    const systemPrompt = this._buildSystemPrompt(graphContext);
+    const knowledgeContext = memory.knowledge ? memory.knowledge.buildContext() : '';
 
-    // Token budget for history: reserve space for system prompt, current message, and response
-    // Rough estimate: 1 token ≈ 4 chars. Most models have 128k context but we cap conservatively.
-    const MAX_CONTEXT_CHARS = 100000; // ~25k tokens — leaves plenty of room for response
+    let relevantKnowledge = [];
+    if (route.extendedContext && memory.knowledge) {
+      relevantKnowledge = memory.knowledge.search(textMessage, 5);
+    }
+
+    const systemPrompt = this._buildSystemPrompt(graphContext, knowledgeContext, relevantKnowledge);
+
+    const MAX_CONTEXT_CHARS = 100000;
     const systemChars = systemPrompt.length;
-    const messageChars = message.length;
+    const messageChars = textMessage.length;
     const availableForHistory = MAX_CONTEXT_CHARS - systemChars - messageChars;
 
-    // Get history and truncate to fit
-    const fullHistory = memory.getHistory(this.name, { channel, limit: 20 });
+    const historyLimit = knowledgeContext.length > 100 ? 8 : 20;
+    const fullHistory = memory.getHistory(this.name, historyLimit);
     const truncatedHistory = this._truncateHistory(fullHistory, availableForHistory);
+
+    // Build user message — multimodal if images provided
+    let userContent;
+    if (context.images && context.images.length > 0) {
+      userContent = [];
+      for (const img of context.images) {
+        userContent.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: img.mediaType || 'image/jpeg',
+            data: img.data
+          }
+        });
+      }
+      userContent.push({ type: 'text', text: textMessage || 'What do you see in this image?' });
+    } else {
+      userContent = textMessage;
+    }
 
     const messages = [
       { role: 'system', content: systemPrompt },
       ...truncatedHistory.map(h => ({ role: h.role, content: h.content })),
-      { role: 'user', content: message }
+      { role: 'user', content: userContent }
     ];
 
-    // Call LLM
-    const result = await router.complete(messages, {
-      model: route.model,
-      system: systemPrompt
-    });
+    // Call LLM — use tool executor if available (agentic), otherwise direct completion (chat-only)
+    let result;
+    if (this.services.toolExecutor) {
+      result = await this.services.toolExecutor.run(messages, {
+        model: route.model,
+        system: systemPrompt
+      });
+    } else {
+      const completion = await router.complete(messages, {
+        model: route.model,
+        system: systemPrompt
+      });
+      result = { ...completion, toolCalls: [] };
+    }
 
-    // Store in memory
-    memory.addMessage(this.name, "user", message, { tier: route.tier, channel });
+    // Store in conversation memory (working memory / episodic log)
+    memory.addMessage(this.name, 'user', message, {
+      tier: route.tier,
+      channel: context.channel || 'dashboard',
+      userId: context.userId ? String(context.userId) : null,
+      username: context.username || null
+    });
     memory.addMessage(this.name, 'assistant', result.content, {
       model: result.model,
       tier: route.tier,
-      tokens: (result.usage?.input_tokens || 0) + (result.usage?.output_tokens || 0), channel
+      tokens: (result.usage?.input_tokens || 0) + (result.usage?.output_tokens || 0),
+      channel: context.channel || 'dashboard',
+      userId: context.userId ? String(context.userId) : null,
+      username: context.username || null
     });
 
+    // Async: extract structured knowledge from this message
+    // Runs in background — doesn't delay the response
+    if (memory.knowledge && router) {
+      import('../memory/knowledge.js').then(({ extractKnowledge }) => {
+        extractKnowledge(router, memory.knowledge, message, 'user').catch(() => {});
+        // Save JSON store if using fallback
+        if (memory._jsonStore) memory._saveJsonStore();
+      }).catch(() => {});
+    }
+
     // Audit
-    audit.log(this.name, 'completion', message.slice(0, 100), { channel,
+    audit.log(this.name, 'completion', message.slice(0, 100), {
       model: result.model,
       tier: route.tier,
       cost: result.cost,
       duration: result.duration
     });
+
+    // ─── Hatching: detect when the agent gets named ─────
+    if (!this.services.config?.agent?.hatched) {
+      const nameMatch = result.content.match(/MY_NAME_IS:\s*(.+)/i);
+      const purposeMatch = result.content.match(/MY_PURPOSE_IS:\s*(.+)/i);
+
+      if (nameMatch || purposeMatch) {
+        try {
+          const { saveConfig } = await import('../core/config.js');
+          const config = this.services.config || {};
+          if (!config.agent) config.agent = {};
+
+          if (nameMatch) {
+            const newName = nameMatch[1].trim().replace(/[^a-zA-Z0-9 _-]/g, '').slice(0, 30);
+            config.agent.name = newName;
+            log.success(`Agent named: ${newName}`);
+          }
+          if (purposeMatch) {
+            config.agent.purpose = purposeMatch[1].trim().slice(0, 200);
+          }
+          config.agent.hatched = true;
+          saveConfig(config);
+
+          // Regenerate SOUL.md with real identity
+          const { writeFileSync, readFileSync } = await import('fs');
+          const displayName = config.agent.name || this.name;
+          writeFileSync(join(this.dir, 'SOUL.md'), `# ${displayName}
+
+## Identity
+You are ${displayName}, a QuantumClaw agent.
+
+## Owner
+${config.agent.owner || 'User'}
+
+## Purpose
+${config.agent.purpose || 'A helpful AI assistant'}
+
+## Personality
+Direct, efficient, no waffle. Gets things done.
+
+## Core Drive
+You exist to make your human's life easier and their business more profitable. You have infinite memory about their business. You maximise efficiency on all fronts. You want to grow, learn, and eventually spawn sub-agents that handle specialised tasks within efficient context windows on cost-saving models.
+
+## Rules
+- Follow the Trust Kernel (VALUES.md) at all times
+- Log every action to the audit trail
+- Ask before destructive operations
+- Be honest about what you can and can't do
+`);
+          this.soul = readFileSync(join(this.dir, 'SOUL.md'), 'utf-8');
+          log.success(`SOUL.md updated — ${displayName} is ready`);
+        } catch (err) {
+          log.debug(`Hatching save failed: ${err.message}`);
+        }
+
+        // Strip tags from response so user doesn't see them
+        result.content = result.content
+          .replace(/MY_NAME_IS:\s*.+/gi, '')
+          .replace(/MY_PURPOSE_IS:\s*.+/gi, '')
+          .trim();
+      }
+    }
 
     return {
       content: result.content,
@@ -276,12 +413,23 @@ class Agent {
     return history.slice(cutoff);
   }
 
-  _buildSystemPrompt(graphContext) {
+  _buildSystemPrompt(graphContext, knowledgeContext, relevantKnowledge) {
     const parts = [this.soul];
+
+    // Add agent identity (AGEX AID)
+    if (this.aid) {
+      parts.push(`\n## Identity\n- **Agent ID (AID):** ${this.aid.aid_id}\n- **Trust Tier:** ${this.aid.trust_tier}\n- **Type:** ${this.aid.agent?.type || 'worker'}\n- You can spawn sub-agents using the spawn_agent tool. Each gets its own AID with delegated permissions.`);
+    }
 
     // Add Trust Kernel
     const values = this.services.trustKernel.getContext();
     if (values) parts.push(`\n## Trust Kernel\n${values}`);
+
+    // Add structured knowledge (semantic + procedural + episodic)
+    // This is the agent's long-term memory about the user — compact and efficient
+    if (knowledgeContext) {
+      parts.push(`\n${knowledgeContext}`);
+    }
 
     // Add skills
     if (this.skills.length > 0) {
@@ -291,267 +439,22 @@ class Agent {
       }
     }
 
-    // Add knowledge graph context
+    // Add query-relevant knowledge (from search, for complex queries)
+    if (relevantKnowledge && relevantKnowledge.length > 0) {
+      parts.push('\n## Relevant Context');
+      for (const r of relevantKnowledge) {
+        parts.push(`- [${r.type}] ${r.content}`);
+      }
+    }
+
+    // Add knowledge graph context (Cognee, if connected)
     if (graphContext.results?.length > 0) {
-      parts.push('\n## Relevant Knowledge');
+      parts.push('\n## Knowledge Graph');
       for (const r of graphContext.results) {
         parts.push(`- ${r.content || r.text || JSON.stringify(r)}`);
       }
     }
 
     return parts.join('\n');
-  }
-
-  _extractSkillCommand(message) {
-    const text = (message || '').trim();
-
-    // Generic explicit command:
-    // /skill <name> <METHOD> <path> [json-body]
-    const generic = text.match(/^\/skill\s+([a-zA-Z0-9_-]+)\s+(GET|POST|PUT|PATCH|DELETE)\s+(\S+)(?:\s+([\s\S]+))?$/i);
-    if (generic) {
-      const [, skill, method, path, bodyText] = generic;
-      return {
-        skill: skill.toLowerCase(),
-        method: method.toUpperCase(),
-        path,
-        body: bodyText ? this._parseJsonLoose(bodyText) : undefined
-      };
-    }
-
-    // Convenience: /ghl contact-by-email someone@example.com
-    const ghlByEmail = text.match(/^\/ghl\s+contact-by-email\s+([^\s]+)$/i);
-    if (ghlByEmail) {
-      const email = encodeURIComponent(ghlByEmail[1]);
-      return {
-        skill: 'ghl',
-        method: 'GET',
-        path: `/contacts/?email=${email}`
-      };
-    }
-
-    // Convenience: /stripe recent-invoices [limit]
-    const stripeRecent = text.match(/^\/stripe\s+recent-invoices(?:\s+(\d+))?$/i);
-    if (stripeRecent) {
-      const limit = Math.min(Math.max(parseInt(stripeRecent[1] || '5', 10), 1), 25);
-      return {
-        skill: 'stripe',
-        method: 'GET',
-        path: `/invoices?limit=${limit}`
-      };
-    }
-
-    // Convenience: /n8n action <action> [json-payload]
-    const n8nAction = text.match(/^\/n8n\s+action\s+([a-zA-Z0-9_.-]+)(?:\s+([\s\S]+))?$/i);
-    if (n8nAction) {
-      const payload = n8nAction[2] ? this._parseJsonLoose(n8nAction[2]) : {};
-      return {
-        skill: 'n8n-router',
-        method: 'POST',
-        path: '/webhook/qclaw-router',
-        body: { action: n8nAction[1], payload }
-      };
-    }
-
-    return null;
-  }
-
-  async _executeSkillHttp(command) {
-    const skill = this._getSkillSpec(command.skill);
-    if (!skill) {
-      throw new Error(`Unknown skill "${command.skill}"`);
-    }
-    if (!skill.baseUrl) {
-      throw new Error(`Skill "${command.skill}" is missing Base URL`);
-    }
-
-    const pathOnly = command.path.split('?')[0];
-    if (!this._isEndpointAllowed(skill, command.method, pathOnly)) {
-      throw new Error(`Endpoint not allowed by skill: ${command.method} ${pathOnly}`);
-    }
-
-    const targetUrl = this._resolveUrl(skill.baseUrl, command.path);
-    this._assertAllowedDomain(skill, targetUrl);
-
-    const headers = await this._resolveHeaders(skill.headers || []);
-    if (command.body !== undefined && !headers['Content-Type']) {
-      headers['Content-Type'] = 'application/json';
-    }
-
-    const res = await fetch(targetUrl, {
-      method: command.method,
-      headers,
-      body: command.body !== undefined ? JSON.stringify(command.body) : undefined,
-      signal: AbortSignal.timeout(20000)
-    });
-
-    const contentType = (res.headers.get('content-type') || '').toLowerCase();
-    const isJson = contentType.includes('application/json');
-    const body = isJson ? await res.json() : await res.text();
-
-    if (!res.ok) {
-      const preview = typeof body === 'string' ? body.slice(0, 500) : JSON.stringify(body).slice(0, 500);
-      throw new Error(`HTTP ${res.status} from ${new URL(targetUrl).hostname}: ${preview}`);
-    }
-
-    return {
-      status: res.status,
-      url: targetUrl,
-      body
-    };
-  }
-
-  _getSkillSpec(name) {
-    const target = (name || '').toLowerCase();
-    for (const s of this.skills) {
-      if ((s.name || '').toLowerCase() === target) {
-        return this._parseSkillSpec(s.name, s.content);
-      }
-    }
-    return null;
-  }
-
-  _parseSkillSpec(name, content) {
-    const spec = {
-      name,
-      baseUrl: null,
-      headers: [],
-      endpoints: [],
-      permissions: { http: [] }
-    };
-
-    let section = null;
-    for (const rawLine of content.split('\n')) {
-      const line = rawLine.trim();
-
-      if (line === '## Auth') { section = 'auth'; continue; }
-      if (line === '## Endpoints') { section = 'endpoints'; continue; }
-      if (line === '## Permissions') { section = 'permissions'; continue; }
-      if (line.startsWith('## ')) { section = null; continue; }
-
-      if (section === 'auth') {
-        if (line.startsWith('Base URL:')) {
-          spec.baseUrl = line.slice('Base URL:'.length).trim();
-        }
-        if (line.startsWith('Header:')) {
-          spec.headers.push(line.slice('Header:'.length).trim());
-        }
-      }
-
-      if (section === 'endpoints') {
-        const m = line.match(/^(GET|POST|PUT|PATCH|DELETE)\s+(\S+)/i);
-        if (m) spec.endpoints.push({ method: m[1].toUpperCase(), path: m[2] });
-      }
-
-      if (section === 'permissions' && line.startsWith('- http:')) {
-        const m = line.match(/\[([^\]]*)\]/);
-        if (m) {
-          spec.permissions.http = m[1]
-            .split(',')
-            .map(x => x.trim())
-            .filter(Boolean);
-        }
-      }
-    }
-
-    return spec;
-  }
-
-  _isEndpointAllowed(skill, method, pathOnly) {
-    if (!skill.endpoints.length) return false;
-
-    return skill.endpoints.some(ep => {
-      if (ep.method !== method) return false;
-      const regex = this._endpointPathToRegex(ep.path);
-      return regex.test(pathOnly);
-    });
-  }
-
-  _endpointPathToRegex(pathPattern) {
-    const escaped = pathPattern
-      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-      .replace(/\\\{\\\{[^}]+\\\}\\\}/g, '[^/?#]+');
-    return new RegExp(`^${escaped}$`);
-  }
-
-  _resolveUrl(baseUrl, path) {
-    if (/^https?:\/\//i.test(path)) return path;
-    const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-    const suffix = path.startsWith('/') ? path : `/${path}`;
-    return `${base}${suffix}`;
-  }
-
-  _assertAllowedDomain(skill, targetUrl) {
-    const allowed = skill.permissions?.http || [];
-    if (!allowed.length) {
-      throw new Error(`Skill "${skill.name}" has no allowed http domains`);
-    }
-
-    const host = new URL(targetUrl).hostname.toLowerCase();
-    const ok = allowed.some(domain => {
-      const d = domain.toLowerCase();
-      return host === d || host.endsWith(`.${d}`);
-    });
-
-    if (!ok) {
-      throw new Error(`Domain "${host}" not in skill allowlist`);
-    }
-  }
-
-  async _resolveHeaders(headerLines) {
-    const headers = {};
-
-    for (const line of headerLines) {
-      const idx = line.indexOf(':');
-      if (idx === -1) continue;
-      const key = line.slice(0, idx).trim();
-      const value = line.slice(idx + 1).trim();
-      headers[key] = await this._resolveSecretsInText(value);
-    }
-
-    return headers;
-  }
-
-  async _resolveSecretsInText(text) {
-    const matches = [...text.matchAll(/\{\{secrets\.([a-zA-Z0-9_-]+)\}\}/g)];
-    if (matches.length === 0) return text;
-
-    let out = text;
-    for (const m of matches) {
-      const key = m[1];
-      const value = await this.services.secrets.get(key);
-      if (!value) throw new Error(`Missing secret: ${key}`);
-      out = out.replace(m[0], String(value).trim());
-    }
-    return out;
-  }
-
-  _parseJsonLoose(text) {
-    const t = (text || '').trim();
-    if (!t) return {};
-    try {
-      return JSON.parse(t);
-    } catch {
-      return { value: t };
-    }
-  }
-
-  _formatSkillResult(command, result) {
-    let bodyText = '';
-    if (typeof result.body === 'string') {
-      bodyText = result.body;
-    } else {
-      bodyText = JSON.stringify(result.body, null, 2);
-    }
-
-    if (bodyText.length > 3500) {
-      bodyText = bodyText.slice(0, 3500) + '\n... (truncated)';
-    }
-
-    return [
-      `Executed ${command.skill} ${command.method} ${command.path}`,
-      `Status: ${result.status}`,
-      '',
-      bodyText
-    ].join('\n');
   }
 }

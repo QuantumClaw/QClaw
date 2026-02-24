@@ -1,6 +1,6 @@
 /**
  * QuantumClaw Terminal Branding
- * Cyan + Purple + Magenta. Cybernetic claw.
+ * Cyan + Purple + Red. Cybernetic claw.
  */
 
 const P = '\x1b[38;5;135m';   // purple
@@ -11,24 +11,91 @@ const R = '\x1b[0m';
 const B = '\x1b[1m';
 const D = '\x1b[2m';
 const W = '\x1b[1;37m';
+const RD = '\x1b[38;5;196m';  // red
+const G = '\x1b[38;5;82m';    // green
+
+// Detect narrow terminal (mobile / Termux)
+function isMobile() {
+  try { return (process.stdout.columns || 80) < 60; } catch { return false; }
+}
 
 export function banner() {
+  if (isMobile()) {
+    smallBanner();
+    console.log('');
+    console.log(`${D}  ──────────────────────────────────${R}`);
+    console.log(`  ${D}The agent runtime with a knowledge${R}`);
+    console.log(`  ${D}graph for a brain.${R}`);
+    console.log(`  ${C}v1.1.4${D} · ${LP}Cognee${D} · ${RD}AGEX${R}`);
+    console.log(`${D}  ──────────────────────────────────${R}`);
+    console.log('');
+    return;
+  }
+
   console.log('');
-  console.log(`${D}  ──────────────────────────────────${R}`);
+  console.log(`${C}                     ░▓▓██▓█▓▓▓▓░░░${R}`);
+  console.log(`${C}                   ▓▓█▓▓▓░▓░▓▓▓▓▓▓▓▓▓▓▓▓▓▓${R}`);
+  console.log(`${C}                ░▓█▓▓▓░░░░▓${R} ${C}░░░░░░░░▓▓▓█▓█▓${R}`);
+  console.log(`${C}              ░▓██▓▓▓░▓░░▓░▓░▓▓▓▓▓▓░░░▓▓░░██${R}`);
+  console.log(`${C}          ░░▓██▓▓▓░▓░░▓░█▓${R} ${C}░▓▓▓▓▓▓▓▓░█▓░▓▓▓▓█░${R}`);
+  console.log(`${C}       ░▓████▓░░▓▓░▓▓▓█${W}█${C}▓${R}            ${C}▓▓▓▓▓▓▓▓█░${R}`);
+  console.log(`${C}      ███▓▓▓░▓░▓${R} ${C}▓▓▓░██░${R}               ${C}░░▓████${W}█${C}░${R}`);
+  console.log(`${C}    ░${W}█${C}▓▓█${R} ${C}▓░░▓░▓░▓░▓█▓${R}                     ${C}░▓█${W}██${C}▓${R}`);
+  console.log(`${C}   ▓${W}█${C}█▓▓▓▓${R} ${C}░▓░░▓▓▓░▓░${R}                         ${C}░▓█▓${R}`);
+  console.log(`${C}  ▓${W}█${C}▓▓▓▓▓▓▓░░░░▓▓▓▓▓${R}`);
+  console.log(`${C} ██▓▓▓▓▓▓▓▓░▓░░░▓░▓▓█${R}`);
+  console.log(`${C}█▓░░▓▓▓░▓░▓▓${R} ${C}▓${R} ${C}▓▓░▓▓█${R}`);
+  console.log(`${C}▓▓░▓▓▓▓▓▓▓▓░░▓░▓░░▓▓█${R}`);
+  console.log(`${C}▓▓░▓▓▓▓▓▓░░░░░░░▓░▓▓█${R}`);
+  console.log(`${C}░░░▓▓▓▓░░░░░▓░░▓▓▓▓▓${R}`);
+  console.log(`${C} ░▓▓░▓${R} ${C}▓▓▓░▓▓░░▓▓▓░█░${R}                          ${C}░█▓${R}`);
+  console.log(`${C}░▓░▓░▓░▓░░▓░░▓░▓░░░▓█▓${R}                     ${C}░▓█${W}██${C}▓${R}`);
+  console.log(`${C} ░▓▓░▓░▓░▓░░░░▓░${R} ${C}▓▓░▓██░${R}                ${C}░▓███${W}██${C}▓${R}`);
+  console.log(`${C}   ░▓▓▓░░▓▓▓▓▓░░▓▓░▓▓░▓█▓${R}            ${C}░▓▓▓▓▓▓▓█░${R}`);
+  console.log(`${C}     ░▓▓░░▓▓░▓▓▓▓▓▓▓░▓▓░▓▓${R} ${C}░░░▓▓▓▓▓▓░▓▓░░▓▓▓█░${R}`);
+  console.log(`${C}              ░▓█▓░▓▓░░░${R} ${C}▓░█▓▓▓▓▓▓▓▓▓░░▓░░▓█░${R}`);
+  console.log(`${C}                 ▓▓▓▓░▓░░░▓${R} ${C}░░▓░░░░░░░▓█▓▓█${R}`);
+  console.log(`${C}                   ░▓█▓░▓░▓░▓▓▓▓▓▓▓▓▓▓▓▓▓▓${R}`);
+  console.log(`${C}                      ▓▓▓▓▓▓█▓▓▓░░░${R}`);
   console.log('');
-  console.log(`  ${C}  /\\${R}    ${LP}Q${P}U${LP}A${P}N${LP}T${P}U${LP}M${M}C${LP}L${M}A${LP}W${R}`);
-  console.log(`  ${C} /${M}<${C}\\${R}   ${D}agent runtime v1.0.0${R}`);
-  console.log(`  ${C}/${M}/ \\${C}\\${R}`);
-  console.log(`  ${M}\\${C}\\ /${M}/${R}   ${D}Your business, understood.${R}`);
-  console.log(`  ${M} \\${C}>${M}/${R}    ${D}Not just remembered.${R}`);
-  console.log(`  ${M}  \\/${R}`);
+  console.log(`${W}   ██████╗ ██╗   ██╗ █████╗ ███╗  ██╗████████╗██╗   ██╗███╗   ███╗${R}`);
+  console.log(`${W}  ██╔═══██╗██║   ██║██╔══██╗████╗ ██║╚══██╔══╝██║   ██║████╗ ████║${R}`);
+  console.log(`${C}  ██║   ██║██║   ██║███████║██╔██╗██║   ██║   ██║   ██║██╔████╔██║${R}`);
+  console.log(`${C}  ╚██████╔╝╚██████╔╝██║  ██║██║╚████║   ██║   ╚██████╔╝██║ ╚═╝ ██║${R}`);
+  console.log(`${D}   ╚═══╝    ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚══╝   ╚═╝    ╚═══╝  ╚═╝     ╚═╝${R}`);
+  console.log(`${RD}            ██████╗██╗      █████╗ ██╗    ██╗${R}`);
+  console.log(`${RD}           ██╔════╝██║     ██╔══██╗██║    ██║${R}`);
+  console.log(`${D}           ██║     ██║     ███████║██║ █╗ ██║${R}`);
+  console.log(`${D}           ╚██████╗███████╗██║  ██║╚███╔███╔╝${R}`);
+  console.log(`${D}            ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝${R}`);
   console.log('');
-  console.log(`${D}  ──────────────────────────────────${R}`);
+  console.log(`${D}  ──────────────────────────────────────────────────────────${R}`);
+  console.log(`  ${D}The agent runtime with a knowledge graph for a brain.${R}`);
+  console.log(`  ${C}v1.1.4${D} · ${LP}Cognee${D} · ${RD}AGEX${R}`);
+  console.log(`${D}  ──────────────────────────────────────────────────────────${R}`);
   console.log('');
 }
 
 export function smallBanner() {
-  console.log(`${C}/\\${R} ${LP}QuantumClaw${R} ${D}v1.0.0${R}`);
+  if (isMobile()) {
+    console.log('');
+    console.log(`  ${C}⚛${R} ${W}${B}QUANTUM${RD}${B}CLAW${R} ${D}v1.1.4${R}`);
+    return;
+  }
+
+  console.log('');
+  console.log(`${C}         ░███░░░░░░░${R}`);
+  console.log(`${C}      ░░█░░░░░░░░░█░█${R}`);
+  console.log(`${C}   ░░██░░░██${R}      ${C}░░██░${R}`);
+  console.log(`${C}  ██░░░░░░░${R}         ${C}░░█░${R}`);
+  console.log(`${C}░██░░░░░░░${R}`);
+  console.log(`${C}█░░░░░░░░█░${R}`);
+  console.log(`${C}░░░░░░░░░░${R}`);
+  console.log(`${C}░░░░░░░░░█░${R}         ${C}░░█░${R}`);
+  console.log(`${C}  ░░░░░░░░░░${R}      ${C}░░██░${R}`);
+  console.log(`${C}       ░░░░░░░░░░░░░█${R}`);
+  console.log(`${C}         ░░░░░░░░░░░${R}`);
+  console.log(`${W}${B}QUANTUM${RD}${B}CLAW${R} ${D}v1.1.4${R}`);
 }
 
 export const theme = {
@@ -40,7 +107,7 @@ export const theme = {
   bold: B,
   dim: D,
   white: W,
-  green: '\x1b[38;5;82m',
+  green: G,
   yellow: '\x1b[38;5;220m',
-  red: '\x1b[38;5;196m',
+  red: RD,
 };

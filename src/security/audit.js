@@ -9,10 +9,13 @@
 import { join } from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, appendFileSync } from 'fs';
 
-// Try to load better-sqlite3
-let Database;
+// Try to load better-sqlite3 (optional — falls back to JSON)
+let Database = null;
 try {
-  Database = (await import('better-sqlite3')).default;
+  const mod = await import('better-sqlite3');
+  Database = mod.default;
+  // Test that the native binding actually works
+  if (typeof Database !== 'function') Database = null;
 } catch {
   Database = null;
 }

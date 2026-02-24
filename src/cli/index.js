@@ -3,12 +3,13 @@
 /**
  * QuantumClaw CLI
  *
- * npx qclaw <command>
+ * qclaw <command>
  */
 
 import { smallBanner } from './brand.js';
 import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -80,71 +81,6 @@ switch (command) {
       process.env.QCLAW_TUNNEL = args[tunnelIdx + 1];
     }
     await import('../index.js');
-    break;
-  }
-
-  // ─── UPDATE ─────────────────────────────────────────────────
-  case 'update': {
-    smallBanner();
-    const { execSync: ex } = await import('child_process');
-
-    // Find repo root (where .git lives)
-    let repoDir = process.cwd();
-    try { repoDir = ex('git rev-parse --show-toplevel', { encoding: 'utf-8' }).trim(); } catch {}
-
-    console.log(`${green}Updating QuantumClaw...${reset}`);
-    console.log('');
-
-    // 1. Stop running agent
-    try {
-      ex('pm2 stop qclaw 2>/dev/null || true', { stdio: 'inherit' });
-    } catch {}
-
-    // 2. Git pull
-    try {
-      console.log(`  ${dim}git pull...${reset}`);
-      const pullOut = ex('git pull --ff-only', { cwd: repoDir, encoding: 'utf-8' });
-      if (pullOut.includes('Already up to date')) {
-        ok('Already up to date');
-      } else {
-        ok('Pulled latest changes');
-        console.log(`  ${dim}${pullOut.trim().split('\n').slice(-2).join('\n  ')}${reset}`);
-      }
-    } catch (err) {
-      if (err.message?.includes('not a git repository')) {
-        warn('Not a git repository — download latest from GitHub');
-        break;
-      }
-      warn(`Git pull failed: ${err.message}`);
-      console.log(`  ${dim}Try: cd ${repoDir} && git stash && git pull${reset}`);
-      break;
-    }
-
-    // 3. npm install (picks up new/updated deps)
-    console.log('');
-    console.log(`  ${dim}npm install...${reset}`);
-    try {
-      ex('npm install --progress', { cwd: repoDir, stdio: 'inherit' });
-      ok('Dependencies updated');
-    } catch {
-      warn('npm install had issues — try manually');
-    }
-
-    // 4. Restart agent
-    console.log('');
-    try {
-      ex('pm2 restart qclaw 2>/dev/null || true', { stdio: 'inherit' });
-      ok('Agent restarted');
-    } catch {}
-
-    // 5. Show version
-    console.log('');
-    try {
-      const pkg = JSON.parse(readFileSync(join(repoDir, 'package.json'), 'utf-8'));
-      ok(`QuantumClaw v${pkg.version}`);
-    } catch {}
-
-    console.log('');
     break;
   }
 
@@ -311,27 +247,42 @@ switch (command) {
   // ─── DIAGNOSE ─────────────────────────────────────────────────
   case 'diagnose': {
     smallBanner();
-    console.log('\nRunning diagnostics...\n');
+    console.log('\n  Running diagnostics...\n');
     const { config, secrets } = await loadCore();
 
     const ok = (msg) => console.log(`  \x1b[38;5;82m✓\x1b[0m ${msg}`);
     const warn = (msg) => console.log(`  \x1b[38;5;220m○\x1b[0m ${msg}`);
     const fail = (msg) => console.log(`  \x1b[38;5;196m✗\x1b[0m ${msg}`);
+    const info = (msg) => console.log(`  \x1b[2m${msg}\x1b[0m`);
+
+    let issues = 0;
+    let gatewayRunning = false;
 
     // Node version
     const nodeVer = process.version;
     const major = parseInt(nodeVer.slice(1));
-    major >= 20 ? ok(`Node.js: ${nodeVer}`) : fail(`Node.js: ${nodeVer} (need 20+)`);
+    major >= 20 ? ok(`Node.js: ${nodeVer}`) : (fail(`Node.js: ${nodeVer} (need 20+)`), issues++);
 
     // Platform
     ok(`Platform: ${process.platform}-${process.arch}`);
 
+    // Cloudflared
+    try {
+      const { execSync } = await import('child_process');
+      const cfVer = execSync('cloudflared --version 2>&1', { encoding: 'utf-8' }).trim();
+      ok(`Cloudflared: ${cfVer.match(/\d+\.\d+\.\d+/)?.[0] || 'installed'}`);
+    } catch {
+      warn('Cloudflared: not installed (dashboard won\'t be accessible remotely)');
+      info('  Fix: bash scripts/install.sh (or install manually)');
+      issues++;
+    }
+
     // Config
-    existsSync(config._file) ? ok(`Config: ${config._file}`) : warn('Config: not found (run onboard)');
+    existsSync(config._file) ? ok(`Config: ${config._file}`) : (warn('Config: not found (run onboard)'), issues++);
 
     // Secrets
     const secretCount = secrets.list().length;
-    secretCount > 0 ? ok(`Secrets: ${secretCount} keys encrypted (AES-256-GCM)`) : warn('Secrets: none stored');
+    secretCount > 0 ? ok(`Secrets: ${secretCount} keys encrypted (AES-256-GCM)`) : (warn('Secrets: none stored'), issues++);
 
     // Trust Kernel
     const valuesFile = join(config._dir, 'VALUES.md');
@@ -343,27 +294,24 @@ switch (command) {
       const hasKey = secrets.has(`${primaryProvider}_api_key`) || primaryProvider === 'ollama';
       hasKey
         ? ok(`Primary model: ${primaryProvider}/${config.models.primary.model}`)
-        : fail(`Primary model: ${primaryProvider} (API key missing)`);
+        : (fail(`Primary model: ${primaryProvider} (API key missing)`), issues++);
     } else {
       warn('Primary model: not configured');
+      issues++;
     }
 
     // Fast model
     const fastProvider = config.models?.fast?.provider;
-    if (fastProvider) {
-      ok(`Fast model: ${fastProvider}/${config.models.fast.model}`);
-    } else {
-      warn('Fast model: not configured (all messages use primary)');
-    }
+    fastProvider
+      ? ok(`Fast model: ${fastProvider}/${config.models.fast.model}`)
+      : warn('Fast model: not configured (all messages use primary)');
 
     // Cognee
     const cogneeUrl = config.memory?.cognee?.url || 'http://localhost:8000';
     if (config.memory?.cognee?.enabled !== false) {
       try {
         const res = await fetch(cogneeUrl + '/health', { signal: AbortSignal.timeout(3000) });
-        res.ok
-          ? ok(`Cognee: connected (${cogneeUrl})`)
-          : warn(`Cognee: responded with ${res.status}`);
+        res.ok ? ok(`Cognee: connected (${cogneeUrl})`) : warn(`Cognee: responded with ${res.status}`);
       } catch {
         warn(`Cognee: not reachable at ${cogneeUrl}`);
       }
@@ -374,8 +322,7 @@ switch (command) {
     // Memory layers
     const layers = [];
     if (secrets.has('cognee_token')) layers.push('graph');
-    layers.push('sqlite');
-    layers.push('workspace');
+    layers.push('sqlite', 'workspace');
     ok(`Memory: ${layers.join(' + ')} (${layers.length} layers)`);
 
     // Channels
@@ -384,20 +331,80 @@ switch (command) {
       if (name === 'telegram') {
         secrets.has('telegram_bot_token')
           ? ok('Channel: Telegram (token present)')
-          : fail('Channel: Telegram (token missing)');
+          : (fail('Channel: Telegram (token missing)'), issues++);
       } else {
         ok(`Channel: ${name}`);
       }
     }
     if (channels.length === 0) warn('Channels: none configured');
 
-    // Dashboard
+    // Dashboard / Gateway
+    console.log('');
+    console.log('  \x1b[1mGateway\x1b[0m');
     const dashPort = config.dashboard?.port || 3000;
     try {
       const res = await fetch(`http://127.0.0.1:${dashPort}/api/health`, { signal: AbortSignal.timeout(2000) });
-      res.ok ? ok(`Dashboard: running on :${dashPort}`) : warn(`Dashboard: responded with ${res.status}`);
+      if (res.ok) {
+        const health = await res.json();
+        gatewayRunning = true;
+        ok(`Dashboard: running on :${dashPort}`);
+        ok(`Degradation level: ${health.degradationLevel}/5`);
+        ok(`Agents: ${health.agents}`);
+        if (health.tunnel) {
+          ok(`Tunnel: ${health.tunnel}`);
+          if (config.dashboard?.tunnelToken) {
+            ok('Tunnel type: persistent (named tunnel with token)');
+          } else {
+            warn('Tunnel type: quick (random URL — changes on restart)');
+            info('  Fix: qclaw onboard (set up persistent tunnel) or');
+            info('  qclaw config set dashboard.tunnelToken <your-token>');
+          }
+        } else {
+          warn('Tunnel: not active (dashboard is localhost only)');
+        }
+      } else {
+        warn(`Dashboard: responded with ${res.status}`);
+      }
     } catch {
-      warn('Dashboard: not running (start agent first)');
+      fail('Dashboard: not running');
+      info('  Fix: qclaw start');
+      issues++;
+    }
+
+    // Check PID file for crash detection
+    const pidFile = join(config._dir, 'qclaw.pid');
+    if (existsSync(pidFile)) {
+      try {
+        const pid = parseInt(readFileSync(pidFile, 'utf-8').trim());
+        try {
+          process.kill(pid, 0); // Check if process exists
+          ok(`Agent process: running (PID ${pid})`);
+        } catch {
+          fail(`Agent process: crashed (PID ${pid} not found)`);
+          info('  The agent was running but has stopped unexpectedly.');
+          info('  Fix: qclaw start');
+          issues++;
+        }
+      } catch { /* corrupt pid file */ }
+    }
+
+    // Dashboard security
+    console.log('');
+    console.log('  \x1b[1mSecurity\x1b[0m');
+    config.dashboard?.authToken ? ok('Auth token: set') : warn('Auth token: not set');
+    config.dashboard?.pin ? ok('Dashboard PIN: enabled') : warn('Dashboard PIN: not set (recommended for remote access)');
+    info('  Set PIN: qclaw config set dashboard.pin 1234');
+
+    // Token age
+    if (config.dashboard?.tokenCreatedAt) {
+      const age = Date.now() - config.dashboard.tokenCreatedAt;
+      const hours = Math.floor(age / 3600000);
+      const expiry = config.dashboard?.tokenExpiry || 86400000;
+      if (age > expiry) {
+        warn(`Token age: ${hours}h (expired — run qclaw dashboard for a fresh URL)`);
+      } else {
+        ok(`Token age: ${hours}h (expires in ${Math.floor((expiry - age) / 3600000)}h)`);
+      }
     }
 
     // AGEX
@@ -423,7 +430,33 @@ switch (command) {
       ok(`Disk: ${parts[3]} available`);
     } catch { /* skip */ }
 
-    console.log('\nDone.\n');
+    // Summary
+    console.log('');
+    if (issues === 0) {
+      console.log('  \x1b[38;5;82m✓ All checks passed.\x1b[0m');
+    } else {
+      console.log(`  \x1b[38;5;220m${issues} issue(s) found.\x1b[0m`);
+    }
+
+    // Auto-restart offer if gateway is down
+    if (!gatewayRunning && existsSync(config._file)) {
+      console.log('');
+      const p = await import('@clack/prompts');
+      const restart = await p.confirm({
+        message: 'Gateway is not running. Start it now?',
+        initialValue: true
+      });
+      if (restart && !p.isCancel(restart)) {
+        console.log('');
+        console.log('  Starting agent...');
+        const { exec } = await import('child_process');
+        exec('qclaw start', { detached: true, stdio: 'ignore' }).unref();
+        console.log('  \x1b[38;5;82m✓\x1b[0m Agent starting in background.');
+        console.log('  Run \x1b[36mqclaw dashboard\x1b[0m to get the URL.');
+      }
+    }
+
+    console.log('');
     break;
   }
 
@@ -648,6 +681,227 @@ switch (command) {
     break;
   }
 
+  // ─── SETUP-COGNEE ───────────────────────────────────────────
+  case 'setup-cognee': {
+    smallBanner();
+    const { config, secrets } = await loadCore();
+    const { writeFileSync } = await import('fs');
+    const { join } = await import('path');
+    const { createInterface } = await import('readline');
+
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const ask = (q) => new Promise(r => rl.question(q, r));
+
+    console.log('');
+    console.log('  \x1b[1m🧠 Connect to Cognee Brain Server\x1b[0m');
+    console.log('');
+    console.log('  Run this on your PC/laptop/Pi first:');
+    console.log('  \x1b[36mcurl -sL https://raw.githubusercontent.com/QuantumClaw/QClaw/main/scripts/cognee-server.sh | bash\x1b[0m');
+    console.log('');
+    console.log('  Then paste the URL it gives you below.');
+    console.log('');
+
+    const url = (await ask('  Cognee URL: ')).trim();
+    rl.close();
+
+    if (!url) {
+      console.log('  No URL entered. Cancelled.');
+      break;
+    }
+
+    // Test connection
+    console.log('');
+    console.log('  Testing connection...');
+    try {
+      const res = await fetch(`${url.replace(/\/$/, '')}/health`, { signal: AbortSignal.timeout(10000) });
+      if (res.ok) {
+        console.log('  \x1b[32m✓\x1b[0m Cognee server is reachable!');
+
+        // Save to config
+        const configPath = join(config._dir, 'config.json');
+        const existing = JSON.parse(readFileSync(configPath, 'utf-8'));
+        existing.memory = existing.memory || {};
+        existing.memory.cognee = existing.memory.cognee || {};
+        existing.memory.cognee.url = url.replace(/\/$/, '');
+        existing.memory.cognee.enabled = true;
+        writeFileSync(configPath, JSON.stringify(existing, null, 2));
+
+        console.log('  \x1b[32m✓\x1b[0m Config saved. Cognee URL: ' + url);
+        console.log('');
+        console.log('  Restart your agent: \x1b[36mqclaw restart\x1b[0m');
+        console.log('  Your agent now has the full Cognee knowledge graph brain!');
+      } else {
+        console.log(`  \x1b[31m✗\x1b[0m Server responded with ${res.status}`);
+        console.log('  Check your URL and make sure Cognee is running.');
+      }
+    } catch (err) {
+      console.log(`  \x1b[31m✗\x1b[0m Could not reach ${url}`);
+      console.log(`  Error: ${err.message}`);
+      console.log('');
+      console.log('  Tips:');
+      console.log('  - If using local IP: are phone and PC on the same WiFi?');
+      console.log('  - If using tunnel: is cloudflared still running?');
+      console.log('  - Is the Cognee server still running on your PC?');
+    }
+    console.log('');
+    break;
+  }
+
+  // ─── TOOL ────────────────────────────────────────────────────
+  case 'tool': {
+    smallBanner();
+    const { config, secrets } = await loadCore();
+    const { ToolRegistry, PRESET_SERVERS } = await import('../tools/registry.js');
+    const { writeFileSync } = await import('fs');
+
+    const G = '\x1b[32m', R = '\x1b[31m', C = '\x1b[36m', D = '\x1b[2m', RS = '\x1b[0m', B = '\x1b[1m';
+
+    if (subcommand === 'list' || !subcommand) {
+      console.log('');
+      console.log(`  ${B}Available MCP Tool Servers${RS}`);
+      console.log('');
+
+      const enabledMcp = config.tools?.mcp || {};
+
+      // Group by type
+      const mcpPresets = Object.entries(PRESET_SERVERS).filter(([, p]) => p.type === 'mcp');
+      const apiPresets = Object.entries(PRESET_SERVERS).filter(([, p]) => p.type === 'api');
+
+      console.log(`  ${B}MCP Servers${RS} ${D}(run as local processes)${RS}`);
+      console.log('');
+      for (const [key, preset] of mcpPresets) {
+        const enabled = enabledMcp[key]?.enabled !== false && enabledMcp[key];
+        const keyNeeded = preset.requiresKey ? `${D}(needs API key)${RS}` : `${D}(no key needed)${RS}`;
+        console.log(`  ${enabled ? G + '✓' : D + '○'}${RS} ${B}${preset.name}${RS} ${D}[${key}]${RS} — ${preset.description}`);
+        console.log(`    ${enabled ? G + 'enabled' + RS : D + 'disabled' + RS} ${keyNeeded}`);
+      }
+
+      console.log('');
+      console.log(`  ${B}API Tools${RS} ${D}(direct HTTP — no process needed)${RS}`);
+      console.log('');
+      for (const [key, preset] of apiPresets) {
+        const enabled = enabledMcp[key]?.enabled !== false && enabledMcp[key];
+        const toolCount = preset.tools?.length || 0;
+        const keyNeeded = preset.requiresKey ? `${D}(needs API key)${RS}` : `${D}(free, no key)${RS}`;
+        console.log(`  ${enabled ? G + '✓' : D + '○'}${RS} ${B}${preset.name}${RS} ${D}[${key}]${RS} — ${preset.description}`);
+        console.log(`    ${enabled ? G + 'enabled' + RS : D + 'disabled' + RS} ${keyNeeded} ${D}(${toolCount} tools)${RS}`);
+      }
+
+      // Custom servers
+      for (const [key, conf] of Object.entries(enabledMcp)) {
+        if (!PRESET_SERVERS[key]) {
+          console.log(`  ${G}✓${RS} ${B}${key}${RS} — custom MCP server`);
+          console.log(`    ${D}${conf.command || conf.url || 'unknown'}${RS}`);
+        }
+      }
+
+      console.log('');
+      console.log(`  ${D}Enable:  qclaw tool enable <name> [api_key]${RS}`);
+      console.log(`  ${D}Disable: qclaw tool disable <name>${RS}`);
+      console.log(`  ${D}Add:     qclaw tool add <name> <command> [args...]${RS}`);
+      console.log('');
+
+    } else if (subcommand === 'enable') {
+      const name = args[2];
+      const apiKey = args[3];
+
+      if (!name) {
+        console.log('Usage: qclaw tool enable <name> [api_key]');
+        console.log(`Available: ${Object.keys(PRESET_SERVERS).join(', ')}`);
+        break;
+      }
+
+      const preset = PRESET_SERVERS[name];
+      if (preset && preset.requiresKey && !apiKey) {
+        console.log('');
+        console.log(`  ${B}${preset.name}${RS}`);
+        console.log(`  ${preset.description}`);
+        console.log('');
+        console.log(`  ${C}Setup:${RS} ${preset.setup}`);
+        console.log('');
+        console.log(`  Usage: ${C}qclaw tool enable ${name} YOUR_API_KEY${RS}`);
+        break;
+      }
+
+      try {
+        const registry = new ToolRegistry(config, secrets);
+
+        if (preset) {
+          const tools = await registry.enablePreset(name, apiKey);
+          console.log(`  ${G}✓${RS} ${preset.name} enabled (${tools.length} tools)`);
+          for (const t of tools.slice(0, 8)) {
+            console.log(`    ${D}→ ${t.name}: ${t.description.slice(0, 60)}${RS}`);
+          }
+          if (tools.length > 8) console.log(`    ${D}... and ${tools.length - 8} more${RS}`);
+        } else {
+          // Treat as custom server command
+          const cmd = apiKey;
+          const cmdArgs = args.slice(4);
+          const tools = await registry.addCustom(name, cmd, cmdArgs);
+          console.log(`  ${G}✓${RS} ${name} added (${tools.length} tools)`);
+        }
+
+        // Save config
+        const configPath = join(config._dir, 'config.json');
+        writeFileSync(configPath, JSON.stringify(config, null, 2));
+        console.log('');
+        console.log(`  Restart agent: ${C}qclaw restart${RS}`);
+
+      } catch (err) {
+        console.log(`  ${R}✗${RS} Failed: ${err.message}`);
+      }
+
+    } else if (subcommand === 'disable') {
+      const name = args[2];
+      if (!name) { console.log('Usage: qclaw tool disable <name>'); break; }
+
+      if (config.tools?.mcp?.[name]) {
+        config.tools.mcp[name].enabled = false;
+        const configPath = join(config._dir, 'config.json');
+        writeFileSync(configPath, JSON.stringify(config, null, 2));
+        console.log(`  ${G}✓${RS} ${name} disabled`);
+      } else {
+        console.log(`  ${R}✗${RS} ${name} not found in config`);
+      }
+
+    } else if (subcommand === 'add') {
+      const name = args[2];
+      const cmd = args[3];
+      const cmdArgs = args.slice(4);
+
+      if (!name || !cmd) {
+        console.log('Usage: qclaw tool add <name> <command> [args...]');
+        console.log('');
+        console.log('Examples:');
+        console.log('  qclaw tool add myserver npx my-mcp-server');
+        console.log('  qclaw tool add remote-sse https://mcp.example.com/sse');
+        break;
+      }
+
+      try {
+        const registry = new ToolRegistry(config, secrets);
+
+        if (cmd.startsWith('http://') || cmd.startsWith('https://')) {
+          const tools = await registry.addRemote(name, cmd);
+          console.log(`  ${G}✓${RS} ${name} connected via SSE (${tools.length} tools)`);
+        } else {
+          const tools = await registry.addCustom(name, cmd, cmdArgs);
+          console.log(`  ${G}✓${RS} ${name} connected (${tools.length} tools)`);
+        }
+
+        const configPath = join(config._dir, 'config.json');
+        writeFileSync(configPath, JSON.stringify(config, null, 2));
+      } catch (err) {
+        console.log(`  ${R}✗${RS} Failed: ${err.message}`);
+      }
+
+    } else {
+      console.log('Usage: qclaw tool [list|enable|disable|add]');
+    }
+    console.log('');
+    break;
+  }
+
   // ─── CHANNEL ──────────────────────────────────────────────────
   case 'channel': {
     smallBanner();
@@ -739,7 +993,7 @@ switch (command) {
         console.log('  AGEX Hub: not configured');
         console.log('  Mode:     local secrets (AES-256-GCM)');
         console.log('');
-        console.log('  To enable: AGEX_HUB_URL=http://localhost:4891 npx qclaw start');
+        console.log('  To enable: AGEX_HUB_URL=http://localhost:4891 qclaw start');
       } else {
         console.log(`  Hub URL: ${agexUrl}`);
         try {
@@ -870,52 +1124,81 @@ switch (command) {
     const { config, secrets } = await loadCore();
     const port = config.dashboard?.port || 3000;
     const host = config.dashboard?.host || '127.0.0.1';
-    const localHost = host === '0.0.0.0' ? 'localhost' : host;
+    const localHost = (host === '0.0.0.0' || host === '127.0.0.1') ? 'localhost' : host;
 
-    // Get or generate auth token
+    // Get or generate auth token (refresh if expired)
     let token = config.dashboard?.authToken || process.env.DASHBOARD_AUTH_TOKEN;
-    if (!token) {
+    const tokenAge = config.dashboard?.tokenCreatedAt ? Date.now() - config.dashboard.tokenCreatedAt : 0;
+    const tokenExpiry = config.dashboard?.tokenExpiry || 86400000;
+    const tokenExpired = tokenAge > tokenExpiry;
+
+    if (!token || tokenExpired) {
       const { randomBytes } = await import('crypto');
       token = randomBytes(16).toString('hex');
       const { saveConfig } = await import('../core/config.js');
       if (!config.dashboard) config.dashboard = {};
       config.dashboard.authToken = token;
+      config.dashboard.tokenCreatedAt = Date.now();
       saveConfig(config);
+      if (tokenExpired) console.log(`  \x1b[33mToken expired — new token generated.\x1b[0m\n`);
     }
 
-    const url = `http://${localHost}:${port}/#token=${token}`;
+    const localUrl = `http://${localHost}:${port}/?token=${token}`;
+
+    // Check for saved tunnel URL (written by qclaw start)
+    let tunnelUrl = null;
+    const urlFile = join(config._dir, 'dashboard.url');
+    if (existsSync(urlFile)) {
+      try {
+        tunnelUrl = readFileSync(urlFile, 'utf-8').trim();
+      } catch { /* non-fatal */ }
+    }
+
+    // Determine which URL to show/copy
+    const url = tunnelUrl || localUrl;
+
+    console.log('');
+    if (tunnelUrl) {
+      console.log(`  ${'\x1b[1m'}Dashboard (public):${'\x1b[0m'}`);
+      console.log(`  ${tunnelUrl}`);
+      console.log('');
+      console.log(`  ${'\x1b[2m'}Local: ${localUrl}${'\x1b[0m'}`);
+    } else {
+      console.log(`  ${'\x1b[1m'}Dashboard:${'\x1b[0m'}`);
+      console.log(`  ${localUrl}`);
+      console.log('');
+      console.log(`  ${'\x1b[33m'}No tunnel active.${'\x1b[0m'} Run ${'\x1b[36m'}qclaw start${'\x1b[0m'} to open a public URL.`);
+    }
+    console.log('');
 
     // Copy to clipboard (best effort)
     try {
       const { execSync } = await import('child_process');
       if (process.platform === 'darwin') {
         execSync(`echo "${url}" | pbcopy`, { stdio: 'ignore' });
-        console.log('\n  📋 URL copied to clipboard');
+        console.log('  📋 URL copied to clipboard');
       } else if (process.platform === 'win32') {
         execSync(`echo ${url}| clip`, { stdio: 'ignore' });
-        console.log('\n  📋 URL copied to clipboard');
+        console.log('  📋 URL copied to clipboard');
       } else {
-        // Try termux first, then xclip
         try {
           execSync(`echo "${url}" | termux-clipboard-set`, { stdio: 'ignore' });
-          console.log('\n  📋 URL copied to clipboard');
+          console.log('  📋 URL copied to clipboard');
         } catch {
           try {
             execSync(`echo "${url}" | xclip -selection clipboard`, { stdio: 'ignore' });
-            console.log('\n  📋 URL copied to clipboard');
+            console.log('  📋 URL copied to clipboard');
           } catch { /* no clipboard */ }
         }
       }
     } catch { /* no clipboard */ }
 
-    console.log(`\n  Dashboard: ${url}\n`);
-    console.log(`  Token: ${token}\n`);
+    console.log('');
 
-    // Open browser
+    // Open browser (use tunnel URL if available)
     try {
       const { exec } = await import('child_process');
       if (existsSync('/data/data/com.termux')) {
-        // Termux: use termux-open-url
         exec(`termux-open-url "${url}"`);
       } else {
         const openCmd = process.platform === 'darwin' ? 'open' :
@@ -1060,6 +1343,11 @@ Usage: qclaw <command>
   agex status         Hub connection, AID info
   agex revoke         Emergency revoke all credentials
 
+  \x1b[1mAuto-Learn AI\x1b[0m
+  autolearn on        Enable proactive learning
+  autolearn off       Disable proactive learning
+  autolearn status    Show auto-learn settings
+
   \x1b[1mOther\x1b[0m
   update              Update to latest version
   help                This message
@@ -1069,19 +1357,65 @@ Dashboard: http://localhost:3000 (when agent is running)
 `);
     break;
 
+  // ─── AUTOLEARN ────────────────────────────────────────────────
+  case 'autolearn': {
+    smallBanner();
+    const { config: alConfig, secrets: alSecrets } = await loadCore();
+    const { saveConfig: alSave } = await import('../core/config.js');
+
+    if (!alConfig.heartbeat) alConfig.heartbeat = {};
+    if (!alConfig.heartbeat.autoLearn) alConfig.heartbeat.autoLearn = {};
+
+    const alSub = subcommand;
+
+    if (alSub === 'on') {
+      alConfig.heartbeat.autoLearn.enabled = true;
+      alSave(alConfig);
+      console.log('\n  \x1b[38;5;82m✓\x1b[0m Auto-learn enabled.');
+      console.log('  Your agent will periodically ask you about yourself and your');
+      console.log('  business to become a better assistant. Max 3 questions/day.');
+      console.log('\n  Restart agent for changes to take effect: \x1b[38;5;87mqclaw restart\x1b[0m\n');
+    } else if (alSub === 'off') {
+      alConfig.heartbeat.autoLearn.enabled = false;
+      alSave(alConfig);
+      console.log('\n  \x1b[38;5;82m✓\x1b[0m Auto-learn disabled.\n');
+    } else {
+      const al = alConfig.heartbeat.autoLearn;
+      console.log('');
+      console.log(`  Auto-learn:       ${al.enabled ? '\x1b[38;5;82menabled\x1b[0m' : '\x1b[38;5;220mdisabled\x1b[0m'}`);
+      console.log(`  Max questions/day: ${al.maxQuestionsPerDay || 3}`);
+      console.log(`  Min interval:     ${al.minIntervalHours || 4}h`);
+      console.log(`  Uses fast model:  ${al.useFastModel !== false ? 'yes (saves cost)' : 'no (uses primary)'}`);
+      console.log(`  Quiet hours:      ${al.quietHoursStart ?? 22}:00 – ${al.quietHoursEnd ?? 8}:00`);
+      console.log('');
+      console.log('  Toggle:');
+      console.log('    \x1b[38;5;87mqclaw autolearn on\x1b[0m');
+      console.log('    \x1b[38;5;87mqclaw autolearn off\x1b[0m');
+      console.log('');
+    }
+    break;
+  }
+
   // ─── UPDATE ──────────────────────────────────────────────────
   case 'update': {
-    smallBanner();
-    console.log('');
-
     const G = '\x1b[38;5;82m';
     const Y = '\x1b[38;5;220m';
     const C = '\x1b[38;5;87m';
     const RD = '\x1b[38;5;196m';
     const RS = '\x1b[0m';
+    const D = '\x1b[2m';
+    const W = '\x1b[1;37m';
+    const B = '\x1b[1m';
+    const LP = '\x1b[38;5;177m';
 
     const { execSync } = await import('child_process');
-    const run = (cmd) => execSync(cmd, { cwd: process.cwd(), stdio: 'pipe' }).toString().trim();
+
+    // Find the QClaw install directory (where this script lives, not where the user is)
+    const scriptDir = dirname(fileURLToPath(import.meta.url));
+    const qclawDir = join(scriptDir, '..', '..'); // src/cli -> src -> QClaw root
+    const run = (cmd, opts = {}) => execSync(cmd, { cwd: qclawDir, stdio: 'pipe', ...opts }).toString().trim();
+
+    console.log(`  ${D}QClaw directory: ${qclawDir}${RS}`);
 
     // Check we're in a git repo
     try {
@@ -1092,64 +1426,131 @@ Dashboard: http://localhost:3000 (when agent is running)
       process.exit(1);
     }
 
-    const before = run('git rev-parse --short HEAD');
-    console.log(`  Current: ${before}`);
+    // Get current version from package.json before pulling
+    let beforeVersion = 'unknown';
+    try {
+      const pkgBefore = JSON.parse(readFileSync(join(qclawDir, 'package.json'), 'utf8'));
+      beforeVersion = pkgBefore.version || 'unknown';
+    } catch {}
 
-    // Stop agent if running
+    // 1. Stop agent if running
     const { homedir } = await import('os');
     const pidFile = join(homedir(), '.quantumclaw', 'qclaw.pid');
     if (existsSync(pidFile)) {
-      console.log('  Stopping agent...');
+      console.log(`  ${D}Stopping agent...${RS}`);
       try {
         const pid = parseInt(readFileSync(pidFile, 'utf8').trim());
         process.kill(pid, 'SIGTERM');
         await new Promise(r => setTimeout(r, 1000));
       } catch { /* already stopped */ }
     }
+    try { run('pm2 stop qclaw 2>/dev/null || true'); } catch {}
 
-    // Pull latest
-    console.log('  Pulling latest...');
+    // 2. Stash any local changes (lock files etc)
+    try { run('git stash'); } catch { /* nothing to stash */ }
+
+    // 3. Pull latest
+    console.log(`  ${D}Pulling latest...${RS}`);
     try {
       const pullResult = run('git pull --rebase origin main');
       if (pullResult.includes('Already up to date')) {
-        console.log(`\n  ${G}✓${RS} Already on latest version.`);
+        try { run('git stash pop 2>/dev/null || true'); } catch {}
+
+        // Show branded "already up to date" screen
+        smallBanner();
+        console.log('');
+        console.log(`${D}  ──────────────────────────────────────────────────────────${RS}`);
+        console.log(`  ${D}The agent runtime with a knowledge graph for a brain.${RS}`);
+        console.log(`  ${C}v${beforeVersion}${D} · ${LP}Cognee${D} · ${RD}AGEX${D}${RS}`);
+        console.log(`${D}  ──────────────────────────────────────────────────────────${RS}`);
+        console.log('');
+        console.log(`  ${G}✓${RS} Already on latest version ${C}v${beforeVersion}${RS}`);
+        console.log('');
         break;
       }
     } catch {
-      console.log('  Stashing local changes...');
+      // Force pull if rebase fails
+      console.log(`  ${Y}!${RS} Rebase failed, force pulling...`);
       try {
-        run('git stash');
-        run('git pull --rebase origin main');
-        run('git stash pop');
+        run('git stash drop 2>/dev/null || true');
+        run('git fetch origin main');
+        run('git reset --hard origin/main');
       } catch {
-        console.log(`  ${Y}!${RS} Pull failed. Try: cd ~/QClaw && git pull`);
+        console.log(`  ${RD}✗${RS} Pull failed. Try manually:`);
+        console.log(`    cd ~/QClaw && git stash && git pull`);
         process.exit(1);
       }
     }
 
-    const after = run('git rev-parse --short HEAD');
+    // Pop stash (best effort — conflicts are fine, lock files get regenerated)
+    try { run('git stash pop 2>/dev/null || true'); } catch {}
 
-    // Reinstall deps
-    console.log('  Installing dependencies...');
+    // Get new version from updated package.json
+    let afterVersion = 'unknown';
     try {
-      try {
-        execSync('yarn install', { cwd: process.cwd(), stdio: 'ignore' });
-      } catch {
-        execSync('npm install', { cwd: process.cwd(), stdio: 'ignore' });
-      }
+      const pkgAfter = JSON.parse(readFileSync(join(qclawDir, 'package.json'), 'utf8'));
+      afterVersion = pkgAfter.version || 'unknown';
+    } catch {}
+
+    // 4. Run full install script (handles deps, Cognee, AGEX — everything)
+    console.log(`  ${D}Installing dependencies...${RS}`);
+    console.log('');
+    try {
+      execSync('bash scripts/install.sh', {
+        cwd: qclawDir,
+        stdio: 'inherit',
+        env: { ...process.env }
+      });
     } catch {
+      console.log(`  ${Y}!${RS} Installer had issues — trying npm install as fallback...`);
       try {
-        execSync('npm install --ignore-scripts', { cwd: process.cwd(), stdio: 'ignore' });
-      } catch { /* best effort */ }
+        try { execSync('yarn install', { cwd: qclawDir, stdio: 'ignore' }); }
+        catch { execSync('npm install', { cwd: qclawDir, stdio: 'ignore' }); }
+      } catch {
+        try { execSync('npm install --ignore-scripts', { cwd: qclawDir, stdio: 'ignore' }); }
+        catch { /* best effort */ }
+      }
     }
 
-    // Re-link global command
-    try {
-      execSync('npm link --force', { cwd: process.cwd(), stdio: 'ignore' });
-    } catch { /* not critical */ }
+    // 5. Re-link global command
+    try { execSync('npm link --force', { cwd: qclawDir, stdio: 'ignore' }); } catch {}
 
-    console.log(`\n  ${G}✓${RS} Updated ${before} → ${after}`);
-    console.log(`\n  Run ${C}qclaw start${RS} to restart.`);
+    // 6. Show branded completion screen
+    console.log('');
+    smallBanner();
+    console.log('');
+    console.log(`${D}  ──────────────────────────────────────────────────────────${RS}`);
+    console.log(`  ${D}The agent runtime with a knowledge graph for a brain.${RS}`);
+    console.log(`  ${C}v${afterVersion}${D} · ${LP}Cognee${D} · ${RD}AGEX${D}${RS}`);
+    console.log(`${D}  ──────────────────────────────────────────────────────────${RS}`);
+    console.log('');
+
+    if (beforeVersion !== afterVersion) {
+      console.log(`  ${G}✓${RS} Updated ${Y}v${beforeVersion}${RS} → ${G}v${afterVersion}${RS}`);
+    } else {
+      console.log(`  ${G}✓${RS} Updated to latest ${C}v${afterVersion}${RS}`);
+    }
+    console.log('');
+
+    // Auto-restart agent if it was previously running
+    let restarted = false;
+    try {
+      const pmList = run('pm2 jlist 2>/dev/null || echo "[]"');
+      const procs = JSON.parse(pmList);
+      const wasRunning = procs.some(p => p.name === 'qclaw' || p.name === 'quantumclaw');
+      if (wasRunning) {
+        console.log(`  ${D}Restarting agent...${RS}`);
+        execSync('pm2 restart qclaw 2>/dev/null || pm2 start src/index.js --name qclaw 2>/dev/null', {
+          cwd: process.cwd(), stdio: 'ignore', env: { ...process.env }
+        });
+        restarted = true;
+        console.log(`  ${G}✓${RS} Agent restarted`);
+      }
+    } catch { /* agent wasn't running — that's fine */ }
+
+    if (!restarted) {
+      console.log(`  Run ${C}qclaw start${RS} to start your agent.`);
+    }
     console.log('');
     break;
   }
@@ -1158,7 +1559,7 @@ Dashboard: http://localhost:3000 (when agent is running)
   case 'version':
   case '-v':
   case '--version':
-    console.log('qclaw 1.0.0');
+    console.log('qclaw 1.1.4');
     break;
 
   // ─── UNKNOWN ──────────────────────────────────────────────────

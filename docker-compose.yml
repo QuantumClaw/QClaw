@@ -30,7 +30,7 @@ services:
         condition: service_healthy
 
   cognee:
-    image: cognee/cognee:latest
+    image: cognee/cognee:main
     container_name: quantumclaw-cognee
     restart: unless-stopped
     ports:

@@ -10,7 +10,7 @@
   <a href="https://github.com/QuantumClaw/QClaw/actions/workflows/ci.yml"><img src="https://github.com/QuantumClaw/QClaw/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D20-green.svg" alt="Node.js 20+"></a>
-  <a href="package.json"><img src="https://img.shields.io/badge/version-1.0.0-purple.svg" alt="Version 1.0.0"></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/version-1.3.4-purple.svg" alt="Version 1.3.4"></a>
 </p>
 
 <p align="center">

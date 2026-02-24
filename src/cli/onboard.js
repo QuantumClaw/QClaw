@@ -118,7 +118,71 @@ export async function runOnboard() {
     }
   }
 
-  // ─── Step 3: Name ─────────────────────────────────────
+  // ─── Step 3: Embeddings for Knowledge Graph ──────────
+  //
+  // Cognee needs an embedding model to build the knowledge graph.
+  // Best practice: use a cheap embedding model (OpenAI recommended for cost/quality).
+  // The user's main LLM key can often double as the embedding key.
+
+  const embeddingProvider = await p.select({
+    message: 'Embedding model (for knowledge graph):',
+    options: [
+      { value: 'openai', label: 'OpenAI (recommended)', hint: 'text-embedding-3-small — cheapest + best' },
+      { value: 'same', label: `Same as ${provider}`, hint: provider === 'openai' ? 'Uses your OpenAI key' : 'May need OpenAI-compatible endpoint' },
+      { value: 'ollama', label: 'Ollama (local, free)', hint: 'Needs Ollama running locally' },
+      { value: 'fastembed', label: 'Fastembed (local, free)', hint: 'CPU-only, no GPU needed' },
+      { value: 'skip', label: 'Skip (use basic vector memory)', hint: 'No knowledge graph — simpler but less powerful' },
+    ]
+  });
+  if (p.isCancel(embeddingProvider)) { p.cancel('Cancelled.'); process.exit(0); }
+
+  let embeddingKey = null;
+  let embeddingConfig = null;
+
+  if (embeddingProvider !== 'skip') {
+    // Embedding model defaults
+    const embDefaults = {
+      openai:    { provider: 'openai',    model: 'openai/text-embedding-3-small', dimensions: 1536 },
+      same:      { provider: provider,    model: 'auto', dimensions: 1536 },
+      ollama:    { provider: 'ollama',    model: 'nomic-embed-text', dimensions: 768, endpoint: 'http://localhost:11434/api/embeddings' },
+      fastembed: { provider: 'fastembed', model: 'sentence-transformers/all-MiniLM-L6-v2', dimensions: 384 },
+    };
+
+    embeddingConfig = embDefaults[embeddingProvider] || embDefaults.openai;
+
+    // If they chose 'same', inherit from main provider
+    if (embeddingProvider === 'same') {
+      embeddingKey = apiKey; // reuse the same key
+      if (provider === 'openai') {
+        embeddingConfig = { provider: 'openai', model: 'openai/text-embedding-3-small', dimensions: 1536 };
+      } else if (provider === 'anthropic') {
+        // Anthropic has no embeddings — fall back to OpenAI or fastembed
+        p.note(`Anthropic doesn't offer embeddings. Using Fastembed (free, local).`);
+        embeddingConfig = embDefaults.fastembed;
+        embeddingKey = null;
+      }
+    }
+
+    // Need a separate API key?
+    if ((embeddingProvider === 'openai' && provider !== 'openai') ||
+        (embeddingProvider === 'same' && !embeddingKey && embeddingConfig.provider === 'openai')) {
+      embeddingKey = await p.password({
+        message: 'OpenAI key for embeddings (platform.openai.com):',
+        validate: v => !v ? 'Required for OpenAI embeddings' : undefined,
+      });
+      if (p.isCancel(embeddingKey)) { p.cancel('Cancelled.'); process.exit(0); }
+    } else if (embeddingProvider === 'openai' && provider === 'openai') {
+      embeddingKey = apiKey; // reuse
+    }
+
+    if (embeddingConfig) {
+      const s2 = p.spinner();
+      s2.start('Configuring embeddings...');
+      s2.stop(`${green}✓${reset} Embeddings: ${embeddingConfig.provider}/${embeddingConfig.model}`);
+    }
+  }
+
+  // ─── Step 4: Your Name ──────────────────────────────
 
   const name = await p.text({
     message: 'Your name?',
@@ -126,6 +190,49 @@ export async function runOnboard() {
     validate: v => !v ? 'Need a name' : undefined
   });
   if (p.isCancel(name)) { p.cancel('Cancelled.'); process.exit(0); }
+
+  // Dashboard PIN (optional but recommended for remote access)
+  const wantPin = await p.confirm({
+    message: 'Set a dashboard PIN? (protects remote access)',
+    initialValue: true
+  });
+  if (p.isCancel(wantPin)) { p.cancel('Cancelled.'); process.exit(0); }
+
+  let dashPin = null;
+  if (wantPin) {
+    dashPin = await p.password({
+      message: 'Dashboard PIN (4-8 digits):',
+      validate: v => {
+        if (!v) return 'Enter a PIN';
+        if (!/^\d{4,8}$/.test(v)) return '4-8 digits only';
+      }
+    });
+    if (p.isCancel(dashPin)) { p.cancel('Cancelled.'); process.exit(0); }
+  }
+
+  // Persistent tunnel (optional — keeps same URL across restarts)
+  const wantTunnel = await p.confirm({
+    message: 'Set up a persistent tunnel URL? (same link every time)',
+    initialValue: false
+  });
+  if (p.isCancel(wantTunnel)) { p.cancel('Cancelled.'); process.exit(0); }
+
+  let tunnelToken = null;
+  if (wantTunnel) {
+    console.log('');
+    console.log(`  ${dim}To get a persistent tunnel URL:${reset}`);
+    console.log(`  ${dim}1.${reset} Go to ${cyan}https://one.dash.cloudflare.com${reset}`);
+    console.log(`  ${dim}2.${reset} Networks → Tunnels → Create a tunnel`);
+    console.log(`  ${dim}3.${reset} Name it "qclaw", pick your domain`);
+    console.log(`  ${dim}4.${reset} Set service to ${cyan}http://localhost:3000${reset}`);
+    console.log(`  ${dim}5.${reset} Copy the tunnel token from the install command`);
+    console.log('');
+    tunnelToken = await p.password({
+      message: 'Tunnel token (or Enter to skip):',
+    });
+    if (p.isCancel(tunnelToken)) { p.cancel('Cancelled.'); process.exit(0); }
+    if (!tunnelToken?.trim()) tunnelToken = null;
+  }
 
   // ─── Save ─────────────────────────────────────────────
 
@@ -135,9 +242,9 @@ export async function runOnboard() {
   const config = await loadConfig();
 
   config.agent = {
-    name: 'QClaw',
     owner: name,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    hatched: false,  // becomes true after first chat
   };
 
   config.models = config.models || {};
@@ -145,6 +252,19 @@ export async function runOnboard() {
     provider,
     model: defaults[provider] || 'auto',
   };
+
+  // Embedding / Cognee config
+  if (embeddingConfig) {
+    config.memory = config.memory || {};
+    config.memory.cognee = config.memory.cognee || {};
+    config.memory.cognee.url = config.memory.cognee.url || 'http://localhost:8000';
+    config.memory.embedding = {
+      provider: embeddingConfig.provider,
+      model: embeddingConfig.model,
+      dimensions: embeddingConfig.dimensions,
+      ...(embeddingConfig.endpoint && { endpoint: embeddingConfig.endpoint }),
+    };
+  }
 
   config.channels = config.channels || {};
   if (telegramToken) {
@@ -160,7 +280,13 @@ export async function runOnboard() {
   const dashToken = randomBytes(16).toString('hex');
   config.dashboard = config.dashboard || {};
   config.dashboard.authToken = dashToken;
+  config.dashboard.tokenCreatedAt = Date.now();
   config.dashboard.enabled = true;
+  if (dashPin) config.dashboard.pin = dashPin;
+  if (tunnelToken) {
+    config.dashboard.tunnel = 'cloudflare';
+    config.dashboard.tunnelToken = tunnelToken;
+  }
 
   saveConfig(config);
 
@@ -169,6 +295,8 @@ export async function runOnboard() {
   await secrets.load();
   if (apiKey) secrets.set(`${provider}_api_key`, apiKey);
   if (telegramToken) secrets.set('telegram_bot_token', telegramToken);
+  if (tunnelToken) secrets.set('cloudflare_tunnel_token', tunnelToken);
+  if (embeddingKey) secrets.set('embedding_api_key', embeddingKey);
 
   // Trust kernel
   const trustKernel = new TrustKernel(config);
@@ -201,17 +329,119 @@ export async function runOnboard() {
 
   s.stop(`${green}✓${reset} Done`);
 
-  // ─── Done — agent starts automatically from start-termux.sh ──
+  // ─── Inline Telegram Pairing ──────────────────────────
 
-  const port = config.dashboard?.port || 3000;
+  if (telegramToken) {
+    console.log('');
+    console.log(`  ${bold}Telegram Pairing${reset}`);
+    console.log('');
+    console.log(`  ${dim}1.${reset} Open Telegram on your phone`);
+    console.log(`  ${dim}2.${reset} Send ${cyan}/start${reset} to your bot`);
+    console.log(`  ${dim}3.${reset} It will reply with an 8-letter code`);
+    console.log(`  ${dim}4.${reset} Type that code below`);
+    console.log('');
+
+    // Start a temporary Telegram bot to capture the pairing code
+    let pairingDone = false;
+    let pairingCode = null;
+    let pairingUserId = null;
+    let pairingUsername = null;
+    let pairingChatId = null;
+    let botInstance = null;
+
+    try {
+      const { Bot } = await import('grammy');
+      botInstance = new Bot(telegramToken);
+
+      // Generate pairing code
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const { randomBytes: rb } = await import('crypto');
+      const bytes = rb(8);
+      const generatedCode = Array.from(bytes).map(b => chars[b % chars.length]).join('');
+
+      botInstance.command('start', async (ctx) => {
+        pairingUserId = String(ctx.from.id);
+        pairingUsername = ctx.from.username || ctx.from.first_name || 'unknown';
+        pairingChatId = ctx.chat.id;
+        pairingCode = generatedCode;
+
+        await ctx.reply(`Welcome to QuantumClaw! 🧠\n\nYour pairing code:`);
+        await ctx.reply(generatedCode);
+        await ctx.reply(`Type this code in your terminal to complete pairing.`);
+      });
+
+      // Start bot in background (non-blocking)
+      botInstance.start({ onStart: () => {} });
+
+      // Wait for user to enter the code
+      const codeInput = await p.text({
+        message: 'Paste the 8-letter code from Telegram:',
+        placeholder: 'e.g. AB3CD5EF',
+        validate: v => {
+          if (!v) return 'Enter the code from Telegram';
+          if (v.length !== 8) return 'Code should be 8 characters';
+        }
+      });
+
+      if (!p.isCancel(codeInput)) {
+        const entered = codeInput.toUpperCase().trim();
+
+        if (pairingCode && entered === pairingCode && pairingUserId) {
+          // Approve — add to allowlist
+          config.channels.telegram.allowedUsers = config.channels.telegram.allowedUsers || [];
+          if (!config.channels.telegram.allowedUsers.includes(pairingUserId)) {
+            config.channels.telegram.allowedUsers.push(pairingUserId);
+          }
+          saveConfig(config);
+
+          console.log(`  ${green}✓${reset} Paired with @${pairingUsername} (${pairingUserId})`);
+          pairingDone = true;
+        } else if (!pairingCode) {
+          console.log(`  ${yellow}!${reset} No pairing request received yet. Send /start to your bot first.`);
+          console.log(`  ${dim}You can pair later: qclaw pairing approve telegram CODE${reset}`);
+        } else {
+          console.log(`  ${yellow}!${reset} Code doesn't match. You can pair later:`);
+          console.log(`  ${cyan}qclaw pairing approve telegram ${pairingCode}${reset}`);
+        }
+      }
+
+      // Stop the temporary bot
+      try { await botInstance.stop(); } catch {}
+
+    } catch (err) {
+      console.log(`  ${yellow}!${reset} Telegram pairing skipped: ${err.message}`);
+      console.log(`  ${dim}You can pair after starting: qclaw pairing approve telegram CODE${reset}`);
+    }
+
+    if (!pairingDone) {
+      console.log('');
+      console.log(`  ${dim}To pair later after starting the agent:${reset}`);
+      console.log(`  ${dim}1.${reset} Send ${cyan}/start${reset} to your bot`);
+      console.log(`  ${dim}2.${reset} Run: ${cyan}qclaw pairing approve telegram CODE${reset}`);
+      console.log('');
+    }
+  }
+
+  // ─── Done ──
+
   console.log('');
   console.log(`  ${green}✓${reset} ${bold}Ready, ${name}.${reset}`);
   console.log('');
-  if (telegramToken) {
-    console.log(`  ${white}Telegram:${reset}  ${dim}Send /start to your bot after agent starts${reset}`);
-    console.log(`  ${white}Pair:${reset}      ${dim}Approve from the dashboard${reset}`);
-  }
-  console.log(`  ${white}Dashboard:${reset} ${dim}http://localhost:${port}/#token=${dashToken}${reset}`);
+  console.log(`  ${green}┌─────────────────────────────────────────────────┐${reset}`);
+  console.log(`  ${green}│${reset}                                                 ${green}│${reset}`);
+  console.log(`  ${green}│${reset}  ${bold}Now run:${reset}                                      ${green}│${reset}`);
+  console.log(`  ${green}│${reset}                                                 ${green}│${reset}`);
+  console.log(`  ${green}│${reset}    ${cyan}qclaw start${reset}                                  ${green}│${reset}`);
+  console.log(`  ${green}│${reset}                                                 ${green}│${reset}`);
+  console.log(`  ${green}└─────────────────────────────────────────────────┘${reset}`);
+  console.log('');
+
+  console.log(`  ${bold}Useful commands:${reset}`);
+  console.log(`  ${cyan}qclaw start${reset}       ${dim}launch agent + dashboard${reset}`);
+  console.log(`  ${cyan}qclaw dashboard${reset}   ${dim}re-show dashboard URL${reset}`);
+  console.log(`  ${cyan}qclaw chat${reset}        ${dim}chat in terminal${reset}`);
+  console.log(`  ${cyan}qclaw status${reset}      ${dim}health check${reset}`);
+  console.log(`  ${cyan}qclaw help${reset}        ${dim}all commands${reset}`);
   console.log('');
 }
 
