@@ -1,6 +1,6 @@
 {
   "name": "quantumclaw",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "description": "The agent runtime with a knowledge graph for a brain.",
   "type": "module",
   "bin": {

@@ -118,7 +118,71 @@ export async function runOnboard() {
     }
   }
 
-  // ─── Step 3: Your Name ──────────────────────────────
+  // ─── Step 3: Embeddings for Knowledge Graph ──────────
+  //
+  // Cognee needs an embedding model to build the knowledge graph.
+  // Best practice: use a cheap embedding model (OpenAI recommended for cost/quality).
+  // The user's main LLM key can often double as the embedding key.
+
+  const embeddingProvider = await p.select({
+    message: 'Embedding model (for knowledge graph):',
+    options: [
+      { value: 'openai', label: 'OpenAI (recommended)', hint: 'text-embedding-3-small — cheapest + best' },
+      { value: 'same', label: `Same as ${provider}`, hint: provider === 'openai' ? 'Uses your OpenAI key' : 'May need OpenAI-compatible endpoint' },
+      { value: 'ollama', label: 'Ollama (local, free)', hint: 'Needs Ollama running locally' },
+      { value: 'fastembed', label: 'Fastembed (local, free)', hint: 'CPU-only, no GPU needed' },
+      { value: 'skip', label: 'Skip (use basic vector memory)', hint: 'No knowledge graph — simpler but less powerful' },
+    ]
+  });
+  if (p.isCancel(embeddingProvider)) { p.cancel('Cancelled.'); process.exit(0); }
+
+  let embeddingKey = null;
+  let embeddingConfig = null;
+
+  if (embeddingProvider !== 'skip') {
+    // Embedding model defaults
+    const embDefaults = {
+      openai:    { provider: 'openai',    model: 'openai/text-embedding-3-small', dimensions: 1536 },
+      same:      { provider: provider,    model: 'auto', dimensions: 1536 },
+      ollama:    { provider: 'ollama',    model: 'nomic-embed-text', dimensions: 768, endpoint: 'http://localhost:11434/api/embeddings' },
+      fastembed: { provider: 'fastembed', model: 'sentence-transformers/all-MiniLM-L6-v2', dimensions: 384 },
+    };
+
+    embeddingConfig = embDefaults[embeddingProvider] || embDefaults.openai;
+
+    // If they chose 'same', inherit from main provider
+    if (embeddingProvider === 'same') {
+      embeddingKey = apiKey; // reuse the same key
+      if (provider === 'openai') {
+        embeddingConfig = { provider: 'openai', model: 'openai/text-embedding-3-small', dimensions: 1536 };
+      } else if (provider === 'anthropic') {
+        // Anthropic has no embeddings — fall back to OpenAI or fastembed
+        p.note(`Anthropic doesn't offer embeddings. Using Fastembed (free, local).`);
+        embeddingConfig = embDefaults.fastembed;
+        embeddingKey = null;
+      }
+    }
+
+    // Need a separate API key?
+    if ((embeddingProvider === 'openai' && provider !== 'openai') ||
+        (embeddingProvider === 'same' && !embeddingKey && embeddingConfig.provider === 'openai')) {
+      embeddingKey = await p.password({
+        message: 'OpenAI key for embeddings (platform.openai.com):',
+        validate: v => !v ? 'Required for OpenAI embeddings' : undefined,
+      });
+      if (p.isCancel(embeddingKey)) { p.cancel('Cancelled.'); process.exit(0); }
+    } else if (embeddingProvider === 'openai' && provider === 'openai') {
+      embeddingKey = apiKey; // reuse
+    }
+
+    if (embeddingConfig) {
+      const s2 = p.spinner();
+      s2.start('Configuring embeddings...');
+      s2.stop(`${green}✓${reset} Embeddings: ${embeddingConfig.provider}/${embeddingConfig.model}`);
+    }
+  }
+
+  // ─── Step 4: Your Name ──────────────────────────────
 
   const name = await p.text({
     message: 'Your name?',
@@ -189,6 +253,19 @@ export async function runOnboard() {
     model: defaults[provider] || 'auto',
   };
 
+  // Embedding / Cognee config
+  if (embeddingConfig) {
+    config.memory = config.memory || {};
+    config.memory.cognee = config.memory.cognee || {};
+    config.memory.cognee.url = config.memory.cognee.url || 'http://localhost:8000';
+    config.memory.embedding = {
+      provider: embeddingConfig.provider,
+      model: embeddingConfig.model,
+      dimensions: embeddingConfig.dimensions,
+      ...(embeddingConfig.endpoint && { endpoint: embeddingConfig.endpoint }),
+    };
+  }
+
   config.channels = config.channels || {};
   if (telegramToken) {
     config.channels.telegram = {
@@ -219,6 +296,7 @@ export async function runOnboard() {
   if (apiKey) secrets.set(`${provider}_api_key`, apiKey);
   if (telegramToken) secrets.set('telegram_bot_token', telegramToken);
   if (tunnelToken) secrets.set('cloudflare_tunnel_token', tunnelToken);
+  if (embeddingKey) secrets.set('embedding_api_key', embeddingKey);
 
   // Trust kernel
   const trustKernel = new TrustKernel(config);

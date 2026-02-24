@@ -417,6 +417,110 @@ export class MemoryManager {
    *   2. JWT token (local with auth) — Authorization: Bearer
    *   3. No auth (local without REQUIRE_AUTH)
    */
+  /**
+   * Configure Cognee's LLM and embedding providers via environment variables.
+   * Cognee uses Pydantic settings which read from env vars.
+   * This bridges QClaw's config → Cognee's expected env vars.
+   */
+  _configureCogneeEnv() {
+    const emb = this.config.memory?.embedding;
+    const primary = this.config.models?.primary;
+
+    // ── LLM config (for Cognee's entity extraction / cognify) ──
+    if (primary) {
+      const llmKey = this.secrets.get?.(`${primary.provider}_api_key`) || '';
+      if (llmKey) process.env.LLM_API_KEY = llmKey;
+
+      // Map QClaw provider names → Cognee LLM_PROVIDER values
+      const providerMap = {
+        anthropic: 'anthropic', openai: 'openai', groq: 'groq',
+        openrouter: 'openrouter', google: 'gemini', xai: 'openai',
+        ollama: 'ollama',
+      };
+      if (providerMap[primary.provider]) process.env.LLM_PROVIDER = providerMap[primary.provider];
+      if (primary.model && primary.model !== 'auto') process.env.LLM_MODEL = primary.model;
+
+      // Provider-specific endpoints
+      if (primary.provider === 'ollama') process.env.LLM_ENDPOINT = 'http://localhost:11434/v1';
+      if (primary.provider === 'openrouter') process.env.LLM_ENDPOINT = 'https://openrouter.ai/api/v1';
+      if (primary.provider === 'groq') process.env.LLM_ENDPOINT = 'https://api.groq.com/openai/v1';
+      if (primary.provider === 'xai') process.env.LLM_ENDPOINT = 'https://api.x.ai/v1';
+    }
+
+    // ── Embedding config ──
+    if (emb) {
+      const embKey = this.secrets.get?.('embedding_api_key')
+                  || this.secrets.get?.('openai_api_key')
+                  || process.env.LLM_API_KEY || '';
+
+      if (embKey) process.env.EMBEDDING_API_KEY = embKey;
+      if (emb.provider) process.env.EMBEDDING_PROVIDER = emb.provider;
+      if (emb.model) process.env.EMBEDDING_MODEL = emb.model;
+      if (emb.dimensions) process.env.EMBEDDING_DIMENSIONS = String(emb.dimensions);
+      if (emb.endpoint) process.env.EMBEDDING_ENDPOINT = emb.endpoint;
+    }
+
+    // Ensure vector DB uses lancedb (lightweight, no server needed)
+    if (!process.env.VECTOR_DB_PROVIDER) process.env.VECTOR_DB_PROVIDER = 'lancedb';
+  }
+
+  /**
+   * Push LLM/embedding settings to Cognee via its settings API.
+   * This is essential for Docker Cognee which runs as a separate process
+   * and doesn't inherit QClaw's environment variables.
+   */
+  async _pushCogneeSettings() {
+    const emb = this.config.memory?.embedding;
+    const primary = this.config.models?.primary;
+    if (!emb && !primary) return;
+
+    const settings = {};
+
+    // LLM settings
+    if (primary) {
+      const providerMap = {
+        anthropic: 'anthropic', openai: 'openai', groq: 'groq',
+        openrouter: 'openrouter', google: 'gemini', xai: 'openai',
+        ollama: 'ollama',
+      };
+      const llmKey = this.secrets.get?.(`${primary.provider}_api_key`) || '';
+      if (llmKey) settings.llm_api_key = llmKey;
+      if (providerMap[primary.provider]) settings.llm_provider = providerMap[primary.provider];
+      if (primary.model && primary.model !== 'auto') settings.llm_model = primary.model;
+    }
+
+    // Embedding settings
+    if (emb) {
+      const embKey = this.secrets.get?.('embedding_api_key')
+                  || this.secrets.get?.('openai_api_key') || '';
+      if (embKey) settings.embedding_api_key = embKey;
+      if (emb.provider) settings.embedding_provider = emb.provider;
+      if (emb.model) settings.embedding_model = emb.model;
+      if (emb.dimensions) settings.embedding_dimensions = emb.dimensions;
+      if (emb.endpoint) settings.embedding_endpoint = emb.endpoint;
+    }
+
+    if (Object.keys(settings).length === 0) return;
+
+    try {
+      const res = await fetch(`${this.cogneeUrl}/api/v1/settings`, {
+        method: 'POST',
+        headers: { ...this._cogneeHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        log.debug(`Cognee settings pushed: ${Object.keys(settings).filter(k => !k.includes('key')).join(', ')}`);
+      } else {
+        // Non-fatal — settings API may not exist on older Cognee versions
+        log.debug(`Cognee settings API returned ${res.status} — using env vars instead`);
+      }
+    } catch {
+      // Non-fatal — settings push failed, env vars are the fallback
+      log.debug('Cognee settings API not available — using env vars');
+    }
+  }
+
   _cogneeHeaders() {
     const headers = { 'Content-Type': 'application/json' };
     if (this._cogneeApiKey) {
@@ -432,6 +536,10 @@ export class MemoryManager {
     if (this.config.memory?.cognee?.enabled === false) {
       throw new Error('Cognee disabled in config');
     }
+
+    // ── Configure Cognee's LLM & embeddings via environment variables ──
+    // Cognee reads these from the environment (Pydantic settings)
+    this._configureCogneeEnv();
 
     // Health check — try detailed endpoint first, fall back to basic
     let healthData;
@@ -509,6 +617,9 @@ export class MemoryManager {
       if (err.message.includes('requires authentication')) throw err;
       // Network error accessing settings — Cognee might not have the endpoint, continue
     }
+
+    // ── Push LLM/embedding settings via API (for Docker Cognee) ──
+    await this._pushCogneeSettings();
 
     this.cogneeConnected = true;
 

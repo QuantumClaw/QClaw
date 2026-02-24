@@ -4,6 +4,19 @@ All notable changes to QuantumClaw will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.4] - 2026-02-24
+
+### Added
+- **Onboarding: Embedding model selection** — new step asks users to choose an embedding provider for the knowledge graph. Options: OpenAI (recommended, cheapest + best quality), same as LLM provider, Ollama (local/free), Fastembed (local/free), or skip (basic vector memory only). Handles Anthropic gracefully (no embeddings → auto-falls back to Fastembed). Reuses the LLM API key when possible.
+- **Memory Manager: Cognee LLM/embedding auto-configuration** — on boot, bridges QClaw's config into Cognee's env vars (LLM_PROVIDER, LLM_API_KEY, LLM_MODEL, EMBEDDING_PROVIDER, EMBEDDING_MODEL, EMBEDDING_API_KEY, EMBEDDING_DIMENSIONS, EMBEDDING_ENDPOINT).
+- **Memory Manager: Settings API push** — after connecting to Cognee, pushes LLM/embedding settings via `POST /api/v1/settings` for Docker Cognee instances that can't inherit env vars. Falls back gracefully if the API isn't available.
+- **Config: `memory.embedding`** — new config section stores embedding provider, model, dimensions, and endpoint.
+- **Secrets: `embedding_api_key`** — separate encrypted key for embedding provider (reuses LLM key if same provider).
+
+### Changed
+- Onboarding now has 5 steps: LLM provider → Telegram → Embeddings → Name → Dashboard PIN/tunnel.
+- By the time the dashboard opens after `qclaw start`, Cognee's knowledge graph is fully configured with both LLM and embedding models — no manual env var setup needed.
+
 ## [1.3.3] - 2026-02-24
 
 ### Fixed
