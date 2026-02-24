@@ -19,6 +19,12 @@ import { SkillLoader } from './skills/loader.js';
 import { ChannelManager } from './channels/manager.js';
 import { DashboardServer } from './dashboard/server.js';
 import { Heartbeat } from './core/heartbeat.js';
+import { ToolRegistry } from './tools/registry.js';
+import { ToolExecutor } from './tools/executor.js';
+import { getDb, closeDb } from './core/database.js';
+import { DeliveryQueue } from './core/delivery-queue.js';
+import { CompletionCache } from './core/completion-cache.js';
+import { ExecApprovals } from './security/approvals.js';
 import { banner } from './cli/brand.js';
 import { log } from './core/logger.js';
 import { writeFileSync, unlinkSync } from 'fs';
@@ -35,6 +41,12 @@ class QuantumClaw {
     this.router = null;
     this.agents = null;
     this.skills = null;
+    this.tools = null;
+    this.toolExecutor = null;
+    this.db = null;
+    this.deliveryQueue = null;
+    this.completionCache = null;
+    this.approvals = null;
     this.channels = null;
     this.dashboard = null;
     this.heartbeat = null;
@@ -50,19 +62,33 @@ class QuantumClaw {
       this.config = await loadConfig();
       this.secrets = new SecretStore(this.config);
       this.trustKernel = new TrustKernel(this.config);
-      this.audit = new AuditLog(this.config);
+
+      // Audit is important but not fatal — catch separately
+      try {
+        this.audit = new AuditLog(this.config);
+      } catch (auditErr) {
+        log.warn(`Audit log failed: ${auditErr.message} — continuing without audit`);
+        // Stub audit so downstream code doesn't crash
+        this.audit = { log() {}, getRecent() { return []; }, getCosts() { return { total: 0, today: 0, entries: [] }; } };
+      }
 
       await this.secrets.load();
       await this.trustKernel.load();
-      this.audit.log('system', 'startup', 'QuantumClaw starting');
+      if (this.audit.log) this.audit.log('system', 'startup', 'QuantumClaw starting');
     } catch (err) {
       log.error(`Security layer failed: ${err.message}`);
       log.error('Cannot start without security. Run `qclaw diagnose`');
       process.exit(1);
     }
 
-    // ── Layer 1.5: AGEX credentials (optional, falls back to local secrets) ──
+    // ── Layer 1.5: AGEX credentials (auto-starts hub-lite, falls back to local secrets) ──
     try {
+      // Default to local hub-lite if no hub URL configured
+      if (!this.config.agex) this.config.agex = {};
+      if (!this.config.agex.hubUrl && !process.env.AGEX_HUB_URL) {
+        this.config.agex.hubUrl = 'http://localhost:4891';
+      }
+
       this.credentials = new CredentialManager(this.config, this.secrets);
       await this.credentials.init();
 
@@ -71,7 +97,7 @@ class QuantumClaw {
         log.success(`AGEX Hub connected (AID: ${status.aidId?.slice(0, 8)}..., Tier ${status.trustTier})`);
         this.audit.log('system', 'agex_connected', `Hub: ${status.hubUrl}`);
       } else {
-        log.debug('AGEX Hub not configured — using local secrets');
+        log.debug('AGEX Hub not available — using local secrets');
       }
     } catch (err) {
       log.debug(`AGEX: ${err.message} — using local secrets`);
@@ -80,6 +106,42 @@ class QuantumClaw {
     }
 
     log.success('Security layer ready');
+
+    // ── Layer 1.7: Shared database (non-fatal — modules fall back to JSON) ──
+    try {
+      this.db = await getDb(this.config._dir);
+      if (this.db) {
+        // Wire up modules that support .attach(db) for SQLite-backed storage
+        this.deliveryQueue = new DeliveryQueue(this.config);
+        this.deliveryQueue.attach(this.db);
+
+        this.completionCache = new CompletionCache(this.config);
+        this.completionCache.attach(this.db);
+
+        this.approvals = new ExecApprovals(this.config);
+        this.approvals.attach(this.db);
+
+        log.success('Shared database ready (SQLite)');
+      } else {
+        log.info('No SQLite available — using JSON fallbacks');
+      }
+    } catch (err) {
+      log.debug(`Shared database: ${err.message} — modules will use JSON fallbacks`);
+    }
+
+    // Ensure stubs exist even if DB init failed
+    if (!this.deliveryQueue) {
+      this.deliveryQueue = new DeliveryQueue(this.config);
+      this.deliveryQueue.attach(null);
+    }
+    if (!this.completionCache) {
+      this.completionCache = new CompletionCache(this.config);
+      this.completionCache.attach(null);
+    }
+    if (!this.approvals) {
+      this.approvals = new ExecApprovals(this.config);
+      this.approvals.attach(null);
+    }
 
     // ── Layer 2: Memory (degrades: graph → sqlite) ──
     try {
@@ -140,6 +202,85 @@ class QuantumClaw {
       this.skills = { loadAll() { return 0; }, list() { return []; }, forAgent() { return []; } };
     }
 
+    // ── Layer 4.5: Tools — MCP servers, API tools, built-ins (non-fatal) ──
+    try {
+      this.tools = new ToolRegistry(this.config, this.credentials);
+      const toolStatus = await this.tools.init();
+
+      // Wire the search_knowledge built-in to the live memory graph
+      if (this.tools._builtins.has('search_knowledge') && this.memory.graphQuery) {
+        const originalSearch = this.tools._builtins.get('search_knowledge');
+        this.tools._builtins.set('search_knowledge', async (args) => {
+          const graphResult = await this.memory.graphQuery(args.query || args.q || '');
+          if (graphResult.results?.length > 0) {
+            return graphResult.results.map(r => r.content || r).join('\n\n');
+          }
+          // Fall back to original built-in if no graph results
+          return originalSearch ? await originalSearch(args) : 'No knowledge found.';
+        });
+      }
+
+      // Wire the spawn_agent built-in for agentic sub-agent creation
+      this.tools._builtins.set('spawn_agent', async (args) => {
+        const { name, role, model_tier, scopes } = args;
+        if (!name || !role) return 'Error: name and role are required';
+
+        try {
+          const { Agent } = await import('./agents/registry.js');
+          const { existsSync, mkdirSync, writeFileSync } = await import('fs');
+          const { join } = await import('path');
+
+          const safeName = name.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+          const agentDir = join(this.config._dir, 'workspace', 'agents', safeName);
+          mkdirSync(agentDir, { recursive: true });
+
+          // Generate SOUL.md
+          const soulContent = `# ${safeName}\n\nYou are **${safeName}**, a specialised sub-agent.\n\n## Role\n\n${role}\n\n## Rules\n\n- You are a ${model_tier || 'simple'}-tier agent — be token-efficient\n- Scoped access: ${(scopes || ['chat']).join(', ')}\n- Report to the primary agent\n`;
+          writeFileSync(join(agentDir, 'SOUL.md'), soulContent);
+
+          // Generate child AID
+          let childAid = null;
+          if (this.credentials?.generateChildAID) {
+            try {
+              childAid = await this.credentials.generateChildAID(safeName, role, scopes || []);
+              writeFileSync(join(agentDir, 'aid.json'), JSON.stringify(childAid, null, 2));
+            } catch {}
+          }
+
+          // Load into registry
+          const agent = new Agent(safeName, agentDir, {
+            router: this.router, memory: this.memory,
+            audit: this.audit, toolExecutor: this.toolExecutor,
+            trustKernel: this.trustKernel
+          });
+          await agent.load();
+          this.agents.agents.set(safeName, agent);
+
+          this.audit.log('system', 'agent_spawned', safeName, { role, scopes });
+
+          const aidInfo = childAid ? ` AID: ${childAid.aid_id.slice(0, 12)}..., Tier ${childAid.trust_tier}.` : '';
+          return `Agent "${safeName}" spawned successfully.${aidInfo} Role: ${role}. Scopes: ${(scopes || ['chat']).join(', ')}.`;
+        } catch (err) {
+          return `Failed to spawn agent: ${err.message}`;
+        }
+      });
+
+      this.toolExecutor = new ToolExecutor(this.router, this.tools, {
+        requireApproval: this.config.tools?.requireApproval || ['shell', 'file_write'],
+        onToolCall: (call) => {
+          log.debug(`Tool call: ${call.name}(${JSON.stringify(call.args).slice(0, 100)})`);
+          this.audit.log('tool', call.name, JSON.stringify(call.args).slice(0, 200));
+        },
+      });
+
+      if (toolStatus.tools > 0) {
+        log.success(`${toolStatus.tools} tools ready (${toolStatus.servers} MCP servers)`);
+      }
+    } catch (err) {
+      log.warn(`Tool system failed: ${err.message} — agent will work in chat-only mode`);
+      this.toolExecutor = null;
+    }
+
     // ── Layer 5: Agents (MUST succeed — at minimum the default agent) ──
     try {
       this.agents = new AgentRegistry(this.config, {
@@ -149,9 +290,28 @@ class QuantumClaw {
         trustKernel: this.trustKernel,
         audit: this.audit,
         secrets: this.credentials,
-        config: this.config
+        config: this.config,
+        toolExecutor: this.toolExecutor,
+        completionCache: this.completionCache,
+        deliveryQueue: this.deliveryQueue,
+        approvals: this.approvals,
       });
       await this.agents.loadAll();
+
+      // Copy primary AID to default agent's directory if not already there
+      if (this.credentials?.aid) {
+        const { existsSync, writeFileSync } = await import('fs');
+        const { join } = await import('path');
+        const primary = this.agents.primary();
+        if (primary) {
+          const aidFile = join(primary.dir, 'aid.json');
+          if (!existsSync(aidFile)) {
+            writeFileSync(aidFile, JSON.stringify(this.credentials.aid, null, 2));
+          }
+          primary.aid = this.credentials.aid;
+        }
+      }
+
       log.success(`${this.agents.count} agent(s) ready`);
     } catch (err) {
       log.error(`Agent registry failed: ${err.message}`);
@@ -288,10 +448,12 @@ class QuantumClaw {
       log.info(`\n${signal} received. Shutting down gracefully...`);
       try { this.audit.log('system', 'shutdown', signal); } catch { /* db might be closed */ }
       if (this.heartbeat) try { await this.heartbeat.stop(); } catch { /* */ }
+      if (this.deliveryQueue) try { this.deliveryQueue.stop(); } catch { /* */ }
       if (this.channels) try { await this.channels.stopAll(); } catch { /* */ }
       if (this.dashboard) try { await this.dashboard.stop(); } catch { /* */ }
       if (this.credentials?.shutdown) try { await this.credentials.shutdown(); } catch { /* */ }
       if (this.memory?.disconnect) try { await this.memory.disconnect(); } catch { /* */ }
+      try { closeDb(); } catch { /* */ }
       // Clean up PID file
       try { unlinkSync(this.pidFile); } catch { /* */ }
       log.info('Goodbye.');

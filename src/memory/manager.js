@@ -20,10 +20,12 @@ import { VectorMemory } from './vector.js';
 import { KnowledgeStore } from './knowledge.js';
 import { KnowledgeGraph, extractGraph } from './graph.js';
 
-// Try to load better-sqlite3 (native module, may fail on Android)
-let Database;
+// Try to load better-sqlite3 (native module, may fail without build tools)
+let Database = null;
 try {
-  Database = (await import('better-sqlite3')).default;
+  const mod = await import('better-sqlite3');
+  Database = mod.default;
+  if (typeof Database !== 'function') Database = null;
 } catch {
   Database = null;
 }
@@ -35,6 +37,8 @@ export class MemoryManager {
     this.cognee = null;
     this.cogneeConnected = false;
     this.cogneeUrl = config.memory?.cognee?.url || 'http://localhost:8000';
+    this._cogneeToken = null;
+    this._cogneeApiKey = null;
     this.db = null;
     this._jsonStore = null; // fallback if SQLite unavailable
     this._jsonStorePath = null;
@@ -275,32 +279,53 @@ export class MemoryManager {
   }
 
   /**
-   * Search knowledge graph for relationships
+   * Search knowledge graph for relationships.
+   *
+   * Cognee search types (in order of usefulness for QClaw):
+   *   GRAPH_COMPLETION  — LLM-powered response using graph context (best for questions)
+   *   CHUNKS            — raw text segments matching the query
+   *   SUMMARIES         — pre-generated hierarchical summaries
+   *   RAG_COMPLETION    — LLM answer from retrieved chunks
+   *   FEELING_LUCKY     — auto-select search type
    */
   async graphQuery(query) {
     // Try Cognee first (remote knowledge graph)
     if (this.cogneeConnected) {
       try {
-        const token = await this.secrets.get('cognee_token');
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const headers = this._cogneeHeaders();
+        const searchType = this.config.memory?.cognee?.searchType || 'GRAPH_COMPLETION';
 
         const res = await fetch(`${this.cogneeUrl}/api/v1/search`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ query, limit: 10 })
+          body: JSON.stringify({
+            query,
+            search_type: searchType,
+            datasets: [this.config.memory?.cognee?.dataset || 'quantumclaw'],
+          }),
+          signal: AbortSignal.timeout(15000)
         });
 
         if (res.status === 401) {
-          log.warn('Cognee token expired. Run: qclaw setup-cognee');
+          log.warn('Cognee auth expired during search — reconnecting');
           this.cogneeConnected = false;
+          this._cogneeToken = null;
           this._startReconnectLoop();
-        } else {
+        } else if (res.ok) {
           const data = await res.json();
-          return { results: data.results || [], source: 'cognee' };
+          // Cognee returns results in various formats depending on search type
+          const results = Array.isArray(data) ? data : (data.results || data.data || []);
+          if (results.length > 0) {
+            return {
+              results: results.map(r => ({
+                content: typeof r === 'string' ? r : (r.content || r.text || r.chunk_text || JSON.stringify(r))
+              })),
+              source: `cognee-${searchType.toLowerCase()}`
+            };
+          }
         }
       } catch (err) {
-        log.debug(`Graph query failed: ${err.message}`);
+        log.debug(`Cognee search failed: ${err.message}`);
       }
     }
 
@@ -373,6 +398,34 @@ export class MemoryManager {
   }
 
   // ─── Cognee internals ───────────────────────────────────
+  //
+  // Cognee API lifecycle:
+  //   1. Health check:  GET  /api/v1/health
+  //   2. Login:         POST /api/v1/auth/login  → JWT token (cookie-based auth)
+  //   3. Add data:      POST /api/v1/add         → ingest text into a dataset
+  //   4. Cognify:       POST /api/v1/cognify     → build knowledge graph (entities + relationships)
+  //   5. Search:        POST /api/v1/search      → query the graph (GRAPH_COMPLETION, CHUNKS, etc.)
+  //   6. Datasets:      GET  /api/v1/datasets    → list datasets and their status
+  //
+  // For Cognee Cloud: use X-Api-Key header instead of login flow.
+  // For local Docker:  use cookie login (username/password) or run without auth.
+
+  /**
+   * Build the auth headers for Cognee API calls.
+   * Supports three modes:
+   *   1. API key (Cognee Cloud) — X-Api-Key header
+   *   2. JWT token (local with auth) — Authorization: Bearer
+   *   3. No auth (local without REQUIRE_AUTH)
+   */
+  _cogneeHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    if (this._cogneeApiKey) {
+      headers['X-Api-Key'] = this._cogneeApiKey;
+    } else if (this._cogneeToken) {
+      headers['Authorization'] = `Bearer ${this._cogneeToken}`;
+    }
+    return headers;
+  }
 
   async _connectCognee() {
     // Check if Cognee is explicitly disabled (e.g. Android/Termux)
@@ -380,24 +433,81 @@ export class MemoryManager {
       throw new Error('Cognee disabled in config');
     }
 
-    // Health check — Cognee's health endpoint is /health (not /api/v1/health)
-    const res = await fetch(`${this.cogneeUrl}/health`, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) throw new Error(`Cognee returned ${res.status}`);
+    // Health check — try detailed endpoint first, fall back to basic
+    let healthData;
+    try {
+      const res = await fetch(`${this.cogneeUrl}/api/v1/health`, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        healthData = await res.json();
+      } else {
+        // Fall back to basic health endpoint
+        const basicRes = await fetch(`${this.cogneeUrl}/health`, { signal: AbortSignal.timeout(5000) });
+        if (!basicRes.ok) throw new Error(`Cognee returned ${basicRes.status}`);
+        healthData = await basicRes.json();
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') throw new Error('Cognee health check timed out');
+      throw err;
+    }
 
-    const data = await res.json();
+    // ── Authentication ──────────────────────────────────────
+    // Priority: 1) API key (cloud), 2) existing JWT, 3) login with credentials, 4) no auth
 
-    // Verify we have a token (should be set during onboarding)
-    const token = await this.secrets.get('cognee_token');
-    if (token) {
-      // Quick auth check
-      const authRes = await fetch(`${this.cogneeUrl}/api/v1/settings`, {
-        headers: { 'Authorization': `Bearer ${token}` },
+    // Check for Cognee Cloud API key
+    this._cogneeApiKey = this.secrets.get?.('cognee_api_key') || null;
+
+    if (!this._cogneeApiKey) {
+      // Try existing JWT token
+      this._cogneeToken = this.secrets.get?.('cognee_token') || null;
+
+      if (this._cogneeToken) {
+        // Verify the token is still valid
+        const authRes = await fetch(`${this.cogneeUrl}/api/v1/settings`, {
+          headers: this._cogneeHeaders(),
+          signal: AbortSignal.timeout(5000)
+        });
+        if (authRes.status === 401) {
+          log.debug('Cognee token expired — attempting re-login');
+          this._cogneeToken = null;
+        }
+      }
+
+      // If no valid token, attempt login with stored credentials
+      if (!this._cogneeToken) {
+        const username = this.secrets.get?.('cognee_username')
+          || this.config.memory?.cognee?.username
+          || process.env.COGNEE_USERNAME;
+        const password = this.secrets.get?.('cognee_password')
+          || this.config.memory?.cognee?.password
+          || process.env.COGNEE_PASSWORD;
+
+        if (username && password) {
+          try {
+            this._cogneeToken = await this._cogneeLogin(username, password);
+            // Persist the token for next startup
+            if (this.secrets.set) this.secrets.set('cognee_token', this._cogneeToken);
+            log.debug('Cognee: logged in successfully');
+          } catch (loginErr) {
+            log.warn(`Cognee login failed: ${loginErr.message}`);
+            // Continue without auth — Cognee may have auth disabled
+          }
+        }
+      }
+    }
+
+    // Verify we can actually reach a protected endpoint (or that auth isn't required)
+    try {
+      const settingsRes = await fetch(`${this.cogneeUrl}/api/v1/settings`, {
+        headers: this._cogneeHeaders(),
         signal: AbortSignal.timeout(5000)
       });
-      if (authRes.status === 401) {
-        log.warn('Cognee token expired or invalid. Run: qclaw setup-cognee');
-        throw new Error('Cognee token invalid');
+      // 200 = authenticated, 401 = auth required but we don't have it
+      if (settingsRes.status === 401) {
+        throw new Error('Cognee requires authentication. Set COGNEE_USERNAME/COGNEE_PASSWORD or cognee_api_key.');
       }
+    } catch (err) {
+      if (err.message.includes('requires authentication')) throw err;
+      // Network error accessing settings — Cognee might not have the endpoint, continue
     }
 
     this.cogneeConnected = true;
@@ -408,7 +518,52 @@ export class MemoryManager {
       this._reconnectTimer = null;
     }
 
-    return data.entities || 0;
+    // Get dataset count for logging
+    let entityCount = 0;
+    try {
+      const dsRes = await fetch(`${this.cogneeUrl}/api/v1/datasets`, {
+        headers: this._cogneeHeaders(),
+        signal: AbortSignal.timeout(5000)
+      });
+      if (dsRes.ok) {
+        const datasets = await dsRes.json();
+        entityCount = Array.isArray(datasets) ? datasets.length : 0;
+      }
+    } catch { /* non-fatal */ }
+
+    return entityCount;
+  }
+
+  /**
+   * Login to Cognee and get a JWT token.
+   * Cognee uses FastAPI-Users with cookie auth — POST form data to /api/v1/auth/login
+   */
+  async _cogneeLogin(username, password) {
+    const res = await fetch(`${this.cogneeUrl}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ username, password }),
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Login failed (${res.status}): ${body}`);
+    }
+
+    // Cognee returns the token in the response body or as a cookie
+    const data = await res.json().catch(() => null);
+
+    // Try response body first (newer Cognee versions)
+    if (data?.access_token) return data.access_token;
+    if (data?.token) return data.token;
+
+    // Try cookie (FastAPI-Users cookie transport)
+    const setCookie = res.headers.get('set-cookie') || '';
+    const tokenMatch = setCookie.match(/fastapiusersauth=([^;]+)/);
+    if (tokenMatch) return tokenMatch[1];
+
+    throw new Error('Login succeeded but no token returned');
   }
 
   _startReconnectLoop() {
@@ -418,24 +573,62 @@ export class MemoryManager {
 
     this._reconnectTimer = setInterval(async () => {
       try {
-        const entities = await this._connectCognee();
-        log.success(`Knowledge graph reconnected (${entities} entities)`);
+        const count = await this._connectCognee();
+        log.success(`Knowledge graph reconnected (${count} datasets)`);
       } catch {
         // Still down, will try again next interval
       }
     }, interval);
   }
 
+  /**
+   * Ingest content into Cognee's knowledge base.
+   *
+   * The Cognee lifecycle is:
+   *   1. POST /api/v1/add   — add raw data to a dataset
+   *   2. POST /api/v1/cognify — process data into knowledge graph
+   *
+   * We run cognify in the background (runInBackground: true) so it doesn't
+   * block the agent's response. Cognee processes asynchronously.
+   */
   async _cogneeIngest(agent, content) {
-    const token = await this.secrets.get('cognee_token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = this._cogneeHeaders();
+    const datasetName = this.config.memory?.cognee?.dataset || 'quantumclaw';
 
-    await fetch(`${this.cogneeUrl}/api/v1/add`, {
+    // Step 1: Add data to Cognee
+    const addRes = await fetch(`${this.cogneeUrl}/api/v1/add`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ source: agent, content }),
-      signal: AbortSignal.timeout(10000)
+      body: JSON.stringify({
+        data: content,
+        datasetName,
+      }),
+      signal: AbortSignal.timeout(15000)
+    });
+
+    if (!addRes.ok) {
+      if (addRes.status === 401) {
+        log.warn('Cognee auth expired during ingest — will re-authenticate');
+        this.cogneeConnected = false;
+        this._cogneeToken = null;
+        this._startReconnectLoop();
+        return;
+      }
+      throw new Error(`Cognee add failed: ${addRes.status}`);
+    }
+
+    // Step 2: Trigger cognify (build knowledge graph) — run in background
+    // We don't await this — Cognee processes asynchronously
+    fetch(`${this.cogneeUrl}/api/v1/cognify`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        datasets: [datasetName],
+        runInBackground: true
+      }),
+      signal: AbortSignal.timeout(15000)
+    }).catch(err => {
+      log.debug(`Cognee cognify trigger failed: ${err.message}`);
     });
   }
 }

@@ -50,8 +50,8 @@ export class DashboardServer {
 
     // Auth lockout tracking
     this.authAttempts = new Map(); // ip -> { count, lockedUntil }
-    this.AUTH_MAX_ATTEMPTS = 5;
-    this.AUTH_LOCKOUT_MS = 900000; // 15 minutes
+    this.AUTH_MAX_ATTEMPTS = 10;
+    this.AUTH_LOCKOUT_MS = 120000; // 2 minutes
 
     this.app.use(express.json({ limit: '20mb' }));
 
@@ -373,10 +373,102 @@ export class DashboardServer {
           skills: agent.skills?.length || 0,
           threads: threads.length,
           messages: totalMessages,
-          isPrimary: agent.name === this.qclaw.agents.primary()?.name
+          isPrimary: agent.name === this.qclaw.agents.primary()?.name,
+          aidId: agent.aid?.aid_id || null,
+          trustTier: agent.aid?.trust_tier ?? null
         });
       }
       res.json(agents);
+    });
+
+    // ─── Agent Spawning ─────────────────────────────────────
+    this.app.post('/api/agents/spawn', async (req, res) => {
+      try {
+        const { name, role, model_tier, scopes } = req.body;
+        if (!name || !role) return res.status(400).json({ error: 'name and role required' });
+
+        // Sanitise agent name
+        const safeName = name.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        if (!safeName) return res.status(400).json({ error: 'Invalid agent name' });
+
+        // Check if agent already exists
+        if (this.qclaw.agents.get(safeName) && this.qclaw.agents.list().includes(safeName)) {
+          return res.status(409).json({ error: `Agent "${safeName}" already exists` });
+        }
+
+        const { existsSync, mkdirSync, writeFileSync } = await import('fs');
+        const { join } = await import('path');
+
+        // 1. Create agent directory
+        const agentDir = join(this.qclaw.config._dir, 'workspace', 'agents', safeName);
+        mkdirSync(agentDir, { recursive: true });
+
+        // 2. Generate SOUL.md
+        const soulContent = `# ${safeName}\n\nYou are **${safeName}**, a specialised sub-agent of the QuantumClaw system.\n\n## Role\n\n${role}\n\n## Operating Rules\n\n- You are a **${model_tier || 'simple'}-tier** agent — be efficient with tokens\n- You report to the primary agent\n- You have access to scoped tools: ${(scopes || ['chat']).join(', ')}\n- Stay focused on your specialisation\n- Ask the primary agent if you need credentials or tools outside your scope\n`;
+        writeFileSync(join(agentDir, 'SOUL.md'), soulContent);
+
+        // 3. Generate child AID (if AGEX available)
+        let childAid = null;
+        if (this.qclaw.credentials?.generateChildAID) {
+          try {
+            childAid = await this.qclaw.credentials.generateChildAID(safeName, role, scopes || []);
+            // Save AID in agent directory too for portability
+            writeFileSync(join(agentDir, 'aid.json'), JSON.stringify(childAid, null, 2));
+          } catch (err) {
+            // Non-fatal — agent works without AID
+            console.warn(`[AGEX] Child AID generation failed: ${err.message}`);
+          }
+        }
+
+        // 4. Load agent into registry
+        const { Agent } = await import('../agents/registry.js');
+        const agent = new Agent(safeName, agentDir, {
+          router: this.qclaw.router,
+          memory: this.qclaw.memory,
+          audit: this.qclaw.audit,
+          toolExecutor: this.qclaw.toolExecutor
+        });
+        await agent.load();
+        this.qclaw.agents.agents.set(safeName, agent);
+
+        // 5. Audit
+        this.qclaw.audit.log('system', 'agent_spawned', safeName, {
+          role,
+          model_tier: model_tier || 'simple',
+          aidId: childAid?.aid_id || null,
+          scopes: scopes || ['chat']
+        });
+
+        res.json({
+          name: safeName,
+          role,
+          aidId: childAid?.aid_id || null,
+          trustTier: childAid?.trust_tier || null,
+          parentAid: this.qclaw.credentials?.aid?.aid_id || null,
+          status: 'active'
+        });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // ─── AGEX Status ────────────────────────────────────────
+    this.app.get('/api/agex/status', (req, res) => {
+      const status = this.qclaw.credentials?.status?.() || { mode: 'local' };
+
+      // Enrich with per-agent AIDs
+      const agentAids = [];
+      for (const name of this.qclaw.agents.list()) {
+        const agent = this.qclaw.agents.get(name);
+        agentAids.push({
+          name: agent.name,
+          aidId: agent.aid?.aid_id || null,
+          trustTier: agent.aid?.trust_tier || null,
+          isPrimary: agent.name === this.qclaw.agents.primary()?.name
+        });
+      }
+
+      res.json({ ...status, agents: agentAids });
     });
 
     // Skills list
@@ -458,6 +550,36 @@ export class DashboardServer {
         target[keys[keys.length - 1]] = parsed;
         saveConfig(this.qclaw.config);
         res.json({ ok: true, key, value: parsed });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // ─── Secrets Management ─────────────────────────────────
+    this.app.get('/api/secrets', (req, res) => {
+      const secrets = this.qclaw.credentials;
+      if (!secrets?.list) return res.json([]);
+      const keys = secrets.list();
+      res.json(keys.map(k => ({ key: k, set: true })));
+    });
+
+    this.app.post('/api/secrets', async (req, res) => {
+      try {
+        const { key, value } = req.body;
+        if (!key) return res.status(400).json({ error: 'key required' });
+        if (!value) return res.status(400).json({ error: 'value required' });
+        const secrets = this.qclaw.credentials;
+        if (!secrets?.set) return res.status(500).json({ error: 'SecretStore not available' });
+        secrets.set(key, value);
+        res.json({ ok: true, key });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    this.app.delete('/api/secrets/:key', async (req, res) => {
+      try {
+        const { key } = req.params;
+        const secrets = this.qclaw.credentials;
+        if (!secrets?.delete) return res.status(500).json({ error: 'SecretStore not available' });
+        secrets.delete(key);
+        res.json({ ok: true, key });
       } catch (err) { res.status(500).json({ error: err.message }); }
     });
 

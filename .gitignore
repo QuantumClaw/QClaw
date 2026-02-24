@@ -1,43 +1,40 @@
+# Dependencies
+node_modules/
+
+# Environment (secrets live here)
+.env
+.env.local
+.env.*.local
+
+# Encrypted secrets and databases
+*.enc
+*.db
+*.pid
+
+# QuantumClaw runtime
+.quantumclaw/
+workspace/agents/*/memory/
+workspace/memory/
+workspace/logs/
+workspace/delivery-queue/
 
 # AGEX credentials (private key is in encrypted secrets store)
-# Dependencies
-# Docker volumes
-# Editors
-# Encrypted secrets and databases
-# Environment (secrets live here)
-# Logs
-# nested clone from WSL
-# OS
-# QuantumClaw runtime
-*.db
-*.enc
-*.log
-*.pid
-*.swo
-*.swp
-*~
-.DS_Store
-.env
-.env.*.local
-.env.local
-.idea/
-.quantumclaw/
-.vscode/
-desktop.ini
-docker-data/
-node_modules/
-QClaw/
-Thumbs.db
-workspace/agents/*/memory/
 workspace/agex/
-workspace/delivery-queue/
-workspace/logs/
-workspace/memory/
 
-# nested clone from WSL
-QClaw/
+# Logs
+*.log
 
-# Developer / local only (do not push)
-.cursor/
-agent-transcripts/
-*.local.md
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker volumes
+docker-data/

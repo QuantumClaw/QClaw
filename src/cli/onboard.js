@@ -251,6 +251,99 @@ export async function runOnboard() {
 
   s.stop(`${green}✓${reset} Done`);
 
+  // ─── Inline Telegram Pairing ──────────────────────────
+
+  if (telegramToken) {
+    console.log('');
+    console.log(`  ${bold}Telegram Pairing${reset}`);
+    console.log('');
+    console.log(`  ${dim}1.${reset} Open Telegram on your phone`);
+    console.log(`  ${dim}2.${reset} Send ${cyan}/start${reset} to your bot`);
+    console.log(`  ${dim}3.${reset} It will reply with an 8-letter code`);
+    console.log(`  ${dim}4.${reset} Type that code below`);
+    console.log('');
+
+    // Start a temporary Telegram bot to capture the pairing code
+    let pairingDone = false;
+    let pairingCode = null;
+    let pairingUserId = null;
+    let pairingUsername = null;
+    let pairingChatId = null;
+    let botInstance = null;
+
+    try {
+      const { Bot } = await import('grammy');
+      botInstance = new Bot(telegramToken);
+
+      // Generate pairing code
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const { randomBytes: rb } = await import('crypto');
+      const bytes = rb(8);
+      const generatedCode = Array.from(bytes).map(b => chars[b % chars.length]).join('');
+
+      botInstance.command('start', async (ctx) => {
+        pairingUserId = String(ctx.from.id);
+        pairingUsername = ctx.from.username || ctx.from.first_name || 'unknown';
+        pairingChatId = ctx.chat.id;
+        pairingCode = generatedCode;
+
+        await ctx.reply(`Welcome to QuantumClaw! 🧠\n\nYour pairing code:`);
+        await ctx.reply(generatedCode);
+        await ctx.reply(`Type this code in your terminal to complete pairing.`);
+      });
+
+      // Start bot in background (non-blocking)
+      botInstance.start({ onStart: () => {} });
+
+      // Wait for user to enter the code
+      const codeInput = await p.text({
+        message: 'Paste the 8-letter code from Telegram:',
+        placeholder: 'e.g. AB3CD5EF',
+        validate: v => {
+          if (!v) return 'Enter the code from Telegram';
+          if (v.length !== 8) return 'Code should be 8 characters';
+        }
+      });
+
+      if (!p.isCancel(codeInput)) {
+        const entered = codeInput.toUpperCase().trim();
+
+        if (pairingCode && entered === pairingCode && pairingUserId) {
+          // Approve — add to allowlist
+          config.channels.telegram.allowedUsers = config.channels.telegram.allowedUsers || [];
+          if (!config.channels.telegram.allowedUsers.includes(pairingUserId)) {
+            config.channels.telegram.allowedUsers.push(pairingUserId);
+          }
+          saveConfig(config);
+
+          console.log(`  ${green}✓${reset} Paired with @${pairingUsername} (${pairingUserId})`);
+          pairingDone = true;
+        } else if (!pairingCode) {
+          console.log(`  ${yellow}!${reset} No pairing request received yet. Send /start to your bot first.`);
+          console.log(`  ${dim}You can pair later: qclaw pairing approve telegram CODE${reset}`);
+        } else {
+          console.log(`  ${yellow}!${reset} Code doesn't match. You can pair later:`);
+          console.log(`  ${cyan}qclaw pairing approve telegram ${pairingCode}${reset}`);
+        }
+      }
+
+      // Stop the temporary bot
+      try { await botInstance.stop(); } catch {}
+
+    } catch (err) {
+      console.log(`  ${yellow}!${reset} Telegram pairing skipped: ${err.message}`);
+      console.log(`  ${dim}You can pair after starting: qclaw pairing approve telegram CODE${reset}`);
+    }
+
+    if (!pairingDone) {
+      console.log('');
+      console.log(`  ${dim}To pair later after starting the agent:${reset}`);
+      console.log(`  ${dim}1.${reset} Send ${cyan}/start${reset} to your bot`);
+      console.log(`  ${dim}2.${reset} Run: ${cyan}qclaw pairing approve telegram CODE${reset}`);
+      console.log('');
+    }
+  }
+
   // ─── Done ──
 
   console.log('');
@@ -264,19 +357,6 @@ export async function runOnboard() {
   console.log(`  ${green}│${reset}                                                 ${green}│${reset}`);
   console.log(`  ${green}└─────────────────────────────────────────────────┘${reset}`);
   console.log('');
-
-  if (telegramToken) {
-    console.log(`  ${bold}After starting — pair Telegram:${reset}`);
-    console.log('');
-    console.log(`  ${dim}1.${reset} Send ${cyan}/start${reset} to your bot in Telegram`);
-    console.log(`  ${dim}2.${reset} It replies with an 8-letter code`);
-    console.log(`  ${dim}3.${reset} Open a new terminal tab and run:`);
-    console.log('');
-    console.log(`     ${cyan}qclaw pairing approve telegram CODE${reset}`);
-    console.log('');
-    console.log(`  ${dim}Replace CODE with the code from Telegram.${reset}`);
-    console.log('');
-  }
 
   console.log(`  ${bold}Useful commands:${reset}`);
   console.log(`  ${cyan}qclaw start${reset}       ${dim}launch agent + dashboard${reset}`);

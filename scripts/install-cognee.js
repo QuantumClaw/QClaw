@@ -28,7 +28,7 @@ import { homedir } from 'os';
 // ─── Config ──────────────────────────────────────────────────────
 const COGNEE_PORT = 8000;
 const COGNEE_CONTAINER = 'quantumclaw-cognee';
-const COGNEE_IMAGE = 'cognee/cognee:latest';
+const COGNEE_IMAGE = 'cognee/cognee:main';
 const CONFIG_DIR = join(homedir(), '.quantumclaw');
 const HEALTH_URL = `http://localhost:${COGNEE_PORT}/health`;
 const MAX_HEALTH_WAIT = 45; // seconds
@@ -295,6 +295,25 @@ async function main() {
   const flag = process.argv[2];
 
   console.log(`\n  ${B}QuantumClaw — Cognee Setup${RS}\n`);
+
+  // Safety warning
+  console.log(`  ${Y}┌───────────────────────────────────────────────────────┐${RS}`);
+  console.log(`  ${Y}│${RS}                                                       ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}  ${R}⚠  RISK ACKNOWLEDGEMENT${RS}                             ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}                                                       ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}  This will install Cognee, an AI knowledge engine     ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}  that processes your data into a knowledge graph.     ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}                                                       ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}  • Uses Docker or Python (installed automatically)    ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}  • Runs locally — your data stays on your machine     ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}  • Uses your LLM API key for knowledge extraction     ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}  • Open source: github.com/topoteretes/cognee         ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}                                                       ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}  As with any powerful technology, review what you      ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}  feed it and monitor your API usage/costs.            ${Y}│${RS}`);
+  console.log(`  ${Y}│${RS}                                                       ${Y}│${RS}`);
+  console.log(`  ${Y}└───────────────────────────────────────────────────────┘${RS}`);
+  console.log('');
 
   // --status: just check if running
   if (flag === '--status') {

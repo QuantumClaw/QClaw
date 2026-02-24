@@ -21,6 +21,8 @@
 
 import { log } from './core/logger.js';
 import { SecretStore } from './security/secrets.js';
+import { AgexClient } from '@agexhq/sdk';
+import { startHubLite } from '@agexhq/hub-lite';
 
 // Map from QuantumClaw tool names to AGEX service IDs and scopes
 const SERVICE_MAP = {
@@ -318,28 +320,53 @@ export class CredentialManager {
         log.debug(`[AGEX] Shutdown release failed: ${err.message}`);
       }
     }
+
+    // Stop hub-lite if we started it
+    if (this._hubInstance?.server) {
+      try {
+        this._hubInstance.server.close();
+        log.debug('[AGEX] hub-lite stopped');
+      } catch {}
+    }
   }
 
   // ─── AGEX Hub connection ─────────────────────────────
 
   async _connectHub() {
-    // Health check
-    const healthRes = await fetch(`${this._hubUrl}/health`, {
-      signal: AbortSignal.timeout(5000)
-    });
-    if (!healthRes.ok) throw new Error(`Hub returned ${healthRes.status}`);
-
-    // Import the SDK from npm
-    let AgexClient;
+    // Try health check — if hub isn't running, start hub-lite automatically
+    let hubRunning = false;
     try {
-      const sdk = await import('@agexhq/sdk');
-      AgexClient = sdk.AgexClient;
-    } catch (err) {
-      throw new Error(`AGEX SDK not found. Run: npm install @agexhq/sdk (${err.message})`);
+      const healthRes = await fetch(`${this._hubUrl}/health`, {
+        signal: AbortSignal.timeout(3000)
+      });
+      hubRunning = healthRes.ok;
+    } catch {
+      // Hub not running — try to auto-start hub-lite
+    }
+
+    if (!hubRunning) {
+      try {
+        const { join } = await import('path');
+        const hubPort = new URL(this._hubUrl).port || 4891;
+        const dbPath = join(this.config._dir, 'agex', 'agex.db');
+
+        log.debug(`Starting AGEX hub-lite on port ${hubPort}...`);
+        this._hubInstance = await startHubLite({
+          port: parseInt(hubPort),
+          dbPath
+        });
+
+        // Update hub URL to match what we started
+        this._hubUrl = `http://localhost:${hubPort}`;
+        log.success(`AGEX hub-lite started on port ${hubPort}`);
+        hubRunning = true;
+      } catch (err) {
+        throw new Error(`Hub not reachable and hub-lite failed to start: ${err.message}`);
+      }
     }
 
     // Load or generate AID
-    this.aid = await this._loadOrCreateAID(AgexClient);
+    this.aid = await this._loadOrCreateAID();
 
     // Get private key
     const privateKey = this.localSecrets.get('agex_private_key');
@@ -375,13 +402,16 @@ export class CredentialManager {
     log.success(`[AGEX] Connected to Hub at ${this._hubUrl} (AID: ${this.aid.aid_id.slice(0, 8)}..., Tier ${this.aid.trust_tier})`);
   }
 
-  async _loadOrCreateAID(AgexClient) {
+  async _loadOrCreateAID(agentName = null) {
     const { existsSync } = await import('fs');
     const { readFileSync, writeFileSync, mkdirSync } = await import('fs');
     const { join } = await import('path');
 
+    const name = agentName || this.config.agent?.name || 'QClaw';
     const aidDir = join(this.config._dir, 'agex');
-    const aidFile = join(aidDir, 'aid.json');
+    const aidFile = agentName
+      ? join(aidDir, `${agentName}-aid.json`)
+      : join(aidDir, 'aid.json');
 
     // Load existing AID
     if (existsSync(aidFile)) {
@@ -394,9 +424,9 @@ export class CredentialManager {
 
     // Generate new AID
     const { aid, privateKey } = await AgexClient.generateAID({
-      agentName: this.config.agent?.name || 'QClaw',
-      agentType: 'orchestrator',
-      capabilities: ['chat', 'skills', 'memory', 'web'],
+      agentName: name,
+      agentType: agentName ? 'worker' : 'orchestrator',
+      capabilities: agentName ? ['chat'] : ['chat', 'skills', 'memory', 'web'],
       organisation: this.config.agent?.owner || 'QuantumClaw User',
       contact: this.config.agex?.contact || 'agent@localhost',
       jurisdiction: this.config.agex?.jurisdiction || 'GB'
@@ -405,10 +435,40 @@ export class CredentialManager {
     // Save AID (public) and private key (encrypted in secrets store)
     if (!existsSync(aidDir)) mkdirSync(aidDir, { recursive: true });
     writeFileSync(aidFile, JSON.stringify(aid, null, 2));
-    this.localSecrets.set('agex_private_key', privateKey);
 
-    log.info(`[AGEX] Generated new AID: ${aid.aid_id.slice(0, 8)}... (Tier ${aid.trust_tier})`);
+    const keyName = agentName ? `${agentName}_agex_private_key` : 'agex_private_key';
+    this.localSecrets.set(keyName, privateKey);
+
+    log.info(`[AGEX] Generated new AID for ${name}: ${aid.aid_id.slice(0, 8)}... (Tier ${aid.trust_tier})`);
     return aid;
+  }
+
+  /**
+   * Generate a child AID for a sub-agent, delegated from the primary
+   */
+  async generateChildAID(agentName, role = 'worker', scopes = []) {
+    const childAid = await this._loadOrCreateAID(agentName);
+
+    // If AGEX is available, register the child and delegate
+    if (this.agexAvailable && this.agex) {
+      try {
+        const childKey = this.localSecrets.get(`${agentName}_agex_private_key`);
+        const childClient = new AgexClient({
+          hubUrl: this._hubUrl,
+          aid: childAid,
+          privateKey: childKey
+        });
+        await childClient.init();
+        await childClient.registerAID();
+        log.info(`[AGEX] Child AID registered: ${childAid.aid_id.slice(0, 8)}...`);
+      } catch (err) {
+        if (!err.message?.includes('ALREADY_REGISTERED')) {
+          log.debug(`[AGEX] Child AID registration: ${err.message}`);
+        }
+      }
+    }
+
+    return childAid;
   }
 
   _startReconnectLoop() {

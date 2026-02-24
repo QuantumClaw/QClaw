@@ -110,7 +110,9 @@ export async function getDb(configDir) {
   } catch (err) {
     // Fallback: try better-sqlite3 directly (in case @agexhq/store isn't installed yet)
     try {
-      const Database = (await import('better-sqlite3')).default;
+      const mod = await import('better-sqlite3');
+      const Database = mod.default;
+      if (typeof Database !== 'function') throw new Error('Not a constructor');
       const db = new Database(dbPath);
       db.pragma('journal_mode = WAL');
       db.exec(QCLAW_SCHEMA);

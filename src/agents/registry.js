@@ -161,13 +161,14 @@ These tags help the system update your identity.
   }
 }
 
-class Agent {
+export class Agent {
   constructor(name, dir, services) {
     this.name = name;
     this.dir = dir;
     this.services = services;
     this.soul = '';
     this.skills = [];
+    this.aid = null;
   }
 
   async load() {
@@ -175,6 +176,14 @@ class Agent {
     const soulFile = join(this.dir, 'SOUL.md');
     if (existsSync(soulFile)) {
       this.soul = readFileSync(soulFile, 'utf-8');
+    }
+
+    // Load AID (agent identity)
+    const aidFile = join(this.dir, 'aid.json');
+    if (existsSync(aidFile)) {
+      try {
+        this.aid = JSON.parse(readFileSync(aidFile, 'utf-8'));
+      } catch { /* corrupt aid.json — non-fatal */ }
     }
 
     // Load skills
@@ -260,11 +269,20 @@ class Agent {
       { role: 'user', content: userContent }
     ];
 
-    // Call LLM
-    const result = await router.complete(messages, {
-      model: route.model,
-      system: systemPrompt
-    });
+    // Call LLM — use tool executor if available (agentic), otherwise direct completion (chat-only)
+    let result;
+    if (this.services.toolExecutor) {
+      result = await this.services.toolExecutor.run(messages, {
+        model: route.model,
+        system: systemPrompt
+      });
+    } else {
+      const completion = await router.complete(messages, {
+        model: route.model,
+        system: systemPrompt
+      });
+      result = { ...completion, toolCalls: [] };
+    }
 
     // Store in conversation memory (working memory / episodic log)
     memory.addMessage(this.name, 'user', message, {
@@ -397,6 +415,11 @@ You exist to make your human's life easier and their business more profitable. Y
 
   _buildSystemPrompt(graphContext, knowledgeContext, relevantKnowledge) {
     const parts = [this.soul];
+
+    // Add agent identity (AGEX AID)
+    if (this.aid) {
+      parts.push(`\n## Identity\n- **Agent ID (AID):** ${this.aid.aid_id}\n- **Trust Tier:** ${this.aid.trust_tier}\n- **Type:** ${this.aid.agent?.type || 'worker'}\n- You can spawn sub-agents using the spawn_agent tool. Each gets its own AID with delegated permissions.`);
+    }
 
     // Add Trust Kernel
     const values = this.services.trustKernel.getContext();

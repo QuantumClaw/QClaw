@@ -72,9 +72,127 @@ fi
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════
-# [1/6] SYSTEM PACKAGES
+# SAFETY WARNING — User must acknowledge before install proceeds
 # ═══════════════════════════════════════════════════════════════════
-echo -e "  ${B}[1/6] System${RS}"
+echo ""
+echo -e "  ${Y}┌─────────────────────────────────────────────────────────────┐${RS}"
+echo -e "  ${Y}│${RS}                                                             ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  ${R}${B}⚠  IMPORTANT — PLEASE READ BEFORE CONTINUING${RS}              ${Y}│${RS}"
+echo -e "  ${Y}│${RS}                                                             ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  QuantumClaw is an ${B}autonomous AI agent runtime${RS} that:       ${Y}│${RS}"
+echo -e "  ${Y}│${RS}                                                             ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  • Runs AI models that make decisions on your behalf        ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  • Installs Docker, Python, and Cognee (knowledge engine)   ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  • Can access files, APIs, and external tools when enabled  ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  • Stores conversations and knowledge locally on device     ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  • Uses your API keys to make calls to AI providers         ${Y}│${RS}"
+echo -e "  ${Y}│${RS}                                                             ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  ${B}Security is built in${RS} (encryption, trust rules, audit log) ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  but as with all powerful technology, there are risks:       ${Y}│${RS}"
+echo -e "  ${Y}│${RS}                                                             ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  ${R}•${RS} AI can make mistakes or misunderstand instructions       ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  ${R}•${RS} Tool access means the agent can take real actions        ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  ${R}•${RS} API keys grant access to paid services (costs money)     ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  ${R}•${RS} Open-source software may contain undiscovered bugs       ${Y}│${RS}"
+echo -e "  ${Y}│${RS}                                                             ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  ${G}We recommend:${RS} Start with the dashboard only. Enable       ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  tools one at a time. Review the trust rules in VALUES.md.  ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  Set spending limits on your AI provider accounts.          ${Y}│${RS}"
+echo -e "  ${Y}│${RS}                                                             ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  ${B}You are responsible for how you use this software.${RS}        ${Y}│${RS}"
+echo -e "  ${Y}│${RS}  ${D}Full license: LICENSE (MIT) | Security: SECURITY.md${RS}       ${Y}│${RS}"
+echo -e "  ${Y}│${RS}                                                             ${Y}│${RS}"
+echo -e "  ${Y}└─────────────────────────────────────────────────────────────┘${RS}"
+echo ""
+
+# Skip confirmation if --yes flag passed (for CI/automation)
+if ! echo "$@" | grep -q "\-\-yes"; then
+    echo -ne "  ${B}Do you understand the risks and want to continue? [y/N] ${RS}"
+    read -r CONFIRM
+    case "$CONFIRM" in
+        [yY]|[yY][eE][sS]) ;;
+        *)
+            echo ""
+            info "Install cancelled. No changes were made."
+            info "Read more: https://github.com/QuantumClaw/QClaw#readme"
+            echo ""
+            exit 0
+            ;;
+    esac
+    echo ""
+fi
+
+# ═══════════════════════════════════════════════════════════════════
+# [1/7] SYSTEM PACKAGES + DEPENDENCY AUTO-INSTALL
+# ═══════════════════════════════════════════════════════════════════
+echo -e "  ${B}[1/7] System${RS}"
+
+# ── Auto-install Docker if not present (desktop only) ──
+if ! $IS_TERMUX && ! command -v docker &>/dev/null; then
+    echo ""
+    info "Docker is required for the Cognee knowledge engine."
+    info "Installing Docker..."
+    echo ""
+
+    if $IS_MAC; then
+        if command -v brew &>/dev/null; then
+            brew install --cask docker 2>&1 | tail -3
+            info "Docker Desktop installed — please open it from Applications to start the daemon"
+            info "Then re-run: bash scripts/install.sh"
+        else
+            warn "Install Docker Desktop from: https://docs.docker.com/desktop/install/mac-install/"
+        fi
+    elif $IS_LINUX; then
+        if command -v apt-get &>/dev/null; then
+            info "Installing Docker via apt..."
+            sudo apt-get update -qq 2>/dev/null
+            sudo apt-get install -y docker.io docker-compose-plugin 2>&1 | tail -3
+            sudo systemctl start docker 2>/dev/null || true
+            sudo usermod -aG docker "$USER" 2>/dev/null || true
+            # Check if it worked
+            if command -v docker &>/dev/null; then
+                ok "Docker installed"
+                # Need to use sudo for this session if user not in docker group yet
+                if ! docker info &>/dev/null 2>&1; then
+                    info "You may need to log out and back in for Docker group permissions"
+                    info "Or use: sudo bash scripts/install.sh"
+                fi
+            else
+                warn "Docker install may have failed — check above for errors"
+            fi
+        elif command -v dnf &>/dev/null; then
+            info "Installing Docker via dnf..."
+            sudo dnf install -y docker docker-compose-plugin 2>&1 | tail -3
+            sudo systemctl start docker 2>/dev/null || true
+            sudo usermod -aG docker "$USER" 2>/dev/null || true
+            command -v docker &>/dev/null && ok "Docker installed"
+        elif command -v pacman &>/dev/null; then
+            info "Installing Docker via pacman..."
+            sudo pacman -S --noconfirm docker docker-compose 2>&1 | tail -3
+            sudo systemctl start docker 2>/dev/null || true
+            sudo usermod -aG docker "$USER" 2>/dev/null || true
+            command -v docker &>/dev/null && ok "Docker installed"
+        else
+            warn "Could not auto-install Docker on this system"
+            info "Install manually: https://docs.docker.com/engine/install/"
+        fi
+    fi
+fi
+
+# ── Auto-install Python if not present ──
+if ! $IS_TERMUX && ! command -v python3 &>/dev/null; then
+    info "Installing Python 3..."
+    if $IS_MAC; then
+        command -v brew &>/dev/null && brew install python3 2>&1 | tail -3
+    elif $IS_LINUX; then
+        if command -v apt-get &>/dev/null; then
+            sudo apt-get install -y python3 python3-pip 2>&1 | tail -3
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install -y python3 python3-pip 2>&1 | tail -3
+        fi
+    fi
+    command -v python3 &>/dev/null && ok "Python $(python3 --version 2>&1 | cut -d' ' -f2)" || warn "Python 3 could not be installed automatically"
+fi
 
 if $IS_TERMUX; then
     NEED=""
@@ -132,9 +250,9 @@ $IS_TERMUX && command -v pm2 &>/dev/null && ok "pm2"
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════
-# [2/6] CLOUDFLARE TUNNEL (required for dashboard access)
+# [2/7] CLOUDFLARE TUNNEL (required for dashboard access)
 # ═══════════════════════════════════════════════════════════════════
-echo -e "  ${B}[2/6] Cloudflare Tunnel${RS}"
+echo -e "  ${B}[2/7] Cloudflare Tunnel${RS}"
 
 if command -v cloudflared &>/dev/null; then
     CF_VER=$(cloudflared --version 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
@@ -249,9 +367,9 @@ fi
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════
-# [3/6] NODE DEPENDENCIES
+# [3/7] NODE DEPENDENCIES
 # ═══════════════════════════════════════════════════════════════════
-echo -e "  ${B}[3/6] Dependencies${RS}"
+echo -e "  ${B}[3/7] Dependencies${RS}"
 
 cd "$QCLAW_DIR"
 if [ ! -d "node_modules" ] || [ ! -d "node_modules/grammy" ]; then
@@ -267,9 +385,9 @@ fi
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════
-# [4/6] CLI LINK
+# [4/7] CLI LINK
 # ═══════════════════════════════════════════════════════════════════
-echo -e "  ${B}[4/6] CLI${RS}"
+echo -e "  ${B}[4/7] CLI${RS}"
 
 BIN_TARGET="$QCLAW_DIR/src/cli/index.js"
 
@@ -337,9 +455,9 @@ fi
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════
-# [5/6] COGNEE (optional — local graph always available)
+# [5/7] COGNEE (optional — local graph always available)
 # ═══════════════════════════════════════════════════════════════════
-echo -e "  ${B}[5/6] Knowledge Engine${RS}"
+echo -e "  ${B}[5/7] Knowledge Engine${RS}"
 
 mkdir -p "$CONFIG_DIR"
 COGNEE_META="$CONFIG_DIR/cognee-install.json"
@@ -378,13 +496,13 @@ else
     # Method 1: Docker (best)
     if ! $DONE && command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
         info "Docker found — installing Cognee..."
-        docker pull cognee/cognee:latest 2>&1 | tail -2
+        docker pull cognee/cognee:main 2>&1 | tail -2
         docker rm -f quantumclaw-cognee 2>/dev/null || true
         docker run -d --name quantumclaw-cognee --restart unless-stopped \
             -p 8000:8000 -e VECTOR_DB_PROVIDER=lancedb \
             -e ENABLE_BACKEND_ACCESS_CONTROL=false \
             -v quantumclaw-cognee-data:/app/cognee/.cognee_system \
-            cognee/cognee:latest >/dev/null 2>&1
+            cognee/cognee:main >/dev/null 2>&1
         DONE=true; ok "Cognee (Docker)"
     fi
     # Method 2: pip (with --break-system-packages for modern Python)
@@ -412,10 +530,9 @@ else
     fi
     if ! $DONE; then
         info "Cognee not installed — local vector + SQLite memory active"
-        info "To install later: docker run -d -p 8000:8000 cognee/cognee:latest"
+        info "To install later: docker run -d -p 8000:8000 cognee/cognee:main"
         info "Or: pip3 install cognee uvicorn --break-system-packages"
     fi
-fi
     if $DONE; then
         info "Waiting for Cognee..."
         for i in $(seq 1 20); do
@@ -427,10 +544,10 @@ fi
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════
-# [6/6] AGEX
+# [6/7] AGEX
 # ═══════════════════════════════════════════════════════════════════
 set -e
-echo -e "  ${B}[6/6] AGEX${RS}"
+echo -e "  ${B}[6/7] AGEX${RS}"
 
 mkdir -p "$AGEX_DIR/aids" "$AGEX_DIR/creds"
 export DB_PATH="$AGEX_DIR/agex.db"
