@@ -755,6 +755,17 @@ export class ToolRegistry {
   // ─── Private ──────────────────────────────────────────
 
   async _connectServer(name, serverConf) {
+    // Substitute placeholders in args (same logic as enablePreset)
+    const workspace = this.config._dir ? `${this.config._dir}/workspace` : '.';
+    if (serverConf.args) {
+      serverConf.args = serverConf.args.map(a => {
+        if (a === '{workspace}') return workspace;
+        if (a === '{connection_string}') return '';
+        if (a === '{db_path}') return '';
+        return a;
+      });
+    }
+
     const client = new MCPClient({ name, ...serverConf });
     const tools = await client.connect();
     this._clients.set(name, client);
@@ -762,7 +773,6 @@ export class ToolRegistry {
       this._tools.set(`${name}__${tool.name}`, { tool, client });
     }
   }
-
   async _registerAPITools(presetName, preset) {
     for (const toolDef of (preset.tools || [])) {
       const fullName = `${presetName}__${toolDef.name}`;
