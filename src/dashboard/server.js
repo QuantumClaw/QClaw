@@ -161,7 +161,7 @@ export class DashboardServer {
       try {
         const { message, agent: agentName } = req.body;
         const agent = this.qclaw.agents.get(agentName) || this.qclaw.agents.primary();
-        const result = await agent.process(message);
+        const result = await agent.process(message, { channel: "dashboard" });
         res.json(result);
       } catch (err) {
         res.status(500).json({ error: err.message });
@@ -171,6 +171,95 @@ export class DashboardServer {
     // Costs
     this.app.get('/api/costs', (req, res) => {
       res.json(this.qclaw.audit.costSummary());
+    });
+
+    // Cost breakdown by channel
+    this.app.get('/api/costs/by-channel', (req, res) => {
+      const period = req.query.period || 'today';
+      res.json(this.qclaw.audit.costsByChannel(period));
+    });
+
+    // Currency conversion for dashboard costs
+    this.app.get('/api/costs/convert', async (req, res) => {
+      try {
+        const currency = String(req.query.currency || 'GBP').toUpperCase();
+        const period = String(req.query.period || 'today').toLowerCase();
+
+        const summary = this.qclaw.audit.costSummary();
+        const periodKey = period === 'week' ? 'week' : period === 'month' ? 'month' : 'today';
+        const sourceAmount = Number(summary[periodKey] || 0);
+
+        const mod = await import('../security/currency-rates.js');
+        const converter = mod.default || mod;
+        const converted = await converter.convert(sourceAmount, currency);
+
+        res.json({
+          period: periodKey,
+          source_currency: 'GBP',
+          target_currency: currency,
+          source_amount: sourceAmount,
+          converted_amount: converted
+        });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // Supported conversion currencies
+    this.app.get('/api/currencies', async (req, res) => {
+      try {
+        const mod = await import('../security/currency-rates.js');
+        const converter = mod.default || mod;
+        res.json({ currencies: converter.getSupportedCurrencies() });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // Spike detection check
+    this.app.get('/api/alerts/check', async (req, res) => {
+      try {
+        const period = String(req.query.period || 'hour').toLowerCase();
+        const validPeriods = new Set(['hour', 'day', 'week']);
+        const selected = validPeriods.has(period) ? period : 'hour';
+
+        // Build a windowed cost provider for SpikeDetector.
+        const costProvider = {
+          getCosts: async (start, end) => {
+            const rows = this.qclaw.audit.recent(5000);
+            const inWindow = rows.filter(r => {
+              const t = new Date(r.timestamp).getTime();
+              return Number.isFinite(t) && t >= start && t < end && r.action === 'completion';
+            });
+            return {
+              total: inWindow.reduce((sum, r) => sum + (Number(r.cost) || 0), 0),
+              messages: inWindow.length
+            };
+          }
+        };
+
+        const mod = await import('../security/spike-detector.js');
+        const SpikeDetector = mod.default || mod;
+        const detector = new SpikeDetector(costProvider);
+        const result = await detector.detectSpikes(selected);
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // Recent spike alerts
+    this.app.get('/api/alerts', async (req, res) => {
+      try {
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 100);
+        const mod = await import('../security/spike-detector.js');
+        const SpikeDetector = mod.default || mod;
+        const detector = new SpikeDetector({ getCosts: async () => ({ total: 0, messages: 0 }) });
+        const alerts = await detector.getRecentAlerts(limit);
+        res.json({ alerts });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
     });
 
     // Audit log
@@ -277,7 +366,7 @@ export class DashboardServer {
           // Send typing indicator
           ws.send(JSON.stringify({ type: 'typing', agent: agent.name }));
 
-          const result = await agent.process(message);
+          const result = await agent.process(message, { channel: "dashboard" });
 
           ws.send(JSON.stringify({
             type: 'response',

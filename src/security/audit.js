@@ -40,13 +40,14 @@ export class AuditLog {
           cost REAL,
           tier TEXT,
           approved INTEGER DEFAULT 1,
-          duration_ms INTEGER
+          duration_ms INTEGER,
+          channel TEXT DEFAULT 'unknown'
         )
       `);
 
       this._insert = this.db.prepare(`
-        INSERT INTO audit (agent, action, detail, model, cost, tier, approved, duration_ms)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO audit (agent, action, detail, model, cost, tier, approved, duration_ms, channel)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
     } else {
       // Fallback: append-only JSONL file
@@ -63,13 +64,14 @@ export class AuditLog {
       cost: extra.cost || null,
       tier: extra.tier || null,
       approved: extra.approved !== undefined ? (extra.approved ? 1 : 0) : 1,
-      duration_ms: extra.duration || null
+      duration_ms: extra.duration || null,
+      channel: extra.channel || 'unknown'
     };
 
     if (this.db) {
       this._insert.run(
         entry.agent, entry.action, entry.detail, entry.model,
-        entry.cost, entry.tier, entry.approved, entry.duration_ms
+        entry.cost, entry.tier, entry.approved, entry.duration_ms, entry.channel
       );
     } else if (this._logFile) {
       try {
@@ -179,5 +181,59 @@ export class AuditLog {
       if (age < 30 * dayMs) { month += cost; }
     }
     return { today, week, month, today_msgs: todayMsgs, week_msgs: weekMsgs };
+  }
+
+  /**
+   * Get cost breakdown by channel
+   */
+  costsByChannel(period = 'today') {
+    const dateFilter = {
+      today: "date('now')",
+      week: "date('now', '-7 days')",
+      month: "date('now', '-30 days')"
+    }[period] || "date('now')";
+
+    if (this.db) {
+      return this.db.prepare(`
+        SELECT 
+          channel,
+          COUNT(*) as messages,
+          COALESCE(SUM(cost), 0) as total_cost,
+          COALESCE(AVG(cost), 0) as avg_cost
+        FROM audit
+        WHERE timestamp >= ${dateFilter}
+          AND action = 'completion'
+          AND channel != 'unknown'
+        GROUP BY channel
+        ORDER BY total_cost DESC
+      `).all();
+    }
+
+    // JSONL fallback
+    const entries = this.recent(5000).filter(e => 
+      e.action === 'completion' && e.channel !== 'unknown'
+    );
+    const now = Date.now();
+    const periodMs = { today: 86400000, week: 604800000, month: 2592000000 }[period] || 86400000;
+    
+    const byChannel = {};
+    for (const e of entries) {
+      const age = now - new Date(e.timestamp).getTime();
+      if (age > periodMs) continue;
+      
+      const ch = e.channel || 'unknown';
+      if (!byChannel[ch]) byChannel[ch] = { messages: 0, total_cost: 0 };
+      byChannel[ch].messages++;
+      byChannel[ch].total_cost += e.cost || 0;
+    }
+    
+    return Object.entries(byChannel)
+      .map(([channel, data]) => ({
+        channel,
+        messages: data.messages,
+        total_cost: data.total_cost,
+        avg_cost: data.total_cost / data.messages
+      }))
+      .sort((a, b) => b.total_cost - a.total_cost);
   }
 }

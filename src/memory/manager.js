@@ -57,7 +57,8 @@ export class MemoryManager {
         timestamp TEXT DEFAULT (datetime('now')),
         model TEXT,
         tier TEXT,
-        tokens INTEGER
+        tokens INTEGER,
+        channel TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_conv_agent ON conversations(agent, timestamp);
 
@@ -67,6 +68,12 @@ export class MemoryManager {
         updated TEXT DEFAULT (datetime('now'))
       );
     `);
+
+      // Backward-compatible migration for existing installs
+      const cols = this.db.prepare(`PRAGMA table_info(conversations)`).all().map(c => c.name);
+      if (!cols.includes('channel')) {
+        this.db.exec(`ALTER TABLE conversations ADD COLUMN channel TEXT`);
+      }
 
       log.debug('Memory: using SQLite (native)');
     } else {
@@ -108,15 +115,18 @@ export class MemoryManager {
    * Store a conversation turn
    */
   addMessage(agent, role, content, meta = {}) {
+    const channel = meta.channel || 'unknown'; // Extract channel from meta
+    
     if (this.db) {
       this.db.prepare(`
-        INSERT INTO conversations (agent, role, content, model, tier, tokens)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(agent, role, content, meta.model || null, meta.tier || null, meta.tokens || null);
+        INSERT INTO conversations (agent, role, content, model, tier, tokens, channel)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(agent, role, content, meta.model || null, meta.tier || null, meta.tokens || null, channel);
     } else if (this._jsonStore) {
       this._jsonStore.conversations.push({
         agent, role, content, timestamp: new Date().toISOString(),
-        model: meta.model || null, tier: meta.tier || null, tokens: meta.tokens || null
+        model: meta.model || null, tier: meta.tier || null, tokens: meta.tokens || null,
+        channel
       });
       // Keep last 500 messages to prevent unbounded growth
       if (this._jsonStore.conversations.length > 500) {
@@ -138,29 +148,51 @@ export class MemoryManager {
     }
   }
 
-  /**
-   * Get recent conversation history for context
-   */
-  getHistory(agent, limit = 20) {
+  getHistory(agent, options = {}) {
+    const limit = options.limit || 20;
+    const channel = options.channel;
+    const global = options.global !== false; // default true for charlie
+
     if (this.db) {
-      return this.db.prepare(`
-        SELECT role, content, timestamp, model, tier
+      let query = `
+        SELECT role, content, timestamp, model, tier, channel
         FROM conversations
         WHERE agent = ?
-        ORDER BY id DESC
-        LIMIT ?
-      `).all(agent, limit).reverse();
+      `;
+      
+      const params = [agent];
+
+      // Charlie gets cross-channel memory by default
+      // Other agents are channel-isolated
+      if (agent !== 'charlie' && channel) {
+        query += ` AND channel = ?`;
+        params.push(channel);
+      } else if (agent === 'charlie' && channel && !global) {
+        // Manual override: force single channel for charlie
+        query += ` AND channel = ?`;
+        params.push(channel);
+      }
+
+      query += ` ORDER BY id DESC LIMIT ?`;
+      params.push(limit);
+
+      return this.db.prepare(query).all(...params).reverse();
     }
 
     if (this._jsonStore) {
-      return this._jsonStore.conversations
-        .filter(m => m.agent === agent)
-        .slice(-limit);
+      let filtered = this._jsonStore.conversations.filter(m => m.agent === agent);
+      
+      if (agent !== 'charlie' && channel) {
+        filtered = filtered.filter(m => m.channel === channel);
+      } else if (agent === 'charlie' && channel && !global) {
+        filtered = filtered.filter(m => m.channel === channel);
+      }
+
+      return filtered.slice(-limit);
     }
 
     return [];
   }
-
   /**
    * Search knowledge graph for relationships
    */

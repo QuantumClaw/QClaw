@@ -38,3 +38,11 @@ desktop.ini
 
 # Docker volumes
 docker-data/
+
+# Backup files
+*.backup
+*.backup[0-9]
+*.bak
+*.bak[0-9]
+*.tmp
+*.pre-fix

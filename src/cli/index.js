@@ -260,7 +260,7 @@ switch (command) {
           }
 
           try {
-            const result = await agent.process(trimmed);
+            const result = await agent.process(trimmed, { channel: "cli" });
             const tierInfo = result.model
               ? `\x1b[2m${result.tier} → ${result.model} (£${(result.cost || 0).toFixed(4)})\x1b[0m`
               : '\x1b[2mreflex (free)\x1b[0m';
@@ -281,7 +281,7 @@ switch (command) {
     smallBanner();
     const stack = await loadAgent();
     const agent = stack.agents.primary();
-    const result = await agent.process(message);
+    const result = await agent.process(message, { channel: "cli" });
     console.log(result.content);
     await stack.memory.disconnect();
     process.exit(0);

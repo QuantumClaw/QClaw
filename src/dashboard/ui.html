@@ -294,8 +294,24 @@
 
       <!-- USAGE PAGE -->
       <div class="page" id="page-usage">
+        <div style="margin-bottom:1.5rem; display:flex; justify-content:space-between; align-items:center;">
+          <h2 style="font-size:1.2rem; font-weight:600;">Usage & Costs</h2>
+          <div style="display:flex; gap:0.8rem; align-items:center;">
+            <label style="font-size:0.85rem; color:var(--text-dim);">Currency:</label>
+            <select id="currency-selector" onchange="changeCurrency()" style="background:var(--bg-2); color:var(--text); border:1px solid var(--border); padding:0.4rem 0.8rem; border-radius:0.375rem; font-size:0.85rem; cursor:pointer;">
+              <option value="GBP">GBP (£)</option>
+              <option value="USD">USD ($)</option>
+              <option value="EUR">EUR (€)</option>
+            </select>
+          </div>
+        </div>
+        <div id="alerts-section" style="background:var(--bg-1); border:1px solid var(--border); border-radius:0.5rem; padding:1.25rem; margin-bottom:1.5rem;">
+          <h3 style="font-size:1rem; font-weight:600; margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem;">
+            <span>⚠️</span> Recent Alerts
+          </h3>
+          <div id="alerts-list">Loading alerts...</div>
+        </div>
         <div class="card-grid" id="usage-cards"></div>
-      </div>
 
       <!-- AGENTS PAGE -->
       <div class="page" id="page-agents">
@@ -515,14 +531,75 @@ async function loadChannels() {
 }
 
 async function loadUsage() {
+  await loadAlerts();
+  await loadUsageCosts();
+}
+
+let currentCurrency = 'GBP';
+const currencySymbols = { 'GBP': '£', 'USD': '$', 'EUR': '€' };
+
+async function loadAlerts() {
   try {
-    const r=await api('/api/costs'); const d=await r.json();
-    document.getElementById('usage-cards').innerHTML=`
-      <div class="card"><div class="card-title">Total Cost</div><div class="card-value">£${(d.total||0).toFixed(4)}</div></div>
-      <div class="card"><div class="card-title">Messages</div><div class="card-value">${d.messages||0}</div></div>
-      <div class="card"><div class="card-title">Tokens</div><div class="card-value">${(d.tokens||0).toLocaleString()}</div></div>
-    `;
-  }catch{document.getElementById('usage-cards').innerHTML='<div class="card"><div class="card-value">—</div><div class="card-sub">No usage data yet</div></div>';}
+    const r = await api('/api/alerts?limit=5');
+    const data = await r.json();
+    const div = document.getElementById('alerts-list');
+    if (!data.alerts || data.alerts.length === 0) {
+      div.innerHTML = '<div style="text-align:center; padding:1.5rem; color:var(--text-dim); font-style:italic;">No spike alerts detected</div>';
+      return;
+    }
+    div.innerHTML = data.alerts.map(a => `
+      <div style="background:var(--bg-2); border-left:3px solid var(--red); padding:0.875rem; margin-bottom:0.75rem; border-radius:0.375rem;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
+          <span style="font-weight:600; color:var(--red); text-transform:uppercase; font-size:0.75rem;">${a.type} Spike</span>
+          <span style="font-size:0.75rem; color:var(--text-dim);">${new Date(a.timestamp).toLocaleString()}</span>
+        </div>
+        <div><span style="color:var(--red); font-weight:600;">${a.multiplier[a.type]}x</span> normal ${a.type}</div>
+      </div>
+    `).join('');
+  } catch (err) {
+    document.getElementById('alerts-list').innerHTML = '<div style="color:var(--red);">Failed to load alerts</div>';
+  }
+}
+
+async function loadUsageCosts() {
+  try {
+    let data;
+    if (currentCurrency === 'GBP') {
+      const r = await api('/api/costs');
+      data = await r.json();
+      const sym = currencySymbols[currentCurrency];
+      
+      document.getElementById('usage-cards').innerHTML = `
+        <div class="card"><div class="card-title">Total Cost (Today)</div><div class="card-value">${sym}${(data.today || 0).toFixed(4)}</div></div>
+        <div class="card"><div class="card-title">Total Cost (Week)</div><div class="card-value">${sym}${(data.week || 0).toFixed(4)}</div></div>
+        <div class="card"><div class="card-title">Total Cost (Month)</div><div class="card-value">${sym}${(data.month || 0).toFixed(4)}</div></div>
+        <div class="card"><div class="card-title">Messages (Today)</div><div class="card-value">${data.today_msgs || 0}</div></div>
+        <div class="card"><div class="card-title">Messages (Week)</div><div class="card-value">${data.week_msgs || 0}</div></div>
+      `;
+    } else {
+      const promises = ['today', 'week', 'month'].map(p => 
+        api('/api/costs/convert?currency=' + currentCurrency + '&period=' + p).then(r => r.json())
+      );
+      const [today, week, month] = await Promise.all(promises);
+      const gbp = await api('/api/costs').then(r => r.json());
+      const sym = currencySymbols[currentCurrency];
+      
+      document.getElementById('usage-cards').innerHTML = `
+        <div class="card"><div class="card-title">Total Cost (Today)</div><div class="card-value">${sym}${(today.converted_amount || 0).toFixed(2)}</div><div class="card-sub">Rate: ${(today.rate || 0).toFixed(4)}</div></div>
+        <div class="card"><div class="card-title">Total Cost (Week)</div><div class="card-value">${sym}${(week.converted_amount || 0).toFixed(2)}</div></div>
+        <div class="card"><div class="card-title">Total Cost (Month)</div><div class="card-value">${sym}${(month.converted_amount || 0).toFixed(2)}</div></div>
+        <div class="card"><div class="card-title">Messages (Today)</div><div class="card-value">${gbp.today_msgs || 0}</div></div>
+        <div class="card"><div class="card-title">Messages (Week)</div><div class="card-value">${gbp.week_msgs || 0}</div></div>
+      `;
+    }
+  } catch (err) {
+    console.error('Usage costs error:', err);
+    document.getElementById('usage-cards').innerHTML = '<div class="card"><div class="card-value">—</div><div class="card-sub">No usage data yet</div></div>';
+  }
+}
+function changeCurrency() {
+  currentCurrency = document.getElementById('currency-selector').value;
+  loadUsageCosts();
 }
 
 async function loadAgents() {

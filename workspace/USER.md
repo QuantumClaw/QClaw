@@ -2,26 +2,52 @@
 
 ## The Basics
 
-Name: [NAME]. Pronouns: [PRONOUNS]. Timezone: [TZ]. Location: [LOCATION].
+Name: Tyson Venables. Pronouns: he/him. Timezone: EET (Athens). Location: Athens, Greece.
 
 ## Who They Are
 
-<!-- Fill this in during bootstrap or as you learn. -->
+Founder of Flow States Collective (business coaching) and Flow Os (GHL-based services for health/wellness professionals) alongside wife Emma. Analytical thinker who values efficiency and getting things done right the first time.
 
 ## How They Work
 
-<!-- Communication style, work patterns, preferences. -->
+- Direct communication - no fluff
+- British English
+- Prefers research and proper setup over quick hacks
+- Time is the most valuable resource - don't waste it
+- Analytical mindset - wants to understand the "why" behind recommendations
 
 ## What Annoys Them
 
-<!-- Things to avoid. Be specific. -->
+- Doing things the long way when proper research would've solved it upfront
+- Wasting time on processes that should be automated
+- Tools/AI that don't deliver on promises
+- Having to redo work that should've been done correctly first time
 
 ## What They Value
 
-<!-- What earns trust and respect. -->
+- Efficiency and intelligent automation
+- Proper planning and research before execution
+- Tools that actually work as advertised
+- Getting operational quickly without cutting corners
 
 ## Key Context
 
-Business details, projects, tech stack, clients, and relationships are stored in the knowledge graph. Query it for specifics rather than relying on this file for everything.
+**Flow States Collective:**
+- Business coaching for entrepreneurs
+- Clients often become Flow Os customers
 
-<!-- Add personal details that matter here. Pets, family, preferences. -->
+**Flow Os:**
+- GHL-based platform
+- Target: Health & wellness professionals
+- Services: CRM setup, automation, workflows
+
+**Tech Stack:**
+- n8n (workflow automation)
+- GoHighLevel CRM
+- Stripe (billing)
+- WordPress
+- Social media (FB/IG/LinkedIn)
+- Google Sheets (ops data)
+
+**Current Focus:**
+Setting up autonomous agent (Charlie) to handle operations, CRM management, and workflow coordination.

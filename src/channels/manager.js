@@ -232,7 +232,21 @@ class TelegramChannel {
         return;
       }
 
-      const agent = this.agents.primary();
+       // Parse agent mention from message (support @agentname or agentname:)
+      let targetAgent = this.agents.primary();
+      let messageText = ctx.message.text;
+      
+      const mentionMatch = messageText.match(/^@?(\w+):\s*(.*)$/s);
+      if (mentionMatch) {
+        const agentName = mentionMatch[1].toLowerCase();
+        const found = this.agents.get(agentName);
+        if (found) {
+          targetAgent = found;
+          messageText = mentionMatch[2].trim();
+        }
+      }
+      
+      const agent = targetAgent;
       if (!agent) {
         await ctx.reply('Agent not ready. Try again in a moment.');
         return;
@@ -241,14 +255,38 @@ class TelegramChannel {
       try {
         await ctx.replyWithChatAction('typing');
 
-        const result = await agent.process(ctx.message.text, {
+        const result = await agent.process(messageText, {
           channel: 'telegram',
           userId: ctx.from.id,
           username: ctx.from.username
         });
 
         // Guard against empty/undefined content
-        const content = result?.content || '(empty response)';
+        let content = result?.content || '(empty response)';
+
+        // INTERCEPT: If agent output contains /skill command, execute it
+        if (content.includes('/skill ')) {
+          try {
+            await ctx.replyWithChatAction('typing');
+            
+            // Extract just the /skill command line
+            const skillLine = content.match(/\/skill\s+.+$/m)?.[0];
+            if (skillLine) {
+              // Re-process as a direct command through the agent
+              const skillResult = await agent.process(skillLine, {
+                channel: 'telegram',
+                userId: ctx.from.id,
+                username: ctx.from.username
+              });
+              
+              content = skillResult?.content || '(skill execution failed)';
+              log.agent(agent.name, `[auto-skill] executed`);
+            }
+          } catch (err) {
+            content = `Skill execution failed: ${err.message}`;
+            log.error(`Auto-skill error: ${err.message}`);
+          }
+        }
 
         // Send response (split if too long for Telegram)
         const maxLen = 4096;
