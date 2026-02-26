@@ -4,6 +4,19 @@ All notable changes to QuantumClaw will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.5.3] - 2026-02-26
+
+### Fix EADDRINUSE crash + MCP workspace placeholder
+
+### Fixed
+- **EADDRINUSE crash (for real this time)** — root cause was WebSocketServer being created *before* the port was found. When EADDRINUSE fired on the HTTP server, the WSS emitted an unhandled error → crash. Now WSS is created *after* `_listen()` succeeds. Auto-tries ports 3000-3020.
+- **MCP `{workspace}` placeholder** — `_connectServer()` now substitutes `{workspace}`, `{connection_string}`, and `{db_path}` placeholders in server args. Previously only `enablePreset()` did this substitution, so MCP servers loaded from config at startup got literal `'{workspace}'` strings. Fixes community PR #1 by @tysonven.
+
+### Changed
+- Dashboard `start()`: WSS creation moved after `_listen()` resolves
+- Dashboard `_listen()`: uses `once('listening')` / `once('error')` pattern, calls `server.close()` before recreating
+- ToolRegistry `_connectServer()`: gained placeholder substitution logic (~10 lines)
+
 ## [1.5.2] - 2026-02-26
 
 ### Port Fix + Critical Gap Closure (OpenClaw Parity)

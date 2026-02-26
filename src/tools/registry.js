@@ -788,6 +788,19 @@ export class ToolRegistry {
   // ─── Private ──────────────────────────────────────────
 
   async _connectServer(name, serverConf) {
+    // Substitute placeholders in server args
+    const workspace = this.config._dir ? `${this.config._dir}/workspace` : '.';
+    if (serverConf.args && Array.isArray(serverConf.args)) {
+      serverConf = {
+        ...serverConf,
+        args: serverConf.args.map(a => {
+          if (a === '{workspace}') return workspace;
+          if (a === '{connection_string}') return this.config.tools?.postgres?.connectionString || a;
+          if (a === '{db_path}') return this.config.tools?.sqlite?.dbPath || `${workspace}/data.db`;
+          return a;
+        }),
+      };
+    }
     const client = new MCPClient({ name, ...serverConf });
     const tools = await client.connect();
     this._clients.set(name, client);
