@@ -957,25 +957,90 @@ switch (command) {
   case 'skill': {
     smallBanner();
     const { config } = await loadCore();
+    const { SkillLoader } = await import('../skills/loader.js');
+    const skills = new SkillLoader(config);
+    await skills.loadAll();
 
     if (subcommand === 'list' || !subcommand) {
-      const { SkillLoader } = await import('../skills/loader.js');
-      const skills = new SkillLoader(config);
-      const count = await skills.loadAll();
-
+      const count = skills.list().length;
       if (count === 0) {
         console.log('No skills installed.');
-        console.log('Drop a SKILL.md into workspace/agents/<agent>/skills/');
+        console.log('  Install from ClawHub: qclaw skill install <name>');
+        console.log('  Browse skills: https://clawhub.ai/skills');
       } else {
         console.log(`\n  ${count} skill(s):\n`);
         for (const skill of skills.list()) {
           const endpoints = skill.endpoints.length ? ` (${skill.endpoints.length} endpoints)` : '';
-          console.log(`  ${skill.name}${endpoints}`);
+          const status = skill.reviewed === false ? ' [unreviewed]' : '';
+          const disabled = skill.enabled === false ? ' [disabled]' : '';
+          console.log(`  ${skill.name}${endpoints}${status}${disabled}`);
+          if (skill.description) console.log(`    ${skill.description}`);
         }
         console.log('');
       }
+    } else if (subcommand === 'search') {
+      const query = args.slice(1).join(' ');
+      if (!query) { console.log('Usage: qclaw skill search <query>'); break; }
+
+      // Try clawhub CLI
+      try {
+        const { execSync } = await import('child_process');
+        const result = execSync(`clawhub search "${query.replace(/"/g, '\\"')}" --limit 15`, { encoding: 'utf-8', timeout: 15000 });
+        console.log(result);
+      } catch {
+        console.log(`ClawHub CLI not installed. Install it: npm i -g clawhub`);
+        console.log(`Or browse: https://clawhub.ai/skills?q=${encodeURIComponent(query)}`);
+      }
+    } else if (subcommand === 'install') {
+      const target = args.slice(1).join(' ');
+      if (!target) { console.log('Usage: qclaw skill install <name-or-url>'); break; }
+
+      // Try clawhub CLI first for slugs
+      if (!target.startsWith('http')) {
+        try {
+          const { execSync } = await import('child_process');
+          const { join } = await import('path');
+          const sharedDir = join(config._dir, 'workspace', 'shared');
+          console.log(`Installing "${target}" from ClawHub...`);
+          const result = execSync(`clawhub install "${target.replace(/"/g, '\\"')}" --force --no-input`, {
+            encoding: 'utf-8', timeout: 30000,
+            cwd: sharedDir,
+            env: { ...process.env, CLAWHUB_WORKDIR: sharedDir },
+          });
+          console.log(result);
+          console.log('✓ Installed. Restart your agent to load the new skill.');
+          break;
+        } catch { console.log('ClawHub CLI not available, trying direct fetch...'); }
+      }
+
+      // Fallback: direct install
+      try {
+        const result = await skills.install(target);
+        console.log(`✓ Installed: ${result.name} (${result.endpoints} endpoints)`);
+        console.log('  Restart your agent to load the new skill.');
+      } catch (err) { console.error(`✗ Install failed: ${err.message}`); }
+    } else if (subcommand === 'reset') {
+      const name = args[1];
+      if (!name) { console.log('Usage: qclaw skill reset <name>'); break; }
+      try { await skills.reset(name); console.log(`✓ Reset: ${name}`); }
+      catch (err) { console.error(`✗ ${err.message}`); }
+    } else if (subcommand === 'reset-all') {
+      await skills.resetAll();
+      console.log(`✓ All ${skills.list().length} skills reset to unreviewed`);
+    } else if (subcommand === 'remove') {
+      const name = args[1];
+      if (!name) { console.log('Usage: qclaw skill remove <name>'); break; }
+      try { await skills.remove(name); console.log(`✓ Removed: ${name}`); }
+      catch (err) { console.error(`✗ ${err.message}`); }
     } else {
-      console.log('Usage: qclaw skill [list]');
+      console.log('Usage: qclaw skill <command>\n');
+      console.log('  list              List installed skills');
+      console.log('  search <query>    Search ClawHub for skills');
+      console.log('  install <name>    Install from ClawHub or URL');
+      console.log('  reset <name>      Mark skill as unreviewed');
+      console.log('  reset-all         Mark all skills as unreviewed');
+      console.log('  remove <name>     Delete a skill');
+      console.log('\n  Browse: https://clawhub.ai/skills');
     }
     break;
   }

@@ -7,435 +7,488 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚛</text></svg>">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root{--bg:#08080d;--bg-1:#0e0e16;--bg-2:#16161f;--bg-3:#1e1e2a;--bg-hover:#1a1a28;--border:#252535;--border-l:#353548;--text:#e4e4ef;--text-dim:#6b6b8a;--text-xs:#4a4a66;--accent:#8b5cf6;--accent-l:#a78bfa;--accent-bg:#8b5cf620;--green:#22c55e;--green-bg:#22c55e18;--red:#ef4444;--red-bg:#ef444418;--yellow:#eab308;--yellow-bg:#eab30818;--blue:#3b82f6;--blue-bg:#3b82f618;--cyan:#06b6d4;--sidebar-w:56px}
+    :root{--bg:#08080d;--bg-1:#0e0e16;--bg-2:#16161f;--bg-3:#1e1e2a;--bg-hover:#1a1a28;--border:#252535;--border-l:#353548;--text:#e4e4ef;--text-dim:#6b6b8a;--text-xs:#4a4a66;--accent:#8b5cf6;--accent-l:#a78bfa;--accent-bg:#8b5cf620;--green:#22c55e;--green-bg:#22c55e18;--red:#ef4444;--red-bg:#ef444418;--yellow:#eab308;--yellow-bg:#eab30818;--blue:#3b82f6;--blue-bg:#3b82f618;--cyan:#06b6d4;--sw:56px;--sw-c:56px}
     *{margin:0;padding:0;box-sizing:border-box}
     body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;display:flex;height:100vh;overflow:hidden;font-size:14px}
     ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-    .sidebar{width:var(--sidebar-w);background:var(--bg-1);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;z-index:20}
-    .sidebar-logo{padding:14px 0;text-align:center;border-bottom:1px solid var(--border);font-size:1.3rem;cursor:default}
-    .nav-item{display:flex;align-items:center;justify-content:center;padding:12px 0;cursor:pointer;color:var(--text-dim);transition:all .15s;position:relative;font-size:1.1rem}
-    .nav-item:hover{color:var(--text);background:var(--bg-hover)}
-    .nav-item.active{color:var(--accent-l);background:var(--accent-bg)}
-    .nav-item.active::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:2px;background:var(--accent);border-radius:0 2px 2px 0}
-    .nav-item .tip{display:none;position:absolute;left:calc(var(--sidebar-w) + 8px);top:50%;transform:translateY(-50%);background:var(--bg-3);border:1px solid var(--border-l);padding:4px 10px;border-radius:6px;font-size:.75rem;white-space:nowrap;z-index:30;font-family:Outfit}
-    .nav-item:hover .tip{display:block}
-    .nav-sep{height:1px;background:var(--border);margin:4px 12px}
-    .nav-bottom{margin-top:auto}
-    .dot-sm{width:7px;height:7px;border-radius:50%;position:absolute;bottom:8px;right:14px}
+    /* Sidebar - collapsible */
+    .sb{width:var(--sw-c);background:var(--bg-1);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;z-index:20;transition:width .2s}
+    .sb.open{--sw-c:180px}
+    .sb-top{display:flex;align-items:center;padding:10px;border-bottom:1px solid var(--border);gap:8px;cursor:pointer}
+    .sb-top span:first-child{font-size:1.2rem;flex-shrink:0}
+    .sb-label{font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;opacity:0;transition:opacity .15s}
+    .sb.open .sb-label{opacity:1}
+    .sb-toggle{margin-left:auto;font-size:.7rem;color:var(--text-dim);flex-shrink:0;cursor:pointer}
+    .ni{display:flex;align-items:center;padding:10px;gap:10px;cursor:pointer;color:var(--text-dim);transition:all .15s;position:relative;font-size:1rem;border-radius:0}
+    .ni:hover{color:var(--text);background:var(--bg-hover)}
+    .ni.active{color:var(--accent-l);background:var(--accent-bg)}
+    .ni.active::before{content:'';position:absolute;left:0;top:6px;bottom:6px;width:2px;background:var(--accent);border-radius:0 2px 2px 0}
+    .ni-icon{flex-shrink:0;width:24px;text-align:center;font-size:1.05rem}
+    .ni-text{font-size:.8rem;font-weight:500;white-space:nowrap;overflow:hidden;opacity:0;transition:opacity .15s}
+    .sb.open .ni-text{opacity:1}
+    .ni .tip{display:none;position:absolute;left:calc(var(--sw-c) + 6px);top:50%;transform:translateY(-50%);background:var(--bg-3);border:1px solid var(--border-l);padding:3px 8px;border-radius:5px;font-size:.72rem;white-space:nowrap;z-index:30}
+    .sb:not(.open) .ni:hover .tip{display:block}
+    .ns{height:1px;background:var(--border);margin:4px 8px}
+    .nb{margin-top:auto}
+    .dot-sm{width:7px;height:7px;border-radius:50%;position:absolute;bottom:6px;right:8px}
     .dot-sm.on{background:var(--green);box-shadow:0 0 4px var(--green)}.dot-sm.off{background:var(--red)}
+    /* Main */
     .main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-    .topbar{height:48px;background:var(--bg-1);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px;flex-shrink:0}
-    .topbar-title{font-weight:600;font-size:.9rem}
-    .topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
-    .badge{font-size:.65rem;padding:2px 8px;border-radius:10px;font-weight:500}
+    .topbar{height:44px;background:var(--bg-1);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0}
+    .topbar-title{font-weight:600;font-size:.88rem}
+    .topbar-right{margin-left:auto;display:flex;align-items:center;gap:6px}
+    .badge{font-size:.62rem;padding:2px 7px;border-radius:10px;font-weight:500}
     .badge-green{background:var(--green-bg);color:var(--green)}.badge-red{background:var(--red-bg);color:var(--red)}.badge-yellow{background:var(--yellow-bg);color:var(--yellow)}.badge-accent{background:var(--accent-bg);color:var(--accent-l)}.badge-blue{background:var(--blue-bg);color:var(--blue)}
     .page{display:none;flex:1;overflow:hidden}.page.active{display:flex;flex-direction:column}
-    .page-scroll{flex:1;overflow-y:auto;padding:20px}
-    .section-title{font-size:.95rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
-    .section-sub{font-size:.75rem;color:var(--text-dim);margin-bottom:16px}
-    .section-actions{margin-left:auto;display:flex;gap:6px}
-    .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:24px}
-    .card{background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:16px;transition:border-color .15s}
+    .ps{flex:1;overflow-y:auto;padding:20px}
+    .st{font-size:.92rem;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+    .sa{margin-left:auto;display:flex;gap:6px}
+    .sub{font-size:.73rem;color:var(--text-dim);margin-bottom:14px;line-height:1.5}
+    .info-box{background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:.78rem;line-height:1.6;color:var(--text-dim)}
+    .info-box b{color:var(--accent-l);font-weight:500}
+    .info-box a{color:var(--accent-l)}
+    .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-bottom:20px}
+    .card{background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:14px;transition:border-color .15s}
     .card:hover{border-color:var(--border-l)}
-    .card-label{font-size:.7rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
-    .card-value{font-size:1.4rem;font-weight:600;font-family:'JetBrains Mono'}
-    .card-sub{font-size:.72rem;color:var(--text-dim);margin-top:4px;line-height:1.5}
-    .table-wrap{overflow-x:auto;margin-bottom:24px}
-    table{width:100%;border-collapse:collapse;font-size:.82rem}
-    th{text-align:left;padding:8px 12px;color:var(--text-dim);font-weight:500;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border)}
-    td{padding:8px 12px;border-bottom:1px solid var(--border)}
+    .cl{font-size:.68rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+    .cv{font-size:1.3rem;font-weight:600;font-family:'JetBrains Mono'}
+    .cs{font-size:.7rem;color:var(--text-dim);margin-top:4px;line-height:1.4}
+    .tw{overflow-x:auto;margin-bottom:20px}
+    table{width:100%;border-collapse:collapse;font-size:.8rem}
+    th{text-align:left;padding:7px 10px;color:var(--text-dim);font-weight:500;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border)}
+    td{padding:7px 10px;border-bottom:1px solid var(--border)}
     tr:hover td{background:var(--bg-hover)}
-    .btn{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg-3);color:var(--text-dim);cursor:pointer;font-family:Outfit;font-size:.78rem;transition:all .15s;font-weight:500}
+    .btn{padding:5px 12px;border-radius:5px;border:1px solid var(--border);background:var(--bg-3);color:var(--text-dim);cursor:pointer;font-family:Outfit;font-size:.75rem;transition:all .15s;font-weight:500}
     .btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
-    .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}.btn-primary:hover{background:var(--accent-l)}
-    .btn-danger{border-color:#ef444444}.btn-danger:hover{background:var(--red);border-color:var(--red);color:#fff}
-    .btn-sm{padding:3px 10px;font-size:.7rem}
-    .input{width:100%;padding:8px 12px;background:var(--bg-2);border:1px solid var(--border);color:var(--text);border-radius:8px;outline:none;font-family:Outfit;font-size:.85rem}
+    .btn-p{background:var(--accent);color:#fff;border-color:var(--accent)}.btn-p:hover{background:var(--accent-l)}
+    .btn-d{border-color:#ef444433}.btn-d:hover{background:var(--red);border-color:var(--red);color:#fff}
+    .btn-sm{padding:2px 8px;font-size:.68rem}
+    .input{width:100%;padding:7px 10px;background:var(--bg-2);border:1px solid var(--border);color:var(--text);border-radius:6px;outline:none;font-family:Outfit;font-size:.82rem}
     .input:focus{border-color:var(--accent)}
-    .input-mono{font-family:'JetBrains Mono';font-size:.78rem}
+    .input-m{font-family:'JetBrains Mono';font-size:.75rem}
+    [title]{cursor:help}
     /* Chat */
     .chat-layout{display:flex;flex:1;overflow:hidden}
-    .thread-list{width:240px;background:var(--bg-1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
-    .thread-list-header{padding:12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
-    .thread-list-header select{flex:1;background:var(--bg-2);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:6px;font-family:Outfit;font-size:.8rem;outline:none}
-    .thread-items{flex:1;overflow-y:auto}
-    .thread-item{padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s}
-    .thread-item:hover{background:var(--bg-hover)}.thread-item.active{background:var(--accent-bg);border-left:2px solid var(--accent)}
-    .thread-item-name{font-size:.82rem;font-weight:500;margin-bottom:2px;display:flex;align-items:center;gap:6px}
-    .thread-item-meta{font-size:.7rem;color:var(--text-dim);display:flex;justify-content:space-between}
-    .new-chat-btn{margin:8px;padding:8px;background:var(--accent-bg);border:1px solid #8b5cf644;border-radius:8px;color:var(--accent-l);cursor:pointer;text-align:center;font-size:.8rem;font-weight:500;transition:all .15s}
-    .new-chat-btn:hover{background:var(--accent);color:#fff}
-    .chat-pane{flex:1;display:flex;flex-direction:column;overflow:hidden}
-    .chat-messages{flex:1;overflow-y:auto;padding:16px}
-    .msg{margin-bottom:12px;max-width:75%}.msg.user{margin-left:auto}
-    .msg-header{font-size:.65rem;color:var(--text-dim);margin-bottom:3px;display:flex;align-items:center;gap:6px}
-    .msg-bubble{padding:10px 14px;border-radius:12px;font-size:.85rem;line-height:1.6;word-break:break-word}
-    .msg-bubble p{margin:0 0 8px 0}.msg-bubble p:last-child{margin:0}
-    .msg-bubble code{background:var(--bg-3);padding:1px 5px;border-radius:3px;font-family:'JetBrains Mono';font-size:.78rem}
-    .msg-bubble pre{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:8px 0;overflow-x:auto;position:relative}
-    .msg-bubble pre code{background:none;padding:0;font-size:.75rem;line-height:1.5}
-    .msg-bubble ul,.msg-bubble ol{margin:4px 0 8px 16px}.msg-bubble li{margin:2px 0}
-    .msg-bubble strong{color:var(--text)}.msg-bubble a{color:var(--accent-l);text-decoration:none}.msg-bubble a:hover{text-decoration:underline}
-    .msg.user .msg-bubble{background:var(--accent-bg);border:1px solid #8b5cf633;border-bottom-right-radius:4px}
-    .msg.assistant .msg-bubble{background:var(--bg-2);border:1px solid var(--border);border-bottom-left-radius:4px}
-    .msg-meta{font-size:.6rem;color:var(--text-xs);margin-top:3px}
-    .msg-images{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
-    .msg-images img{max-width:200px;max-height:150px;border-radius:8px;object-fit:cover;border:1px solid var(--border)}
-    .copy-btn{position:absolute;top:6px;right:6px;background:var(--bg-3);border:1px solid var(--border);color:var(--text-dim);padding:2px 8px;border-radius:4px;cursor:pointer;font-size:.65rem;font-family:Outfit;opacity:0;transition:opacity .15s}
-    pre:hover .copy-btn{opacity:1}.copy-btn:hover{color:var(--text);background:var(--accent)}
-    #typing{display:none;padding:0 16px 8px;color:var(--text-dim);font-size:.8rem;font-style:italic}
-    .chat-input-area{border-top:1px solid var(--border);background:var(--bg-1);padding:8px 16px 12px}
-    .image-preview{display:flex;gap:6px;flex-wrap:wrap;padding:0 0 8px}
-    .image-preview-item{position:relative;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
-    .image-preview-item img{width:60px;height:60px;object-fit:cover;display:block}
-    .image-preview-item .remove{position:absolute;top:2px;right:2px;background:var(--red);color:#fff;border:none;width:16px;height:16px;border-radius:50%;cursor:pointer;font-size:10px;line-height:16px;text-align:center;padding:0}
-    .chat-input-row{display:flex;gap:8px;align-items:flex-end}
-    .chat-input-row textarea{flex:1;padding:10px 14px;background:var(--bg-2);border:1px solid var(--border);color:var(--text);border-radius:10px;outline:none;font-family:Outfit;font-size:.85rem;resize:none;min-height:40px;max-height:120px;line-height:1.4}
-    .chat-input-row textarea:focus{border-color:var(--accent)}
-    .chat-btn{padding:8px 12px;background:var(--bg-3);border:1px solid var(--border);color:var(--text-dim);border-radius:10px;cursor:pointer;font-size:.9rem;transition:all .15s;line-height:1}
-    .chat-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
-    .chat-btn.send{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600;font-family:Outfit;font-size:.85rem;padding:8px 18px}
-    .drop-overlay{display:none;position:absolute;inset:0;background:var(--accent-bg);border:2px dashed var(--accent);border-radius:12px;z-index:10;align-items:center;justify-content:center;font-size:1.1rem;color:var(--accent-l);font-weight:500}
-    .empty-chat{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--text-dim);gap:8px}
-    .empty-chat span:first-child{font-size:2rem}
-    .pairing-banner{background:var(--yellow-bg);border:1px solid #eab30833;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:none}
-    .pairing-banner-title{font-size:.8rem;font-weight:600;color:var(--yellow);margin-bottom:6px}
-    .pairing-item{display:flex;align-items:center;justify-content:space-between;padding:4px 0;font-size:.8rem}
-    .pairing-item button{padding:4px 12px;background:var(--green);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:.75rem}
+    .tl{width:220px;background:var(--bg-1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+    /* Canvas pane */
+    .canvas-pane{width:0;overflow:hidden;border-left:1px solid var(--border);background:var(--bg-0);transition:width .2s ease;display:flex;flex-direction:column}
+    .canvas-pane.open{width:45%}
+    .canvas-header{height:36px;background:var(--bg-1);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 10px;gap:8px;flex-shrink:0}
+    .canvas-header .ch-title{font-size:.78rem;font-weight:600;flex:1}
+    .canvas-header button{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:.8rem;padding:2px 6px}
+    .canvas-header button:hover{color:var(--text)}
+    .canvas-body{flex:1;overflow:auto;padding:0}
+    .canvas-body iframe{width:100%;height:100%;border:none}
+    .canvas-body .canvas-md{padding:16px;font-size:.82rem;line-height:1.7}
+    .canvas-body .canvas-md h1,.canvas-body .canvas-md h2,.canvas-body .canvas-md h3{margin:12px 0 6px;color:var(--accent-l)}
+    .canvas-body .canvas-md code{background:var(--bg-2);padding:1px 5px;border-radius:3px;font-size:.78rem}
+    .canvas-body .canvas-md pre{background:var(--bg-2);padding:12px;border-radius:6px;overflow-x:auto}
+    .canvas-body .canvas-md table{width:100%;border-collapse:collapse;margin:8px 0}
+    .canvas-body .canvas-md td,.canvas-body .canvas-md th{border:1px solid var(--border);padding:6px 8px;font-size:.75rem}
+    .canvas-body .canvas-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-dim);gap:8px;font-size:.8rem}
+    /* Hatching animation */
+    .hatch-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;animation:fadeIn .5s}
+    .hatch-egg{font-size:6rem;animation:hatchShake 0.5s ease-in-out 3,hatchPop 0.3s ease-out 1.5s forwards}
+    .hatch-name{font-size:2rem;font-weight:700;color:var(--accent-l);opacity:0;animation:fadeIn .5s ease-out 2s forwards}
+    .hatch-sub{font-size:.9rem;color:var(--text-dim);opacity:0;animation:fadeIn .5s ease-out 2.5s forwards}
+    .hatch-btn{opacity:0;animation:fadeIn .3s ease-out 3.5s forwards}
+    @keyframes hatchShake{0%,100%{transform:rotate(0)}25%{transform:rotate(-8deg)}75%{transform:rotate(8deg)}}
+    @keyframes hatchPop{to{transform:scale(1.3);opacity:0}}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    .canvas-tabs{display:flex;gap:2px;padding:4px 10px;background:var(--bg-1);border-bottom:1px solid var(--border);overflow-x:auto}
+    .canvas-tab{padding:3px 10px;font-size:.7rem;border-radius:4px;cursor:pointer;white-space:nowrap;color:var(--text-dim)}
+    .canvas-tab.active{background:var(--accent-bg);color:var(--accent-l)}
+    .tl-h{padding:10px;border-bottom:1px solid var(--border)}
+    .tl-h select{width:100%;background:var(--bg-2);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:5px;font-family:Outfit;font-size:.78rem;outline:none}
+    .tl-items{flex:1;overflow-y:auto}
+    .ti{padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s}
+    .ti:hover{background:var(--bg-hover)}.ti.active{background:var(--accent-bg);border-left:2px solid var(--accent)}
+    .ti-name{font-size:.8rem;font-weight:500;margin-bottom:2px;display:flex;align-items:center;gap:5px}
+    .ti-meta{font-size:.68rem;color:var(--text-dim);display:flex;justify-content:space-between}
+    .nc-btn{margin:6px;padding:7px;background:var(--accent-bg);border:1px solid #8b5cf644;border-radius:6px;color:var(--accent-l);cursor:pointer;text-align:center;font-size:.78rem;font-weight:500}
+    .nc-btn:hover{background:var(--accent);color:#fff}
+    .cp{flex:1;display:flex;flex-direction:column;overflow:hidden}
+    .cm{flex:1;overflow-y:auto;padding:14px}
+    .msg{margin-bottom:10px;max-width:75%}.msg.user{margin-left:auto}
+    .msg-h{font-size:.62rem;color:var(--text-dim);margin-bottom:2px}
+    .msg-b{padding:9px 12px;border-radius:10px;font-size:.82rem;line-height:1.55;word-break:break-word}
+    .msg-b p{margin:0 0 6px}.msg-b p:last-child{margin:0}
+    .msg-b code{background:var(--bg-3);padding:1px 4px;border-radius:3px;font-family:'JetBrains Mono';font-size:.75rem}
+    .msg-b pre{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin:6px 0;overflow-x:auto;position:relative}
+    .msg-b pre code{background:none;padding:0;font-size:.72rem;line-height:1.4}
+    .msg-b ul,.msg-b ol{margin:4px 0 6px 14px}.msg-b li{margin:2px 0}
+    .msg-b strong{color:var(--text)}.msg-b a{color:var(--accent-l);text-decoration:none}
+    .msg.user .msg-b{background:var(--accent-bg);border:1px solid #8b5cf633;border-bottom-right-radius:3px}
+    .msg.assistant .msg-b{background:var(--bg-2);border:1px solid var(--border);border-bottom-left-radius:3px}
+    .msg-m{font-size:.58rem;color:var(--text-xs);margin-top:2px}
+    .cp-btn{position:absolute;top:4px;right:4px;background:var(--bg-3);border:1px solid var(--border);color:var(--text-dim);padding:1px 6px;border-radius:3px;cursor:pointer;font-size:.6rem;opacity:0;transition:opacity .15s}
+    pre:hover .cp-btn{opacity:1}
+    #typing{display:none;padding:0 14px 6px;color:var(--text-dim);font-size:.78rem;font-style:italic}
+    .ci{border-top:1px solid var(--border);background:var(--bg-1);padding:6px 14px 10px}
+    .ci-row{display:flex;gap:6px;align-items:flex-end}
+    .ci-row textarea{flex:1;padding:8px 12px;background:var(--bg-2);border:1px solid var(--border);color:var(--text);border-radius:8px;outline:none;font-family:Outfit;font-size:.82rem;resize:none;min-height:36px;max-height:100px;line-height:1.3}
+    .ci-row textarea:focus{border-color:var(--accent)}
+    .c-btn{padding:7px 10px;background:var(--bg-3);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;cursor:pointer;font-size:.85rem;transition:all .15s;line-height:1}
+    .c-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+    .c-btn.send{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600;font-family:Outfit;font-size:.8rem;padding:7px 14px}
+    .ec{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--text-dim);gap:6px}
+    .ec span:first-child{font-size:1.8rem}
+    .ip{display:flex;gap:5px;flex-wrap:wrap;padding:0 0 6px}
+    .ip-i{position:relative;border-radius:6px;overflow:hidden;border:1px solid var(--border)}
+    .ip-i img{width:50px;height:50px;object-fit:cover;display:block}
+    .ip-i .rm{position:absolute;top:1px;right:1px;background:var(--red);color:#fff;border:none;width:14px;height:14px;border-radius:50%;cursor:pointer;font-size:9px;line-height:14px;text-align:center;padding:0}
+    .drop-ov{display:none;position:absolute;inset:0;background:var(--accent-bg);border:2px dashed var(--accent);border-radius:10px;z-index:10;align-items:center;justify-content:center;font-size:1rem;color:var(--accent-l)}
+    .pb{background:var(--yellow-bg);border:1px solid #eab30833;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:none}
+    .pb-t{font-size:.78rem;font-weight:600;color:var(--yellow);margin-bottom:4px}
+    .pb-i{display:flex;align-items:center;justify-content:space-between;padding:3px 0;font-size:.78rem}
+    .pb-i button{padding:3px 10px;background:var(--green);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:600;font-size:.72rem}
     /* Config */
-    .config-section{margin-bottom:20px}
-    .config-section-title{font-size:.82rem;font-weight:600;color:var(--accent-l);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
-    .config-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)}
-    .config-key{font-family:'JetBrains Mono';font-size:.75rem;color:var(--text-dim);min-width:160px;flex-shrink:0}
-    .config-val{flex:1}.config-val input{width:100%;padding:5px 8px;background:var(--bg-2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:'JetBrains Mono';font-size:.75rem;outline:none}
-    .config-val input:focus{border-color:var(--accent)}
-    /* Logs */
-    .log-viewer{background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:12px;font-family:'JetBrains Mono';font-size:.72rem;overflow-y:auto;max-height:calc(100vh - 200px);line-height:1.6}
-    .log-line{padding:1px 0}.log-line.error{color:var(--red)}.log-line.warn{color:var(--yellow)}.log-line.info{color:var(--text-dim)}
+    .cfg-s{margin-bottom:18px}
+    .cfg-st{font-size:.8rem;font-weight:600;color:var(--accent-l);margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+    .cfg-r{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--border)}
+    .cfg-k{font-family:'JetBrains Mono';font-size:.72rem;color:var(--text-dim);min-width:140px;flex-shrink:0}
+    .cfg-v{flex:1}.cfg-v input{width:100%;padding:4px 7px;background:var(--bg-2);border:1px solid var(--border);color:var(--text);border-radius:3px;font-family:'JetBrains Mono';font-size:.72rem;outline:none}
+    .cfg-v input:focus{border-color:var(--accent)}
+    /* Log */
+    .lv{background:var(--bg-2);border:1px solid var(--border);border-radius:6px;padding:10px;font-family:'JetBrains Mono';font-size:.7rem;overflow-y:auto;max-height:calc(100vh - 180px);line-height:1.5}
+    .ll{padding:1px 0}.ll.error{color:var(--red)}.ll.warn{color:var(--yellow)}.ll.info{color:var(--text-dim)}
     /* Usage bars */
-    .usage-bar-wrap{margin-bottom:12px}
-    .usage-bar-label{display:flex;justify-content:space-between;font-size:.75rem;margin-bottom:4px}
-    .usage-bar{height:6px;background:var(--bg-3);border-radius:3px;overflow:hidden}
-    .usage-bar-fill{height:100%;border-radius:3px;transition:width .5s}
+    .ub{margin-bottom:10px}
+    .ub-l{display:flex;justify-content:space-between;font-size:.72rem;margin-bottom:3px}
+    .ub-bar{height:5px;background:var(--bg-3);border-radius:3px;overflow:hidden}
+    .ub-fill{height:100%;border-radius:3px;transition:width .5s}
     /* Modal */
-    .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
-    .modal-bg.show{display:flex}
-    .modal{background:var(--bg-1);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:440px;width:90%;max-height:80vh;overflow-y:auto}
-    .modal h3{font-size:1rem;font-weight:600;margin-bottom:16px}
-    .fg{margin-bottom:14px}
-    .fg label{font-size:.75rem;color:var(--text-dim);margin-bottom:6px;display:block}
-    .fg-help{font-size:.65rem;color:var(--text-xs);margin-top:4px}
-    .modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+    .mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
+    .mo.show{display:flex}
+    .mod{background:var(--bg-1);border:1px solid var(--border);border-radius:10px;padding:20px;max-width:420px;width:90%;max-height:80vh;overflow-y:auto}
+    .mod h3{font-size:.95rem;font-weight:600;margin-bottom:14px}
+    .fg{margin-bottom:12px}
+    .fg label{font-size:.72rem;color:var(--text-dim);margin-bottom:5px;display:block}
+    .fg-h{font-size:.62rem;color:var(--text-xs);margin-top:3px}
+    .mo-btns{display:flex;gap:6px;justify-content:flex-end;margin-top:14px}
     /* Toast */
-    .toast{position:fixed;bottom:20px;right:20px;background:var(--bg-3);border:1px solid var(--border);padding:10px 16px;border-radius:8px;font-size:.82rem;z-index:200;display:none;animation:toastIn .2s}
+    .toast{position:fixed;bottom:16px;right:16px;background:var(--bg-3);border:1px solid var(--border);padding:8px 14px;border-radius:6px;font-size:.8rem;z-index:200;display:none;animation:tin .2s}
     .toast.ok{border-color:var(--green);color:var(--green)}.toast.err{border-color:var(--red);color:var(--red)}
-    @keyframes toastIn{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
-    @media(max-width:768px){.sidebar{width:48px}.thread-list{width:180px}.msg{max-width:90%}.cards{grid-template-columns:1fr 1fr}.config-key{min-width:120px}}
-    @media(max-width:480px){.thread-list{display:none}.cards{grid-template-columns:1fr}}
+    @keyframes tin{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}
+    @media(max-width:768px){.tl{width:160px}.msg{max-width:90%}.cards{grid-template-columns:1fr 1fr}}
+    @media(max-width:480px){.tl{display:none}.cards{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
-<nav class="sidebar">
-  <div class="sidebar-logo">⚛</div>
-  <div class="nav-item active" data-page="chat">💬<span class="tip">Chat</span></div>
-  <div class="nav-item" data-page="overview">📊<span class="tip">Overview</span></div>
-  <div class="nav-item" data-page="channels">📡<span class="tip">Channels</span></div>
-  <div class="nav-item" data-page="usage">📈<span class="tip">Usage</span></div>
-  <div class="nav-sep"></div>
-  <div class="nav-item" data-page="agents">🤖<span class="tip">Agents</span></div>
-  <div class="nav-item" data-page="skills">🔧<span class="tip">Skills</span></div>
-  <div class="nav-item" data-page="memory">🧠<span class="tip">Memory</span></div>
-  <div class="nav-sep"></div>
-  <div class="nav-item" data-page="secrets">🔑<span class="tip">API Keys</span></div>
-  <div class="nav-item" data-page="config">⚙️<span class="tip">Config</span></div>
-  <div class="nav-item" data-page="logs">📋<span class="tip">Logs</span></div>
-  <div class="nav-bottom"><div class="nav-sep"></div>
-    <div class="nav-item" onclick="restartAgent()" title="Restart"><span>🔄</span><span class="tip">Restart Agent</span></div>
-    <div class="nav-item" style="position:relative"><span>⚡</span><span class="tip" id="ws-tip">Connecting...</span><span class="dot-sm off" id="ws-dot"></span></div>
+<nav class="sb open" id="sb">
+  <div class="sb-top" onclick="toggleSb()"><span>⚛</span><span class="sb-label">QuantumClaw</span><span class="sb-toggle" id="sb-arrow">◀</span></div>
+  <div class="ni active" data-page="chat"><span class="ni-icon">💬</span><span class="ni-text">Chat</span><span class="tip">Chat</span></div>
+  <div class="ni" data-page="overview"><span class="ni-icon">📊</span><span class="ni-text">Overview</span><span class="tip">Overview</span></div>
+  <div class="ni" data-page="channels"><span class="ni-icon">📡</span><span class="ni-text">Channels</span><span class="tip">Channels</span></div>
+  <div class="ni" data-page="usage"><span class="ni-icon">📈</span><span class="ni-text">Usage</span><span class="tip">Usage</span></div>
+  <div class="ns"></div>
+  <div class="ni" data-page="agents"><span class="ni-icon">🤖</span><span class="ni-text">Agents</span><span class="tip">Agents</span></div>
+  <div class="ni" data-page="skills"><span class="ni-icon">🔧</span><span class="ni-text">Skills</span><span class="tip">Skills</span></div>
+  <div class="ni" data-page="tools"><span class="ni-icon">⚡</span><span class="ni-text">Tools</span><span class="tip">Tools</span></div>
+  <div class="ni" data-page="scheduled"><span class="ni-icon">⏰</span><span class="ni-text">Tasks</span><span class="tip">Scheduled</span></div>
+  <div class="ni" data-page="memory"><span class="ni-icon">🧠</span><span class="ni-text">Memory</span><span class="tip">Memory</span></div>
+  <div class="ns"></div>
+  <div class="ni" data-page="secrets"><span class="ni-icon">🔑</span><span class="ni-text">API Keys</span><span class="tip">API Keys</span></div>
+  <div class="ni" data-page="config"><span class="ni-icon">⚙️</span><span class="ni-text">Config</span><span class="tip">Config</span></div>
+  <div class="ni" data-page="logs"><span class="ni-icon">📋</span><span class="ni-text">Logs</span><span class="tip">Logs</span></div>
+  <div class="nb"><div class="ns"></div>
+    <div class="ni" onclick="doRestart()" title="Restart the agent process"><span class="ni-icon">🔄</span><span class="ni-text">Restart</span><span class="tip">Restart</span></div>
+    <div class="ni" style="position:relative" title="WebSocket connection status"><span class="ni-icon">⚡</span><span class="ni-text" id="ws-txt">Connecting...</span><span class="tip" id="ws-tip">Connecting...</span><span class="dot-sm off" id="ws-dot"></span></div>
   </div>
 </nav>
 <div class="main">
   <div class="topbar">
-    <span class="topbar-title" id="page-title">Chat</span>
+    <span class="topbar-title" id="pg-title">Chat</span>
     <div class="topbar-right">
-      <span class="badge badge-accent" id="agent-badge">echo</span>
-      <span class="badge badge-blue" id="agex-badge" style="display:none">AGEX</span>
+      <span class="badge badge-accent" id="agent-badge" title="Active agent">echo</span>
+      <span class="badge badge-blue" id="agex-badge" style="display:none" title="AGEX identity status">AGEX</span>
       <span class="badge" id="status-badge">● Connecting</span>
     </div>
   </div>
-
-  <!-- CHAT -->
-  <div class="page active" id="page-chat">
-    <div id="pairing-banner" class="pairing-banner" style="margin:12px 16px 0"><div class="pairing-banner-title">🔐 Pending Pairing Requests</div><div id="pairing-list"></div></div>
-    <div class="chat-layout">
-      <div class="thread-list">
-        <div class="thread-list-header"><select id="agent-select"></select></div>
-        <div class="thread-items" id="thread-items"></div>
-        <div class="new-chat-btn" id="new-chat-btn">+ New Chat</div>
+  <!-- CHAT --><div class="page active" id="page-chat">
+    <div id="pb" class="pb" style="margin:10px 14px 0"><div class="pb-t">🔐 Pending Pairing</div><div id="pb-list"></div></div>
+    <div class="chat-layout"><div class="tl"><div class="tl-h"><select id="ag-sel"></select></div><div class="tl-items" id="tl-items"></div><div class="nc-btn" id="nc-btn">+ New Chat</div></div>
+      <div class="cp" style="position:relative"><div class="drop-ov" id="drop-ov">📎 Drop image</div><div class="cm" id="msgs"><div class="ec"><span>⚛</span><span>Select a thread or start chatting</span></div></div><div id="typing">Agent is typing...</div>
+        <div class="ci"><div class="ip" id="ip"></div><div class="ci-row"><button class="c-btn" id="up-btn" title="Upload image">📎</button><textarea id="ci" placeholder="Type a message... (paste images Ctrl+V)" rows="1"></textarea><button class="c-btn" id="canvas-toggle" title="Toggle canvas" onclick="toggleCanvas()">🖼️</button><button class="c-btn send" id="send-btn">Send</button></div><input type="file" id="fi" accept="image/*" multiple style="display:none"></div>
       </div>
-      <div class="chat-pane" style="position:relative">
-        <div class="drop-overlay" id="drop-overlay">📎 Drop image here</div>
-        <div class="chat-messages" id="messages"><div class="empty-chat"><span>⚛</span><span>Select a thread or start chatting</span></div></div>
-        <div id="typing">Agent is typing...</div>
-        <div class="chat-input-area">
-          <div class="image-preview" id="image-preview"></div>
-          <div class="chat-input-row">
-            <button class="chat-btn" id="upload-btn" title="Upload image">📎</button>
-            <textarea id="chat-input" placeholder="Type a message... (paste images with Ctrl+V)" rows="1"></textarea>
-            <button class="chat-btn send" id="chat-send">Send</button>
-          </div>
-          <input type="file" id="file-input" accept="image/*" multiple style="display:none">
-        </div>
+      <!-- LIVE CANVAS -->
+      <div class="canvas-pane" id="canvas-pane">
+        <div class="canvas-header"><span class="ch-title" id="canvas-title">Canvas</span><button onclick="canvasDownload()" title="Download">⬇</button><button onclick="canvasCopyHtml()" title="Copy HTML">📋</button><button onclick="toggleCanvas()" title="Close">✕</button></div>
+        <div class="canvas-tabs" id="canvas-tabs"></div>
+        <div class="canvas-body" id="canvas-body"><div class="canvas-empty"><span style="font-size:2rem">🖼️</span><span>Live Canvas</span><span style="font-size:.72rem">Agent artifacts appear here</span></div></div>
       </div>
     </div>
   </div>
-
-  <!-- OVERVIEW -->
-  <div class="page" id="page-overview"><div class="page-scroll">
-    <div class="section-title">System</div>
-    <div class="cards" id="ov-system"></div>
-    <div class="section-title">AGEX Identity</div>
+  <!-- OVERVIEW --><div class="page" id="page-overview"><div class="ps">
+    <div class="st">System</div><div class="cards" id="ov-sys"></div>
+    <div class="st">AGEX Identity</div>
+    <div class="info-box">
+      <b>What is AGEX?</b> The Agent EXchange protocol gives every agent a cryptographic identity (AID). This lets agents prove who they are, request permissions from each other, and share credentials securely — like a passport for AI agents.<br><br>
+      <b>AID</b> = Agent Identity Document (public key + metadata).<br>
+      <b>Trust Tier</b> = 0 (anonymous) → 3 (fully verified). Higher tiers unlock more permissions.<br>
+      <b>Hub</b> = Registry that agents register with. Runs locally by default (hub-lite), or connect to a remote hub.<br><br>
+      Your primary agent's AID is auto-generated during onboard. Sub-agents get child AIDs delegated from the primary.
+    </div>
     <div class="cards" id="ov-agex"></div>
-    <div class="section-title">Stats</div>
-    <div class="cards" id="ov-stats"></div>
+    <div class="st">Stats</div><div class="cards" id="ov-stats"></div>
   </div></div>
-
-  <!-- CHANNELS -->
-  <div class="page" id="page-channels"><div class="page-scroll">
-    <div class="section-title">Connected Channels</div>
+  <!-- CHANNELS --><div class="page" id="page-channels"><div class="ps">
+    <div class="st">Connected Channels</div>
+    <div class="info-box">Channels are how users reach your agent — Telegram, Discord, WhatsApp, or this dashboard. Each channel has its own pairing system so only approved users can chat.</div>
     <div class="cards" id="ch-cards"></div>
-    <div class="section-title">Paired Users</div>
-    <div class="table-wrap"><table><thead><tr><th>Channel</th><th>User</th><th>Messages</th><th>Last Active</th></tr></thead><tbody id="ch-users"></tbody></table></div>
+    <div class="st">Paired Users</div>
+    <div class="tw"><table><thead><tr><th>Channel</th><th>User</th><th>Messages</th><th>Last Active</th></tr></thead><tbody id="ch-users"></tbody></table></div>
   </div></div>
-
-  <!-- USAGE -->
-  <div class="page" id="page-usage"><div class="page-scroll">
-    <div class="section-title">Cost & Usage</div>
+  <!-- USAGE --><div class="page" id="page-usage"><div class="ps">
+    <div class="st">Cost & Usage</div>
+    <div class="info-box">Costs are tracked per-message across all model tiers. The tiered routing system automatically picks the cheapest model that can handle each request — reflexes cost nothing, simple queries use fast models, complex queries use powerful models.</div>
     <div class="cards" id="us-cards"></div>
-    <div class="section-title">By Channel</div>
-    <div id="us-bars"></div>
-    <div class="section-title" style="margin-top:20px">Recent Activity</div>
-    <div class="table-wrap"><table><thead><tr><th>Time</th><th>Agent</th><th>Tier</th><th>Model</th><th>Cost</th></tr></thead><tbody id="us-table"></tbody></table></div>
+    <div class="st">By Channel</div><div id="us-bars"></div>
+    <div class="st" style="margin-top:16px">Recent Activity</div>
+    <div class="tw"><table><thead><tr><th>Time</th><th>Agent</th><th>Tier</th><th>Model</th><th>Cost</th></tr></thead><tbody id="us-table"></tbody></table></div>
   </div></div>
-
-  <!-- AGENTS -->
-  <div class="page" id="page-agents"><div class="page-scroll">
-    <div class="section-title">Agents <div class="section-actions"><button class="btn btn-primary" onclick="openModal('spawn-modal')">+ Spawn Agent</button></div></div>
-    <div class="section-sub">Each agent has its own personality (SOUL.md), AID identity, skills and threads.</div>
+  <!-- AGENTS --><div class="page" id="page-agents"><div class="ps">
+    <div class="st">Agents <div class="sa"><button class="btn btn-p" onclick="openMo('sp-mo')">+ Spawn Agent</button></div></div>
+    <div class="info-box">Each agent has its own <b>SOUL.md</b> personality file, AID identity, skills, and conversation history. The primary agent (⚛) orchestrates everything. You can spawn worker agents that inherit scoped permissions via AGEX delegation.</div>
     <div class="cards" id="ag-cards"></div>
   </div></div>
-
-  <!-- SKILLS -->
-  <div class="page" id="page-skills"><div class="page-scroll">
-    <div class="section-title">Installed Skills</div>
-    <div class="table-wrap"><table><thead><tr><th>Name</th><th>Endpoints</th><th>Status</th><th>Source</th></tr></thead><tbody id="sk-table"></tbody></table></div>
+  <!-- SKILLS --><div class="page" id="page-skills"><div class="ps">
+    <div class="st">Installed Skills <div class="sa"><button class="btn btn-p" onclick="openMo('sk-mo')" title="Install a skill from ClawHub or a URL">+ Install Skill</button><button class="btn btn-d" onclick="resetAllSkills()" title="Re-review all skills from scratch">Reset All</button></div></div>
+    <div class="info-box">
+      Skills give your agent new abilities — web search, calendar access, code execution, API integrations, etc. Skills run <b>locally on your machine</b> inside a sandbox.<br><br>
+      <b>Reviewed</b> = you've approved the skill's code and endpoints. <b>Unreviewed</b> = the agent discovered it but you haven't verified it yet.<br><br>
+      Browse community skills at <a href="https://clawhub.ai/skills" target="_blank">clawhub.ai/skills</a> or install from any URL.
+    </div>
+    <div class="tw"><table><thead><tr><th>Name</th><th>Endpoints</th><th>Status</th><th>Source</th><th></th></tr></thead><tbody id="sk-table"></tbody></table></div>
   </div></div>
-
-  <!-- MEMORY -->
-  <div class="page" id="page-memory"><div class="page-scroll">
-    <div class="section-title">Knowledge & Memory</div>
+  <!-- TOOLS --><div class="page" id="page-tools"><div class="ps">
+    <div class="st">Built-in & Connected Tools</div>
+    <div class="info-box">Tools give your agent capabilities — shell commands, file access, web fetching, canvas rendering, and more. Built-in tools are always available. MCP tools connect to external servers. All tool calls pass through the <b>Trust Kernel</b> for safety enforcement.</div>
+    <div class="tw"><table><thead><tr><th>Tool</th><th>Description</th><th>Source</th></tr></thead><tbody id="tools-table"></tbody></table></div>
+    <div class="st" style="margin-top:16px">Voice Status</div>
+    <div class="cards" id="voice-cards"></div>
+  </div></div>
+  <!-- SCHEDULED --><div class="page" id="page-scheduled"><div class="ps">
+    <div class="st">Scheduled Tasks <div class="sa"><button class="btn btn-p" onclick="openMo('task-mo')">+ Add Task</button></div></div>
+    <div class="info-box">Scheduled tasks run automatically at the chosen interval. The agent processes the prompt and pushes the result to all your connected channels (Telegram, Discord, WhatsApp, Dashboard). <b>Restart required</b> after adding/removing tasks.</div>
+    <div class="tw"><table><thead><tr><th>Name</th><th>Prompt</th><th>Schedule</th><th>Notify</th><th></th></tr></thead><tbody id="sched-table"></tbody></table></div>
+  </div></div>
+  <!-- MEMORY --><div class="page" id="page-memory"><div class="ps">
+    <div class="st">Knowledge & Memory <div class="sa"><button class="btn" onclick="loadMemGraph()" title="Show knowledge graph">🕸️ Graph</button><button class="btn" onclick="exportMemory()" title="Export all knowledge">📥 Export</button></div></div>
+    <div class="info-box">
+      Memory works in 3 layers:<br>
+      <b>Vector</b> — fast similarity search over all conversations (TF-IDF, always available).<br>
+      <b>Knowledge Store</b> — structured facts, preferences, and episodic events extracted from conversations.<br>
+      <b>Knowledge Graph</b> — Cognee-powered entity-relationship graph (needs embeddings configured). This is the most powerful layer — it understands how concepts relate to each other.
+    </div>
     <div class="cards" id="mem-cards"></div>
-    <div class="section-title">Search</div>
-    <div style="display:flex;gap:8px;margin-bottom:16px"><input class="input" id="mem-q" placeholder="Search knowledge graph..." style="flex:1" onkeydown="if(event.key==='Enter')searchMem()"><button class="btn" onclick="searchMem()">Search</button></div>
-    <div id="mem-results" style="font-size:.82rem;color:var(--text-dim)"></div>
+    <div class="st">Remember / Forget</div>
+    <div style="display:flex;gap:6px;margin-bottom:14px"><input class="input" id="mem-add" placeholder="Teach something: 'User's favourite colour is purple'" style="flex:1"><button class="btn btn-p" onclick="rememberFact()">Remember</button></div>
+    <div class="st">Search</div>
+    <div style="display:flex;gap:6px;margin-bottom:14px"><input class="input" id="mem-q" placeholder="Search knowledge graph..." style="flex:1" onkeydown="if(event.key==='Enter')searchMem()"><button class="btn" onclick="searchMem()">Search</button></div>
+    <div id="mem-res" style="font-size:.8rem;color:var(--text-dim)"></div>
+    <div id="mem-graph" style="display:none;border:1px solid var(--border);border-radius:8px;height:400px;margin-top:14px;background:var(--bg-0);position:relative"><canvas id="graph-canvas" style="width:100%;height:100%"></canvas><button class="btn btn-sm" style="position:absolute;top:6px;right:6px" onclick="document.getElementById('mem-graph').style.display='none'">✕</button></div>
   </div></div>
-
-  <!-- SECRETS -->
-  <div class="page" id="page-secrets"><div class="page-scroll">
-    <div class="section-title">API Keys & Secrets <div class="section-actions"><button class="btn btn-primary" onclick="openModal('key-modal')">+ Add Key</button></div></div>
-    <div class="section-sub">Encrypted with AES-256-GCM. Keys never leave your device.</div>
-    <div class="table-wrap"><table><thead><tr><th>Service</th><th>Key</th><th>Status</th><th></th></tr></thead><tbody id="sec-table"></tbody></table></div>
+  <!-- SECRETS --><div class="page" id="page-secrets"><div class="ps">
+    <div class="st">API Keys & Secrets <div class="sa"><button class="btn btn-p" onclick="openMo('key-mo')" title="Add a new API key">+ Add Key</button></div></div>
+    <div class="info-box">Keys are encrypted with <b>AES-256-GCM</b> and stored in <code>~/.quantumclaw/secrets.enc</code>. They never leave your device. The encryption key is derived from your machine's unique identifiers.</div>
+    <div class="tw"><table><thead><tr><th>Service</th><th>Key</th><th>Status</th><th></th></tr></thead><tbody id="sec-table"></tbody></table></div>
   </div></div>
-
-  <!-- CONFIG -->
-  <div class="page" id="page-config"><div class="page-scroll">
-    <div class="section-title">Configuration <div class="section-actions"><button class="btn btn-danger" onclick="restartAgent()">🔄 Restart</button></div></div>
-    <div class="section-sub">Edit values and press Enter to save.</div>
-    <div id="cfg-editor"></div>
+  <!-- CONFIG --><div class="page" id="page-config"><div class="ps">
+    <div class="st">Configuration <div class="sa"><button class="btn btn-d" onclick="doRestart()" title="Restart the agent process">🔄 Restart</button></div></div>
+    <div class="info-box">Edit any value and press Enter to save. Some sensitive fields (auth tokens, PINs) are masked and can't be changed here — use <code>qclaw config set key value</code> in the terminal. Changes take effect immediately for most settings; a restart is needed for model/channel changes.</div>
+    <div id="cfg-ed"></div>
   </div></div>
-
-  <!-- LOGS -->
-  <div class="page" id="page-logs"><div class="page-scroll">
-    <div class="section-title">Audit Log <div class="section-actions"><button class="btn" onclick="loadLogs()">Refresh</button><button class="btn" onclick="loadLogs('error')">Errors</button></div></div>
-    <div class="log-viewer" id="log-viewer"></div>
+  <!-- LOGS --><div class="page" id="page-logs"><div class="ps">
+    <div class="st">Audit Log <div class="sa"><button class="btn" onclick="loadLogs()">Refresh</button><button class="btn" onclick="loadLogs('error')">Errors</button></div></div>
+    <div class="info-box">Every API call, authentication attempt, skill execution, and cost event is logged here. Useful for debugging and monitoring your agent's behaviour.</div>
+    <div class="lv" id="lv"></div>
   </div></div>
 </div>
-
-<!-- SPAWN MODAL -->
-<div class="modal-bg" id="spawn-modal"><div class="modal">
+<!-- TASK MODAL --><div class="mo" id="task-mo"><div class="mod">
+  <h3>⏰ Add Scheduled Task</h3>
+  <div class="fg"><label>Name</label><input class="input input-m" id="task-name" placeholder="e.g. Morning Brief"></div>
+  <div class="fg"><label>Prompt</label><textarea class="input" id="task-prompt" rows="3" placeholder="Check my emails and summarise anything urgent"></textarea></div>
+  <div class="fg"><label>Schedule</label><select class="input input-m" id="task-sched"><option value="every-hour">Every hour</option><option value="every-day">Every day</option><option value="every-5-minutes">Every 5 minutes</option><option value="every-minute">Every minute (testing)</option></select></div>
+  <div class="fg"><label><input type="checkbox" id="task-notify" checked> Push results to channels</label></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-d" onclick="closeMo('task-mo')">Cancel</button><button class="btn btn-p" onclick="addTask()">Add Task</button></div>
+</div></div>
+<!-- SPAWN MODAL --><div class="mo" id="sp-mo"><div class="mod">
   <h3>🤖 Spawn Agent</h3>
-  <div class="fg"><label>Name</label><input class="input input-mono" id="sp-name" placeholder="e.g. researcher"><div class="fg-help">Lowercase, no spaces.</div></div>
-  <div class="fg"><label>Role</label><textarea class="input" id="sp-role" rows="3" placeholder="Describe what this agent does..."></textarea></div>
-  <div class="fg"><label>Model Tier</label><select class="input" id="sp-tier"><option value="reflex">Reflex (pattern matching)</option><option value="simple" selected>Simple (haiku-class)</option><option value="standard">Standard (sonnet-class)</option><option value="complex">Complex (opus-class)</option></select></div>
-  <div class="fg"><label>Scopes</label><input class="input input-mono" id="sp-scopes" value="chat" placeholder="chat, web_search, memory_read"><div class="fg-help">AGEX delegated permissions (comma-separated).</div></div>
-  <div class="modal-btns"><button class="btn" onclick="closeModal('spawn-modal')">Cancel</button><button class="btn btn-primary" onclick="doSpawn()">Spawn</button></div>
+  <div class="fg"><label>Name</label><input class="input input-m" id="sp-n" placeholder="e.g. researcher"><div class="fg-h">Lowercase, no spaces. Becomes the agent's directory.</div></div>
+  <div class="fg"><label>Role</label><textarea class="input" id="sp-r" rows="3" placeholder="Describe what this agent does..."></textarea></div>
+  <div class="fg"><label>Model Tier</label><select class="input" id="sp-t"><option value="reflex">Reflex (pattern matching)</option><option value="simple" selected>Simple (haiku-class)</option><option value="standard">Standard (sonnet-class)</option><option value="complex">Complex (opus-class)</option></select><div class="fg-h">Higher tiers are more capable but cost more per message.</div></div>
+  <div class="fg"><label>AGEX Scopes</label><input class="input input-m" id="sp-sc" value="chat" placeholder="chat, web_search, memory_read"><div class="fg-h">Permissions delegated from primary agent. Comma-separated.</div></div>
+  <div class="mo-btns"><button class="btn" onclick="closeMo('sp-mo')">Cancel</button><button class="btn btn-p" onclick="doSpawn()">Spawn</button></div>
 </div></div>
-
-<!-- ADD KEY MODAL -->
-<div class="modal-bg" id="key-modal"><div class="modal">
+<!-- KEY MODAL --><div class="mo" id="key-mo"><div class="mod">
   <h3>🔑 Add API Key</h3>
-  <div class="fg"><label>Service</label><select class="input" id="key-sel" onchange="document.getElementById('key-custom-wrap').style.display=this.value==='custom'?'block':'none'">
-    <option value="">— Select —</option>
-    <option value="anthropic_api_key">Anthropic (Claude)</option>
-    <option value="openai_api_key">OpenAI</option>
-    <option value="openrouter_api_key">OpenRouter</option>
-    <option value="groq_api_key">Groq</option>
-    <option value="google_api_key">Google AI</option>
-    <option value="xai_api_key">xAI (Grok)</option>
-    <option value="mistral_api_key">Mistral</option>
-    <option value="together_api_key">Together AI</option>
-    <option value="telegram_bot_token">Telegram Bot Token</option>
-    <option value="discord_bot_token">Discord Bot Token</option>
-    <option value="elevenlabs_api_key">ElevenLabs (TTS)</option>
-    <option value="deepgram_api_key">Deepgram (STT)</option>
-    <option value="stripe_api_key">Stripe</option>
-    <option value="github_api_key">GitHub</option>
-    <option value="custom">Custom...</option>
+  <div class="fg"><label>Service</label><select class="input" id="k-sel" onchange="document.getElementById('k-cw').style.display=this.value==='custom'?'block':'none'">
+    <option value="">— Select —</option><option value="anthropic_api_key">Anthropic (Claude)</option><option value="openai_api_key">OpenAI</option><option value="openrouter_api_key">OpenRouter</option><option value="groq_api_key">Groq</option><option value="google_api_key">Google AI</option><option value="xai_api_key">xAI (Grok)</option><option value="mistral_api_key">Mistral</option><option value="together_api_key">Together AI</option><option value="telegram_bot_token">Telegram</option><option value="discord_bot_token">Discord</option><option value="slack_bot_token">Slack Bot Token</option><option value="slack_app_token">Slack App Token</option><option value="email_address">Email Address</option><option value="email_password">Email Password</option><option value="elevenlabs_api_key">ElevenLabs</option><option value="deepgram_api_key">Deepgram</option><option value="embedding_api_key">Embedding API Key</option><option value="custom">Custom...</option>
   </select></div>
-  <div class="fg" id="key-custom-wrap" style="display:none"><label>Custom Key Name</label><input class="input input-mono" id="key-custom" placeholder="my_api_key"></div>
-  <div class="fg"><label>Value</label><input class="input input-mono" id="key-val" type="password" placeholder="sk-..."></div>
-  <div class="modal-btns"><button class="btn" onclick="closeModal('key-modal')">Cancel</button><button class="btn btn-primary" onclick="doSaveKey()">Save</button></div>
+  <div class="fg" id="k-cw" style="display:none"><label>Custom Key Name</label><input class="input input-m" id="k-cn" placeholder="my_api_key"></div>
+  <div class="fg"><label>Value</label><input class="input input-m" id="k-val" type="password" placeholder="sk-..."></div>
+  <div class="mo-btns"><button class="btn" onclick="closeMo('key-mo')">Cancel</button><button class="btn btn-p" onclick="doSaveKey()">Save</button></div>
 </div></div>
-
+<!-- SKILL INSTALL MODAL --><div class="mo" id="sk-mo"><div class="mod" style="max-width:600px">
+  <h3>🔧 Install Skill from ClawHub</h3>
+  <div class="info-box">Search 3,000+ community skills at <a href="https://clawhub.ai/skills" target="_blank">clawhub.ai</a> or paste a direct URL.</div>
+  <div class="fg"><label>Search or paste URL</label><input class="input input-m" id="sk-url" placeholder="e.g. calendar, github, web-search, or https://..." oninput="debounceSearch()"><div class="fg-h">Type to search ClawHub, or paste a skill name or URL.</div></div>
+  <div id="ch-results" style="max-height:240px;overflow-y:auto;margin:8px 0"></div>
+  <div class="mo-btns"><button class="btn" onclick="closeMo('sk-mo')">Cancel</button><button class="btn btn-p" onclick="doInstallSkill()">Install</button></div>
+</div></div>
 <div class="toast" id="toast"></div>
-
 <script>
-/* ─── AUTH ─────────────────────────────────────────────────── */
+/* AUTH */
 const hp=new URLSearchParams(location.hash.slice(1)),qp=new URLSearchParams(location.search);
-let TOKEN=qp.get('token')||hp.get('token')||localStorage.getItem('qclaw_token')||'';
-if(TOKEN){localStorage.setItem('qclaw_token',TOKEN);if(location.search.includes('token=')||location.hash)history.replaceState(null,'',location.pathname)}
-if(!TOKEN){document.querySelector('.sidebar').style.display='none';document.querySelector('.main').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center;max-width:340px;padding:2rem"><div style="font-size:2rem;margin-bottom:1rem">⚛</div><h2 style="font-size:1.1rem;margin-bottom:.5rem;font-weight:600">QClaw Dashboard</h2><p style="color:var(--text-dim);font-size:.82rem;margin-bottom:1.2rem">Enter your auth token.</p><input id="token-input" type="text" class="input input-mono" placeholder="Paste token" style="margin-bottom:8px"><button onclick="submitToken()" class="btn btn-primary" style="width:100%;padding:10px">Connect</button><p style="color:var(--text-xs);font-size:.7rem;margin-top:10px">Run <code style="background:var(--bg-2);padding:2px 6px;border-radius:3px">qclaw dashboard</code> for the URL</p></div></div>';document.getElementById('token-input')?.addEventListener('keydown',e=>{if(e.key==='Enter')submitToken()});document.getElementById('token-input')?.focus()}
-function submitToken(){const t=document.getElementById('token-input')?.value.trim();if(t){localStorage.setItem('qclaw_token',t);location.reload()}}
-async function checkPin(){if(!TOKEN)return;try{const r=await fetch('/api/auth/pin-required');const d=await r.json();if(!d.pinRequired)return;if(sessionStorage.getItem('qclaw_pin_ok')==='1')return;document.querySelector('.sidebar').style.display='none';document.querySelector('.main').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center;max-width:300px;padding:2rem"><div style="font-size:2rem;margin-bottom:1rem">🔒</div><h2 style="font-size:1.1rem;margin-bottom:.5rem;font-weight:600">Enter PIN</h2><input id="pin-input" type="password" inputmode="numeric" maxlength="8" class="input input-mono" placeholder="PIN" style="text-align:center;font-size:1.3rem;letter-spacing:.5rem;margin-bottom:8px"><button onclick="submitPin()" class="btn btn-primary" style="width:100%;padding:10px">Unlock</button><p id="pin-error" style="color:var(--red);font-size:.75rem;margin-top:8px;display:none"></p></div></div>';document.getElementById('pin-input').addEventListener('keydown',e=>{if(e.key==='Enter')submitPin()});document.getElementById('pin-input').focus()}catch{}}
-async function submitPin(){const p=document.getElementById('pin-input').value.trim();if(!p)return;const r=await fetch('/api/auth/verify-pin',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN},body:JSON.stringify({pin:p})});if(r.ok){sessionStorage.setItem('qclaw_pin_ok','1');location.reload()}else{const d=await r.json();const e=document.getElementById('pin-error');e.textContent=d.error||'Wrong PIN';e.style.display='block';document.getElementById('pin-input').value='';document.getElementById('pin-input').focus()}}
-if(TOKEN)checkPin();
-
-/* ─── HELPERS ──────────────────────────────────────────────── */
-async function api(p,o={}){const h={...(o.headers||{}),'Authorization':'Bearer '+TOKEN};if(o.body&&typeof o.body==='object'){h['Content-Type']='application/json';o.body=JSON.stringify(o.body)}return fetch(p,{...o,headers:h})}
+let TK=qp.get('token')||hp.get('token')||localStorage.getItem('qclaw_token')||'';
+if(TK){localStorage.setItem('qclaw_token',TK);if(location.search.includes('token=')||location.hash)history.replaceState(null,'',location.pathname)}
+if(!TK){document.querySelector('.sb').style.display='none';document.querySelector('.main').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center;max-width:320px;padding:2rem"><div style="font-size:2rem;margin-bottom:1rem">⚛</div><h2 style="font-size:1.05rem;margin-bottom:.5rem;font-weight:600">QClaw Dashboard</h2><p style="color:var(--text-dim);font-size:.8rem;margin-bottom:1rem">Enter your auth token to connect.</p><input id="token-in" type="text" class="input input-m" placeholder="Paste token" style="margin-bottom:6px"><button onclick="submitTk()" class="btn btn-p" style="width:100%;padding:8px">Connect</button><p style="color:var(--text-xs);font-size:.68rem;margin-top:8px">Run <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px">qclaw dashboard</code> for the URL</p></div></div>';document.getElementById('token-in')?.addEventListener('keydown',e=>{if(e.key==='Enter')submitTk()});document.getElementById('token-in')?.focus()}
+function submitTk(){const t=document.getElementById('token-in')?.value.trim();if(t){localStorage.setItem('qclaw_token',t);location.reload()}}
+async function checkPin(){if(!TK)return;try{const r=await fetch('/api/auth/pin-required');const d=await r.json();if(!d.pinRequired||sessionStorage.getItem('qclaw_pin_ok')==='1')return;document.querySelector('.sb').style.display='none';document.querySelector('.main').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center;max-width:280px;padding:2rem"><div style="font-size:2rem;margin-bottom:1rem">🔒</div><h2 style="font-size:1.05rem;margin-bottom:.5rem;font-weight:600">Enter PIN</h2><input id="pin-in" type="password" inputmode="numeric" maxlength="8" class="input input-m" placeholder="PIN" style="text-align:center;font-size:1.2rem;letter-spacing:.4rem;margin-bottom:6px"><button onclick="submitPin()" class="btn btn-p" style="width:100%;padding:8px">Unlock</button><p id="pin-err" style="color:var(--red);font-size:.72rem;margin-top:6px;display:none"></p></div></div>';document.getElementById('pin-in').addEventListener('keydown',e=>{if(e.key==='Enter')submitPin()});document.getElementById('pin-in').focus()}catch{}}
+async function submitPin(){const p=document.getElementById('pin-in').value.trim();if(!p)return;const r=await fetch('/api/auth/verify-pin',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+TK},body:JSON.stringify({pin:p})});if(r.ok){sessionStorage.setItem('qclaw_pin_ok','1');location.reload()}else{const d=await r.json();const e=document.getElementById('pin-err');e.textContent=d.error||'Wrong PIN';e.style.display='block';document.getElementById('pin-in').value='';document.getElementById('pin-in').focus()}}
+if(TK)checkPin();
+/* HELPERS */
+async function api(p,o={}){const h={...(o.headers||{}),'Authorization':'Bearer '+TK};if(o.body&&typeof o.body==='object'){h['Content-Type']='application/json';o.body=JSON.stringify(o.body)}return fetch(p,{...o,headers:h})}
 function toast(m,ok=true){const t=document.getElementById('toast');t.textContent=m;t.className='toast '+(ok?'ok':'err');t.style.display='block';setTimeout(()=>t.style.display='none',3000)}
-function openModal(id){document.getElementById(id).classList.add('show')}
-function closeModal(id){document.getElementById(id).classList.remove('show')}
-document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('show')}));
-function esc(t){if(!t)return'';return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-function timeAgo(ts){if(!ts)return'';const d=Date.now()-new Date(ts).getTime();if(d<60000)return'now';if(d<3600000)return Math.floor(d/60000)+'m';if(d<86400000)return Math.floor(d/3600000)+'h';return Math.floor(d/86400000)+'d'}
-function crd(label,value,sub,fs){return'<div class="card"><div class="card-label">'+label+'</div><div class="card-value"'+(fs?' style="font-size:'+fs+'"':'')+'>'+value+'</div>'+(sub?'<div class="card-sub">'+sub+'</div>':'')+'</div>'}
-
-/* ─── WEBSOCKET ────────────────────────────────────────────── */
+function openMo(id){document.getElementById(id).classList.add('show')}
+function closeMo(id){document.getElementById(id).classList.remove('show')}
+document.querySelectorAll('.mo').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('show')}));
+function esc(t){return t==null?'':String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function ta(ts){if(!ts)return'';const d=Date.now()-new Date(ts).getTime();if(d<60000)return'now';if(d<3600000)return Math.floor(d/60000)+'m';if(d<86400000)return Math.floor(d/3600000)+'h';return Math.floor(d/86400000)+'d'}
+function crd(l,v,s,fs){return'<div class="card"><div class="cl">'+l+'</div><div class="cv"'+(fs?' style="font-size:'+fs+'"':'')+'>'+v+'</div>'+(s?'<div class="cs">'+s+'</div>':'')+'</div>'}
+/* SIDEBAR */
+function toggleSb(){const s=document.getElementById('sb');s.classList.toggle('open');document.getElementById('sb-arrow').textContent=s.classList.contains('open')?'◀':'▶';localStorage.setItem('sb_open',s.classList.contains('open')?'1':'0')}
+if(localStorage.getItem('sb_open')==='0'){document.getElementById('sb').classList.remove('open');document.getElementById('sb-arrow').textContent='▶'}
+/* WS */
 let ws,wsR=0;
-function connectWS(){
-  ws=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws'+(TOKEN?'?token='+TOKEN:''));
-  ws.onopen=()=>{wsR=0;document.getElementById('ws-dot').className='dot-sm on';document.getElementById('ws-tip').textContent='Connected';document.getElementById('status-badge').className='badge badge-green';document.getElementById('status-badge').textContent='● Online';loadPairings();loadAgexBadge()};
-  ws.onclose=()=>{document.getElementById('ws-dot').className='dot-sm off';document.getElementById('ws-tip').textContent='Reconnecting...';document.getElementById('status-badge').className='badge badge-red';document.getElementById('status-badge').textContent='● Offline';if(wsR<50)setTimeout(connectWS,Math.min(1000*Math.pow(1.5,wsR++),30000))};
-  ws.onerror=()=>{};
-  ws.onmessage=e=>{const d=JSON.parse(e.data);if(d.type==='typing')document.getElementById('typing').style.display='block';else if(d.type==='response'){document.getElementById('typing').style.display='none';addMsg('assistant',d.content,d.model?d.tier+' → '+d.model+' (£'+(d.cost||0).toFixed(4)+')':'reflex')}else if(d.type==='error'){document.getElementById('typing').style.display='none';addMsg('assistant','Error: '+d.error)}else if(d.type==='autolearn')addMsg('assistant',d.question,'🧠 Learn mode');else if(d.type==='channel_message'){refreshThreads();if(curThread?.channel===d.channel&&(curThread?.username===d.username||!curThread?.username)){addMsg('user',d.userMessage,'📱 '+d.channel+' @'+(d.username||'user'));addMsg('assistant',d.response,d.model?d.tier+' → '+d.model+' (£'+(d.cost||0).toFixed(4)+')':'reflex')}hlThread(d.channel,d.username)}};
-}
-if(TOKEN)connectWS();
-
+function connectWS(){ws=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws'+(TK?'?token='+TK:''));ws.onopen=()=>{wsR=0;document.getElementById('ws-dot').className='dot-sm on';document.getElementById('ws-tip').textContent='Connected';document.getElementById('ws-txt').textContent='Online';document.getElementById('status-badge').className='badge badge-green';document.getElementById('status-badge').textContent='● Online';loadPairings();loadAgexBadge()};ws.onclose=()=>{document.getElementById('ws-dot').className='dot-sm off';document.getElementById('ws-tip').textContent='Reconnecting...';document.getElementById('ws-txt').textContent='Offline';document.getElementById('status-badge').className='badge badge-red';document.getElementById('status-badge').textContent='● Offline';if(wsR<50)setTimeout(connectWS,Math.min(1000*Math.pow(1.5,wsR++),30000))};ws.onerror=()=>{};ws.onmessage=e=>{const d=JSON.parse(e.data);if(d.type==='typing')document.getElementById('typing').style.display='block';else if(d.type==='response'){document.getElementById('typing').style.display='none';addMsg('assistant',d.content,d.model?d.tier+' → '+d.model+' (£'+(d.cost||0).toFixed(4)+')':'reflex')}else if(d.type==='error'){document.getElementById('typing').style.display='none';addMsg('assistant','Error: '+d.error)}else if(d.type==='channel_message'){refreshThreads();if(cT?.channel===d.channel&&(cT?.username===d.username||!cT?.username)){addMsg('user',d.userMessage,'📱 '+d.channel);addMsg('assistant',d.response,d.model?d.tier+' → '+d.model:'reflex')}}else if(d.type==='hatched'){showHatchAnimation(d.name,d.purpose);document.getElementById('agent-badge').textContent=d.name;refreshThreads()}else if(d.type==='restarting'){toast('🔄 Restarting — reconnecting in 3s...',true);document.getElementById('status-badge').className='badge badge-yellow';document.getElementById('status-badge').textContent='● Restarting'}else if(d.type==='proactive_message'){toast('📋 '+d.agent+': '+(d.content||'').slice(0,60),true);addMsg('assistant','['+d.source+'] '+d.content,d.agent)}else if(d.type==='canvas_render'){renderCanvas(d)}}}
+if(TK)connectWS();
 async function loadAgexBadge(){try{const r=await api('/api/agex/status');const d=await r.json();const b=document.getElementById('agex-badge');if(d.aidId){b.style.display='inline';b.textContent='AID '+d.aidId.slice(0,8);b.className='badge badge-green'}else{b.style.display='inline';b.textContent='AGEX local';b.className='badge badge-yellow'}}catch{}}
-
-/* ─── CHAT ENGINE ──────────────────────────────────────────── */
-let curThread=null,curAgent=null,pendImgs=[];
-function renderMd(t){if(!t)return'';let h=t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/```(\w*)\n([\s\S]*?)```/g,(m,l,c)=>'<pre><code class="lang-'+l+'">'+c.trim()+'</code><button class="copy-btn" onclick="copyCode(this)">Copy</button></pre>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>').replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank">$1</a>').replace(/^[-*] (.+)$/gm,'<li>$1</li>').replace(/^\d+\. (.+)$/gm,'<li>$1</li>').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');h=h.replace(/((?:<li>.*?<\/li>(?:<br>)?)+)/g,'<ul>$1</ul>');return'<p>'+h+'</p>'}
-function copyCode(b){navigator.clipboard.writeText(b.previousElementSibling.textContent);b.textContent='Copied!';setTimeout(()=>b.textContent='Copy',1500)}
-function addMsg(role,text,meta,imgs){const m=document.getElementById('messages');const e=m.querySelector('.empty-chat');if(e)e.remove();const d=document.createElement('div');d.className='msg '+role;const name=role==='user'?(curThread?.username?'@'+curThread.username:'You'):(curAgent||'Agent');let ih='';if(imgs?.length)ih='<div class="msg-images">'+imgs.map(i=>'<img src="'+(i.preview||('data:'+i.mediaType+';base64,'+i.data))+'">').join('')+'</div>';d.innerHTML='<div class="msg-header">'+(role==='assistant'?'⚛ ':'')+name+'</div>'+ih+'<div class="msg-bubble">'+(role==='assistant'?renderMd(text):esc(text).replace(/\n/g,'<br>'))+'</div>'+(meta?'<div class="msg-meta">'+meta+'</div>':'');m.appendChild(d);m.scrollTop=m.scrollHeight}
-function sendMsg(){const i=document.getElementById('chat-input'),msg=i.value.trim();if((!msg&&!pendImgs.length)||!ws||ws.readyState!==1)return;const imgs=pendImgs.length?pendImgs.map(x=>({data:x.data,mediaType:x.mediaType})):undefined;addMsg('user',msg||'(image)',null,pendImgs.length?pendImgs:undefined);ws.send(JSON.stringify({message:msg||'What do you see?',agent:curAgent||undefined,images:imgs}));i.value='';i.style.height='auto';pendImgs=[];document.getElementById('image-preview').innerHTML=''}
-document.getElementById('chat-send').onclick=sendMsg;
-document.getElementById('chat-input').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg()}};
-document.getElementById('chat-input').oninput=function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'};
-
-/* Image handling */
-function addImg(file){if(!file.type.startsWith('image/'))return;const r=new FileReader();r.onload=e=>{pendImgs.push({data:e.target.result.split(',')[1],mediaType:file.type||'image/jpeg',preview:e.target.result});rndrImgs()};r.readAsDataURL(file)}
-function rndrImgs(){document.getElementById('image-preview').innerHTML=pendImgs.map((img,i)=>'<div class="image-preview-item"><img src="'+img.preview+'"><button class="remove" onclick="pendImgs.splice('+i+',1);rndrImgs()">×</button></div>').join('')}
-document.getElementById('chat-input').addEventListener('paste',e=>{const it=e.clipboardData?.items;if(!it)return;for(const i of it)if(i.type.startsWith('image/')){e.preventDefault();const f=i.getAsFile();if(f)addImg(f)}});
-document.getElementById('upload-btn').onclick=()=>document.getElementById('file-input').click();
-document.getElementById('file-input').onchange=e=>{for(const f of e.target.files)addImg(f);e.target.value=''};
-const cp=document.querySelector('.chat-pane'),dov=document.getElementById('drop-overlay');let dc=0;
-cp.addEventListener('dragenter',e=>{e.preventDefault();dc++;dov.style.display='flex'});
-cp.addEventListener('dragleave',e=>{e.preventDefault();dc--;if(dc<=0){dc=0;dov.style.display='none'}});
-cp.addEventListener('dragover',e=>e.preventDefault());
-cp.addEventListener('drop',e=>{e.preventDefault();dc=0;dov.style.display='none';for(const f of e.dataTransfer.files)addImg(f)});
-
-/* Threads */
-async function refreshThreads(){try{const[tR,aR]=await Promise.all([api('/api/threads'),api('/api/agents')]);const threads=await tR.json(),agents=await aR.json();const sel=document.getElementById('agent-select');if(sel.options.length!==agents.length){sel.innerHTML=agents.map(a=>'<option value="'+a.name+'"'+(a.isPrimary?' selected':'')+'>'+a.name+(a.isPrimary?' ★':'')+'</option>').join('');curAgent=sel.value}document.getElementById('agent-badge').textContent=curAgent||'echo';const ic={telegram:'📱',dashboard:'💻',whatsapp:'📲',discord:'🎮'};document.getElementById('thread-items').innerHTML=threads.map(t=>{const active=curThread?.channel===t.channel&&curThread?.userId===t.user_id?'active':'';return'<div class="thread-item '+active+'" onclick="selThread(\''+t.channel+"','"+(t.user_id||'')+"','"+(t.username||'')+"')\">"+'<div class="thread-item-name"><span>'+(ic[t.channel]||'💬')+'</span>'+(t.username?'@'+t.username:(t.channel==='dashboard'?'Dashboard':t.channel))+'</div><div class="thread-item-meta"><span>'+t.messageCount+' msgs</span><span>'+timeAgo(t.lastMessage)+'</span></div></div>'}).join('')||'<div style="padding:16px;color:var(--text-dim);font-size:.8rem;text-align:center">No conversations yet</div>'}catch{}}
-document.getElementById('agent-select').onchange=e=>{curAgent=e.target.value;refreshThreads()};
-async function selThread(ch,uid,un){curThread={channel:ch,userId:uid||null,username:un||null};document.querySelectorAll('.thread-item').forEach(t=>t.classList.remove('active'));const ps=new URLSearchParams({channel:ch,limit:'50'});if(uid)ps.set('userId',uid);const r=await api('/api/threads/history?'+ps);const h=await r.json();const m=document.getElementById('messages');m.innerHTML='';if(!h.length){m.innerHTML='<div class="empty-chat"><span>💬</span><span>No messages yet</span></div>';return}h.forEach(x=>addMsg(x.role,x.content,x.model?(x.tier||'')+' → '+x.model:null));setTimeout(()=>document.querySelectorAll('.thread-item').forEach(t=>{if(t.textContent.includes(un||ch))t.classList.add('active')}),50)}
-document.getElementById('new-chat-btn').onclick=()=>{curThread={channel:'dashboard',userId:null,username:null};document.querySelectorAll('.thread-item').forEach(t=>t.classList.remove('active'));document.getElementById('messages').innerHTML='<div class="empty-chat"><span>⚛</span><span>Start typing below</span></div>';document.getElementById('chat-input').focus()};
-function hlThread(ch,un){document.querySelectorAll('.thread-item').forEach(t=>{if(t.textContent.includes(un||ch)){t.style.background='var(--accent-bg)';setTimeout(()=>t.style.background='',2000)}})}
-
-/* Pairings */
-async function loadPairings(){try{const r=await api('/api/pairing/pending');if(!r.ok)return;const d=await r.json();const bar=document.getElementById('pairing-banner'),list=document.getElementById('pairing-list');if(!d.length){bar.style.display='none';return}bar.style.display='block';list.innerHTML=d.map(p=>'<div class="pairing-item"><span>@'+(p.username||'?')+' ('+p.channel+') — <code>'+p.code+'</code> — '+Math.round((Date.now()-p.timestamp)/60000)+'m</span><button onclick="approvePair(\''+p.channel+"','"+p.code+"')\">Approve</button></div>").join('')}catch{}}
-async function approvePair(ch,code){const r=await api('/api/pairing/approve',{method:'POST',body:{channel:ch,code}});if(r.ok)toast('✓ Paired on '+ch);loadPairings()}
+/* CHAT */
+let cT=null,cA=null,pI=[];
+function renderMd(t){if(!t)return'';let h=t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/```(\w*)\n([\s\S]*?)```/g,(m,l,c)=>'<pre><code>'+c.trim()+'</code><button class="cp-btn" onclick="cpCode(this)">Copy</button></pre>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>').replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank">$1</a>').replace(/^[-*] (.+)$/gm,'<li>$1</li>').replace(/^\d+\. (.+)$/gm,'<li>$1</li>').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');h=h.replace(/((?:<li>.*?<\/li>(?:<br>)?)+)/g,'<ul>$1</ul>');return'<p>'+h+'</p>'}
+function cpCode(b){navigator.clipboard.writeText(b.previousElementSibling.textContent);b.textContent='✓';setTimeout(()=>b.textContent='Copy',1500)}
+function addMsg(role,text,meta,imgs){const m=document.getElementById('msgs');const e=m.querySelector('.ec');if(e)e.remove();const d=document.createElement('div');d.className='msg '+role;const nm=role==='user'?(cT?.username?'@'+cT.username:'You'):(cA||'Agent');let ih='';if(imgs?.length)ih='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">'+imgs.map(i=>'<img src="'+(i.preview||('data:'+i.mediaType+';base64,'+i.data))+'" style="max-width:180px;max-height:120px;border-radius:6px;border:1px solid var(--border)">').join('')+'</div>';d.innerHTML='<div class="msg-h">'+(role==='assistant'?'⚛ ':'')+nm+'</div>'+ih+'<div class="msg-b">'+(role==='assistant'?renderMd(text):esc(text).replace(/\n/g,'<br>'))+'</div>'+(meta?'<div class="msg-m">'+meta+'</div>':'');m.appendChild(d);m.scrollTop=m.scrollHeight}
+function sendMsg(){const i=document.getElementById('ci'),msg=i.value.trim();if((!msg&&!pI.length)||!ws||ws.readyState!==1)return;const imgs=pI.length?pI.map(x=>({data:x.data,mediaType:x.mediaType})):undefined;addMsg('user',msg||'(image)',null,pI.length?pI:undefined);ws.send(JSON.stringify({message:msg||'What do you see?',agent:cA||undefined,images:imgs}));i.value='';i.style.height='auto';pI=[];document.getElementById('ip').innerHTML=''}
+document.getElementById('send-btn').onclick=sendMsg;
+document.getElementById('ci').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg()}};
+document.getElementById('ci').oninput=function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'};
+function addImg(f){if(!f.type.startsWith('image/'))return;const r=new FileReader();r.onload=e=>{pI.push({data:e.target.result.split(',')[1],mediaType:f.type||'image/jpeg',preview:e.target.result});rImgs()};r.readAsDataURL(f)}
+function rImgs(){document.getElementById('ip').innerHTML=pI.map((img,i)=>'<div class="ip-i"><img src="'+img.preview+'"><button class="rm" onclick="pI.splice('+i+',1);rImgs()">×</button></div>').join('')}
+document.getElementById('ci').addEventListener('paste',e=>{const it=e.clipboardData?.items;if(!it)return;for(const i of it)if(i.type.startsWith('image/')){e.preventDefault();const f=i.getAsFile();if(f)addImg(f)}});
+document.getElementById('up-btn').onclick=()=>document.getElementById('fi').click();
+document.getElementById('fi').onchange=e=>{for(const f of e.target.files)addImg(f);e.target.value=''};
+const cpEl=document.querySelector('.cp'),dov=document.getElementById('drop-ov');let dc=0;
+cpEl.addEventListener('dragenter',e=>{e.preventDefault();dc++;dov.style.display='flex'});cpEl.addEventListener('dragleave',e=>{e.preventDefault();if(--dc<=0){dc=0;dov.style.display='none'}});cpEl.addEventListener('dragover',e=>e.preventDefault());cpEl.addEventListener('drop',e=>{e.preventDefault();dc=0;dov.style.display='none';for(const f of e.dataTransfer.files)addImg(f)});
+/* THREADS */
+async function refreshThreads(){try{const[tR,aR]=await Promise.all([api('/api/threads'),api('/api/agents')]);const thr=await tR.json(),ag=await aR.json();const sel=document.getElementById('ag-sel');if(sel.options.length!==ag.length){sel.innerHTML=ag.map(a=>'<option value="'+a.name+'"'+(a.isPrimary?' selected':'')+'>'+a.name+(a.isPrimary?' ★':'')+'</option>').join('');cA=sel.value}document.getElementById('agent-badge').textContent=cA||'echo';const ic={telegram:'📱',dashboard:'💻',whatsapp:'📲',discord:'🎮'};document.getElementById('tl-items').innerHTML=thr.map(t=>'<div class="ti'+(cT?.channel===t.channel&&cT?.userId===t.user_id?' active':'')+'" onclick="selThr(\''+t.channel+"','"+(t.user_id||'')+"','"+(t.username||'')+"')\">"+'<div class="ti-name"><span>'+(ic[t.channel]||'💬')+'</span>'+(t.username?'@'+t.username:t.channel==='dashboard'?'Dashboard':t.channel)+'</div><div class="ti-meta"><span>'+t.messageCount+'</span><span>'+ta(t.lastMessage)+'</span></div></div>').join('')||'<div style="padding:12px;color:var(--text-dim);font-size:.78rem;text-align:center">No conversations yet</div>'}catch{}}
+document.getElementById('ag-sel').onchange=e=>{cA=e.target.value;refreshThreads()};
+async function selThr(ch,uid,un){cT={channel:ch,userId:uid||null,username:un||null};const ps=new URLSearchParams({channel:ch,limit:'50'});if(uid)ps.set('userId',uid);const r=await api('/api/threads/history?'+ps);const h=await r.json();const m=document.getElementById('msgs');m.innerHTML='';if(!h.length){m.innerHTML='<div class="ec"><span>💬</span><span>No messages yet</span></div>';return}h.forEach(x=>addMsg(x.role,x.content,x.model?(x.tier||'')+' → '+x.model:null));refreshThreads()}
+document.getElementById('nc-btn').onclick=()=>{cT={channel:'dashboard'};document.getElementById('msgs').innerHTML='<div class="ec"><span>⚛</span><span>Start typing below</span></div>';document.getElementById('ci').focus();refreshThreads()};
+/* PAIRINGS */
+async function loadPairings(){try{const r=await api('/api/pairing/pending');if(!r.ok)return;const d=await r.json();const bar=document.getElementById('pb'),list=document.getElementById('pb-list');if(!d.length){bar.style.display='none';return}bar.style.display='block';list.innerHTML=d.map(p=>'<div class="pb-i"><span>@'+(p.username||'?')+' ('+p.channel+') — <code>'+p.code+'</code></span><button onclick="appPair(\''+p.channel+"','"+p.code+"')\">Approve</button></div>").join('')}catch{}}
+async function appPair(ch,code){if((await api('/api/pairing/approve',{method:'POST',body:{channel:ch,code}})).ok)toast('✓ Paired on '+ch);loadPairings()}
 setInterval(loadPairings,15000);
-
-/* ─── PAGE NAV ─────────────────────────────────────────────── */
+/* NAV */
 const pgN={chat:'Chat',overview:'Overview',channels:'Channels',usage:'Usage',agents:'Agents',skills:'Skills',memory:'Memory',secrets:'API Keys',config:'Config',logs:'Logs'};
-const pgLoad={overview:loadOverview,channels:loadChannels,usage:loadUsage,agents:loadAgents,skills:loadSkills,memory:loadMemory,secrets:loadSecrets,config:loadConfig,logs:loadLogs,chat:refreshThreads};
-document.querySelectorAll('.nav-item[data-page]').forEach(it=>{it.onclick=()=>{const pg=it.dataset.page;document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));it.classList.add('active');document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('page-'+pg)?.classList.add('active');document.getElementById('page-title').textContent=pgN[pg]||pg;pgLoad[pg]?.()}});
+const pgL={overview:loadOv,channels:loadCh,usage:loadUs,agents:loadAg,skills:loadSk,memory:loadMem,secrets:loadSec,config:loadCfg,logs:loadLogs,chat:refreshThreads,tools:()=>{loadTools();loadVoiceStatus()},scheduled:loadScheduled};
+document.querySelectorAll('.ni[data-page]').forEach(it=>{it.onclick=()=>{const pg=it.dataset.page;document.querySelectorAll('.ni').forEach(i=>i.classList.remove('active'));it.classList.add('active');document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('page-'+pg)?.classList.add('active');document.getElementById('pg-title').textContent=pgN[pg]||pg;pgL[pg]?.()}});
+/* OVERVIEW */
+async function loadOv(){try{const[hR,sR,aR]=await Promise.all([api('/api/health'),api('/api/stats'),api('/api/agex/status')]);const h=await hR.json(),s=await sR.json(),ax=await aR.json();
+document.getElementById('ov-sys').innerHTML=[crd('Status','<span style="color:var(--green)">Running</span>','Degradation: '+h.degradationLevel+'/5'),crd('Agents',h.agents||0),crd('Memory',h.cognee?'Graph':'Local',h.cognee?'Cognee connected':'Vector + SQLite'),crd('Tunnel',h.tunnel?'Active':'Local',h.tunnel||'No public URL','.85rem')].join('');
+document.getElementById('ov-agex').innerHTML=[crd('Mode',ax.mode||'local',ax.mode==='agex'?'Hub connected':'Local secrets'),crd('AID',ax.aidId?ax.aidId.slice(0,12)+'…':'None','Tier '+(ax.trustTier??'—'),'.82rem'),crd('Hub',ax.hubUrl||'—','','.75rem'),crd('Agent AIDs',(ax.agents||[]).filter(a=>a.aidId).length+'/'+(ax.agents||[]).length)].join('');
+document.getElementById('ov-stats').innerHTML=[crd('Messages',s.memory?.total||0,(s.memory?.today||0)+' today'),crd('Cost','£'+(s.costs?.total||0).toFixed(4)),crd('Tokens',(s.costs?.tokens||0).toLocaleString())].join('')}catch(e){document.getElementById('ov-sys').innerHTML=crd('Error','<span style="color:var(--red)">'+esc(e.message)+'</span>')}}
+/* CHANNELS */
+async function loadCh(){try{const[cR,tR]=await Promise.all([api('/api/channels'),api('/api/threads')]);const ch=await cR.json(),thr=await tR.json();const ic={telegram:'📱',dashboard:'💻',discord:'🎮',whatsapp:'📲'};document.getElementById('ch-cards').innerHTML=ch.map(c=>'<div class="card"><div class="cl">'+(ic[c.name]||'📡')+' '+c.name+'</div><div class="cv" style="color:var(--green)">Active</div><div class="cs">'+(c.botName?'@'+c.botName+'<br>':'')+(c.paired?c.paired+' paired':'')+'</div></div>').join('');document.getElementById('ch-users').innerHTML=thr.map(t=>'<tr><td>'+t.channel+'</td><td>'+(t.username?'@'+t.username:t.channel==='dashboard'?'Dashboard':'—')+'</td><td>'+t.messageCount+'</td><td>'+ta(t.lastMessage)+'</td></tr>').join('')||'<tr><td colspan=4 style="color:var(--text-dim)">No conversations yet</td></tr>'}catch{}}
+/* USAGE */
+async function loadUs(){try{const[sR,aR]=await Promise.all([api('/api/stats'),api('/api/audit?limit=30')]);const s=await sR.json(),aud=await aR.json();document.getElementById('us-cards').innerHTML=[crd('Total','£'+(s.costs?.total||0).toFixed(4)),crd('Messages',s.costs?.messages||0),crd('Tokens',(s.costs?.tokens||0).toLocaleString())].join('');const by=s.memory?.byChannel||[],mx=Math.max(...by.map(c=>c.count),1),co=['var(--accent)','var(--green)','var(--blue)','var(--yellow)'];document.getElementById('us-bars').innerHTML=by.map((c,i)=>'<div class="ub"><div class="ub-l"><span>'+(c.channel||'?')+'</span><span>'+c.count+'</span></div><div class="ub-bar"><div class="ub-fill" style="width:'+(c.count/mx*100)+'%;background:'+co[i%co.length]+'"></div></div></div>').join('')||'<span style="color:var(--text-dim);font-size:.78rem">No data</span>';const ce=(aud||[]).filter(e=>e.detail?.includes('£'));document.getElementById('us-table').innerHTML=ce.slice(0,20).map(e=>'<tr><td>'+new Date(e.timestamp).toLocaleTimeString()+'</td><td>'+(e.actor||'—')+'</td><td>'+(e.detail?.match(/^(\w+)/)?.[1]||'—')+'</td><td style="font-family:JetBrains Mono;font-size:.72rem">'+(e.detail?.match(/→\s*([^\s(]+)/)?.[1]||'—')+'</td><td>'+(e.detail?.match(/£[\d.]+/)?.[0]||'—')+'</td></tr>').join('')||'<tr><td colspan=5 style="color:var(--text-dim)">No usage yet</td></tr>'}catch{}}
+/* AGENTS */
+async function loadAg(){try{const r=await api('/api/agents');const a=await r.json();document.getElementById('ag-cards').innerHTML=a.map(x=>{const aid=x.aidId?x.aidId.slice(0,16)+'…':'No AID';return'<div class="card'+(x.isPrimary?' style="border-color:#8b5cf644"':'')+'"><div class="cl">'+(x.isPrimary?'⚛ Primary ':'🤖 ')+x.name+(x.trustTier!=null?' <span class="badge badge-blue">Tier '+x.trustTier+'</span>':'')+'</div><div class="cv" style="color:var(--green);font-size:.95rem">Active</div><div class="cs" style="font-family:JetBrains Mono;font-size:.65rem;margin-bottom:4px">'+esc(aid)+'</div><div class="cs">'+x.provider+'/'+x.model+' · '+x.skills+' skills · '+x.threads+' threads · '+x.messages+' msgs</div></div>'}).join('')||crd('','No agents')}catch{}}
+async function doSpawn(){const n=document.getElementById('sp-n').value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,''),r=document.getElementById('sp-r').value.trim(),t=document.getElementById('sp-t').value,sc=document.getElementById('sp-sc').value.split(',').map(s=>s.trim()).filter(Boolean);if(!n||!r){toast('Name and role required',false);return}try{const res=await api('/api/agents/spawn',{method:'POST',body:{name:n,role:r,model_tier:t,scopes:sc}});if(res.ok){const d=await res.json();toast('✓ Agent "'+d.name+'" spawned');closeMo('sp-mo');loadAg();refreshThreads()}else toast((await res.json()).error||'Failed',false)}catch(e){toast(e.message,false)}}
+/* SKILLS */
+async function loadSk(){try{const r=await api('/api/skills');const d=await r.json();document.getElementById('sk-table').innerHTML=d.map(s=>'<tr><td><strong>'+esc(s.name)+'</strong>'+(s.description?'<div class="cs">'+esc(s.description)+'</div>':'')+'</td><td>'+s.endpoints+'</td><td>'+(s.reviewed?'<span class="badge badge-green">Reviewed</span>':'<span class="badge badge-yellow">Unreviewed</span>')+'</td><td style="color:var(--text-dim)">'+esc(s.source)+'</td><td><button class="btn btn-sm btn-d" onclick="resetSkill(\''+esc(s.name)+'\')" title="Reset this skill — it will need re-review">Reset</button></td></tr>').join('')||'<tr><td colspan=5 style="color:var(--text-dim)">No skills installed. <a href="https://clawhub.ai/skills" target="_blank">Browse ClawHub →</a></td></tr>'}catch{}}
+async function resetSkill(name){if(!confirm('Reset "'+name+'"? It will need to be re-reviewed.'))return;try{const r=await api('/api/skills/reset',{method:'POST',body:{name}});if(r.ok){toast('Reset '+name);loadSk()}else toast('Failed',false)}catch{}}
+async function resetAllSkills(){if(!confirm('Reset ALL skills? Every skill will need re-review.'))return;try{const r=await api('/api/skills/reset-all',{method:'POST'});if(r.ok){toast('All skills reset');loadSk()}else toast('Failed',false)}catch{}}
+// ─── Hatching Animation ──────────────────
+function showHatchAnimation(name,purpose){const ov=document.createElement('div');ov.className='hatch-overlay';ov.innerHTML='<div class="hatch-egg">🥚</div><div class="hatch-name">'+esc(name)+'</div><div class="hatch-sub">'+(purpose?esc(purpose):'Your agent has hatched!')+'</div><div class="hatch-btn"><button class="btn btn-p" onclick="this.closest(\'.hatch-overlay\').remove()">Let\'s go →</button></div>';document.body.appendChild(ov);setTimeout(()=>{ov.querySelector('.hatch-egg').textContent='⚛'},2000)}
 
-/* ─── OVERVIEW ─────────────────────────────────────────────── */
-async function loadOverview(){try{const[hR,sR,aR]=await Promise.all([api('/api/health'),api('/api/stats'),api('/api/agex/status')]);const h=await hR.json(),s=await sR.json(),ax=await aR.json();
-  document.getElementById('ov-system').innerHTML=[crd('Status','<span style="color:var(--green)">Running</span>','Degradation: '+h.degradationLevel+'/5'),crd('Agents',h.agents||0),crd('Memory',h.cognee?'Graph':'Local',h.cognee?'Cognee connected':'Vector + SQLite'),crd('Tunnel',h.tunnel?'Active':'Local',h.tunnel||'No public URL','.9rem')].join('');
-  document.getElementById('ov-agex').innerHTML=[crd('Mode',ax.mode||'local',ax.mode==='agex'?'Hub connected':'Local secrets'),crd('AID',ax.aidId?ax.aidId.slice(0,12)+'…':'None','Tier '+(ax.trustTier??'—'),'.85rem'),crd('Hub',ax.hubUrl||'—','','0.78rem'),crd('Agent AIDs',(ax.agents||[]).filter(a=>a.aidId).length+'/'+(ax.agents||[]).length)].join('');
-  document.getElementById('ov-stats').innerHTML=[crd('Messages',s.memory?.total||0,(s.memory?.today||0)+' today'),crd('Cost','£'+(s.costs?.total||0).toFixed(4)),crd('Tokens',(s.costs?.tokens||0).toLocaleString())].join('')}catch(e){document.getElementById('ov-system').innerHTML=crd('Error','<span style="color:var(--red)">'+esc(e.message)+'</span>')}}
+// ─── Tools Page ──────────────────────────
+async function loadTools(){try{const r=await api('/api/tools');const d=await r.json();document.getElementById('tools-table').innerHTML=(d||[]).map(t=>'<tr><td><strong>'+esc(t.name)+'</strong></td><td style="font-size:.75rem;color:var(--text-dim)">'+esc(t.description||'')+'</td><td><span class="badge badge-'+(t.source==='built-in'?'green':'accent')+'">'+esc(t.source)+'</span></td></tr>').join('')||'<tr><td colspan=3 style="color:var(--text-dim)">No tools registered</td></tr>'}catch{}}
+async function loadVoiceStatus(){try{const r=await api('/api/voice/status');const d=await r.json();document.getElementById('voice-cards').innerHTML='<div class="card"><div class="cl">STT Providers</div><div class="cv" style="font-size:.9rem">'+(d.stt?.length?d.stt.join(', '):'None')+'</div></div><div class="card"><div class="cl">TTS Providers</div><div class="cv" style="font-size:.9rem">'+(d.tts?.length?d.tts.join(', '):'None')+'</div></div><div class="card"><div class="cl">Voice Ready</div><div class="cv">'+(d.ready?'✅ Yes':'❌ No')+'</div></div>'}catch{}}
 
-/* ─── CHANNELS ─────────────────────────────────────────────── */
-async function loadChannels(){try{const[cR,tR]=await Promise.all([api('/api/channels'),api('/api/threads')]);const ch=await cR.json(),thr=await tR.json();const ic={telegram:'📱',dashboard:'💻',discord:'🎮',whatsapp:'📲'};
-  document.getElementById('ch-cards').innerHTML=ch.map(c=>'<div class="card"><div class="card-label">'+(ic[c.name]||'📡')+' '+c.name+'</div><div class="card-value" style="color:var(--green)">Active</div><div class="card-sub">'+(c.botName?'@'+c.botName+'<br>':'')+(c.paired?c.paired+' paired':'')+(c.tunnel?'<br>'+c.tunnel:'')+'</div></div>').join('');
-  document.getElementById('ch-users').innerHTML=thr.map(t=>'<tr><td>'+t.channel+'</td><td>'+(t.username?'@'+t.username:t.channel==='dashboard'?'Dashboard':t.user_id||'—')+'</td><td>'+t.messageCount+'</td><td>'+timeAgo(t.lastMessage)+'</td></tr>').join('')||'<tr><td colspan=4 style="color:var(--text-dim)">No conversations yet</td></tr>'}catch{}}
+// ─── Scheduled Tasks ─────────────────────
+async function loadScheduled(){try{const r=await api('/api/scheduled');const d=await r.json();document.getElementById('sched-table').innerHTML=(d||[]).map((t,i)=>'<tr><td><strong>'+esc(t.name)+'</strong></td><td style="font-size:.75rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.prompt)+'</td><td><span class="badge badge-accent">'+esc(t.schedule)+'</span></td><td>'+(t.notify!==false?'📢':'🔇')+'</td><td><button class="btn btn-sm btn-d" onclick="deleteTask('+i+')">Remove</button></td></tr>').join('')||'<tr><td colspan=5 style="color:var(--text-dim)">No scheduled tasks. Add one above.</td></tr>'}catch{}}
+async function addTask(){const name=document.getElementById('task-name').value.trim();const prompt=document.getElementById('task-prompt').value.trim();const schedule=document.getElementById('task-sched').value;const notify=document.getElementById('task-notify').checked;if(!prompt){toast('Enter a prompt');return}try{const r=await api('/api/scheduled',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,prompt,schedule,notify})});const d=await r.json();if(d.ok){toast('Task added — restart to activate');closeMo('task-mo');loadScheduled()}else{toast(d.error||'Failed')}}catch(e){toast(e.message)}}
+async function deleteTask(idx){if(!confirm('Remove this task?'))return;try{const r=await api('/api/scheduled/'+idx,{method:'DELETE'});const d=await r.json();if(d.ok){toast('Task removed — restart to apply');loadScheduled()}else{toast(d.error||'Failed')}}catch(e){toast(e.message)}}
 
-/* ─── USAGE ────────────────────────────────────────────────── */
-async function loadUsage(){try{const[sR,aR]=await Promise.all([api('/api/stats'),api('/api/audit?limit=30')]);const s=await sR.json(),aud=await aR.json();
-  document.getElementById('us-cards').innerHTML=[crd('Total','£'+(s.costs?.total||0).toFixed(4)),crd('Messages',s.costs?.messages||0),crd('Tokens',(s.costs?.tokens||0).toLocaleString())].join('');
-  const by=s.memory?.byChannel||[],mx=Math.max(...by.map(c=>c.count),1),co=['var(--accent)','var(--green)','var(--blue)','var(--yellow)'];
-  document.getElementById('us-bars').innerHTML=by.map((c,i)=>'<div class="usage-bar-wrap"><div class="usage-bar-label"><span>'+(c.channel||'?')+'</span><span>'+c.count+'</span></div><div class="usage-bar"><div class="usage-bar-fill" style="width:'+(c.count/mx*100)+'%;background:'+co[i%co.length]+'"></div></div></div>').join('')||'<div style="color:var(--text-dim);font-size:.8rem">No data</div>';
-  const ce=(aud||[]).filter(e=>e.detail?.includes('£'));
-  document.getElementById('us-table').innerHTML=ce.slice(0,20).map(e=>'<tr><td>'+new Date(e.timestamp).toLocaleTimeString()+'</td><td>'+(e.actor||'—')+'</td><td>'+(e.detail?.match(/^(\w+)/)?.[1]||'—')+'</td><td style="font-family:JetBrains Mono;font-size:.75rem">'+(e.detail?.match(/→\s*([^\s(]+)/)?.[1]||'—')+'</td><td>'+(e.detail?.match(/£[\d.]+/)?.[0]||'—')+'</td></tr>').join('')||'<tr><td colspan=5 style="color:var(--text-dim)">No usage yet</td></tr>'}catch{}}
+// ─── Memory Remember/Forget + Graph ──────
+async function rememberFact(){const fact=document.getElementById('mem-add').value.trim();if(!fact){toast('Enter something to remember');return}try{const r=await api('/api/memory/remember',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fact})});const d=await r.json();if(d.ok){toast('Remembered!');document.getElementById('mem-add').value='';loadMem()}else{toast(d.error||'Failed')}}catch(e){toast(e.message)}}
+async function loadMemGraph(){const el=document.getElementById('mem-graph');el.style.display='block';try{const r=await api('/api/memory/graph');const d=await r.json();_drawGraph(d)}catch{el.innerHTML='<div class="canvas-empty"><span>Graph unavailable</span></div>'}}
+function _drawGraph(data){const canvas=document.getElementById('graph-canvas');if(!canvas)return;const ctx=canvas.getContext('2d');const W=canvas.parentElement.offsetWidth;const H=canvas.parentElement.offsetHeight;canvas.width=W;canvas.height=H;const nodes=data.nodes||[];const edges=data.edges||[];if(!nodes.length){ctx.fillStyle='#666';ctx.font='14px Outfit';ctx.textAlign='center';ctx.fillText('No knowledge nodes yet',W/2,H/2);return}const colors={semantic:'#9b59b6',episodic:'#3498db',procedural:'#2ecc71'};nodes.forEach((n,i)=>{const angle=(2*Math.PI*i)/nodes.length;n.x=W/2+Math.cos(angle)*(Math.min(W,H)*0.35);n.y=H/2+Math.sin(angle)*(Math.min(W,H)*0.35)});ctx.clearRect(0,0,W,H);edges.forEach(e=>{const s=nodes.find(n=>n.id===e.source);const t=nodes.find(n=>n.id===e.target);if(s&&t){ctx.strokeStyle='#444';ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.lineTo(t.x,t.y);ctx.stroke()}});nodes.forEach(n=>{ctx.fillStyle=colors[n.type]||'#999';ctx.beginPath();ctx.arc(n.x,n.y,6,0,2*Math.PI);ctx.fill();ctx.fillStyle='#ccc';ctx.font='10px Outfit';ctx.textAlign='center';ctx.fillText(n.label.slice(0,25),n.x,n.y-10)})}
+async function exportMemory(){try{const r=await api('/api/memory/export');const d=await r.json();const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='quantumclaw-memory-'+new Date().toISOString().slice(0,10)+'.json';a.click();toast('Memory exported')}catch(e){toast(e.message)}}
 
-/* ─── AGENTS ───────────────────────────────────────────────── */
-async function loadAgents(){try{const r=await api('/api/agents');const a=await r.json();
-  document.getElementById('ag-cards').innerHTML=a.map(x=>{const aid=x.aidId?x.aidId.slice(0,16)+'…':'No AID';return'<div class="card'+(x.isPrimary?' style="border-color:#8b5cf644"':'')+'"><div class="card-label">'+(x.isPrimary?'⚛ Primary ':'🤖 ')+x.name+(x.trustTier!=null?' <span class="badge badge-blue" style="margin-left:4px">Tier '+x.trustTier+'</span>':'')+'</div><div class="card-value" style="color:var(--green);font-size:1rem">Active</div><div class="card-sub" style="font-family:JetBrains Mono;font-size:.68rem;margin-bottom:6px">'+esc(aid)+'</div><div class="card-sub">'+x.provider+'/'+x.model+' · '+x.skills+' skills · '+x.threads+' threads · '+x.messages+' msgs</div></div>'}).join('')||crd('','No agents')}catch{}}
+// ─── Live Canvas (A2UI) ──────────────────────
+const _canvasItems=[];let _canvasIdx=-1;
+function toggleCanvas(){const p=document.getElementById('canvas-pane');p.classList.toggle('open')}
+function renderCanvas(d){
+  // d = {type:'canvas_render', format:'html'|'markdown'|'mermaid'|'svg'|'image', title, content, id?}
+  const item={id:d.id||'c'+Date.now(),title:d.title||'Artifact',format:d.format||'html',content:d.content};
+  _canvasItems.push(item);_canvasIdx=_canvasItems.length-1;
+  _showCanvasItem(item);
+  _updateCanvasTabs();
+  // Auto-open canvas
+  const p=document.getElementById('canvas-pane');if(!p.classList.contains('open'))p.classList.add('open');
+  addMsg('assistant','🖼️ Canvas: '+item.title,'canvas');
+}
+function _showCanvasItem(item){
+  const body=document.getElementById('canvas-body');
+  document.getElementById('canvas-title').textContent=item.title;
+  if(item.format==='html'||item.format==='svg'){
+    const iframe=document.createElement('iframe');
+    iframe.sandbox='allow-scripts allow-same-origin';
+    iframe.srcdoc=item.format==='svg'?'<!DOCTYPE html><html><body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a2e">'+item.content+'</body></html>':item.content;
+    body.innerHTML='';body.appendChild(iframe);
+  }else if(item.format==='markdown'){
+    body.innerHTML='<div class="canvas-md">'+_renderMd(item.content)+'</div>';
+  }else if(item.format==='mermaid'){
+    body.innerHTML='<div class="canvas-md" id="mermaid-target"></div>';
+    _renderMermaid(item.content);
+  }else if(item.format==='image'){
+    body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;padding:16px"><img src="'+esc(item.content)+'" style="max-width:100%;max-height:100%;border-radius:8px"></div>';
+  }else{
+    body.innerHTML='<div class="canvas-md"><pre>'+esc(item.content)+'</pre></div>';
+  }
+}
+function _renderMd(md){return md.replace(/^### (.*)/gm,'<h3>$1</h3>').replace(/^## (.*)/gm,'<h2>$1</h2>').replace(/^# (.*)/gm,'<h1>$1</h1>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\n\n/g,'<br><br>')}
+async function _renderMermaid(code){try{const el=document.getElementById('mermaid-target');if(!window.mermaid){const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js';s.onload=()=>{mermaid.initialize({theme:'dark',startOnLoad:false});mermaid.render('merm-'+Date.now(),code).then(r=>{el.innerHTML=r.svg})};document.head.appendChild(s)}else{mermaid.render('merm-'+Date.now(),code).then(r=>{el.innerHTML=r.svg})}}catch{document.getElementById('mermaid-target').innerHTML='<pre>'+esc(code)+'</pre>'}}
+function _updateCanvasTabs(){const el=document.getElementById('canvas-tabs');if(_canvasItems.length<=1){el.innerHTML='';return}el.innerHTML=_canvasItems.map((it,i)=>'<div class="canvas-tab'+(i===_canvasIdx?' active':'')+'" onclick="_showCanvasItem(_canvasItems['+i+']);_canvasIdx='+i+';_updateCanvasTabs()">'+esc(it.title)+'</div>').join('')}
+function canvasDownload(){if(_canvasIdx<0)return;const it=_canvasItems[_canvasIdx];const ext=it.format==='html'?'html':it.format==='svg'?'svg':it.format==='mermaid'?'mmd':it.format==='markdown'?'md':'txt';const a=document.createElement('a');a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(it.content);a.download=(it.title||'artifact').replace(/[^a-z0-9]/gi,'-')+'.'+ext;a.click()}
+function canvasCopyHtml(){if(_canvasIdx<0)return;navigator.clipboard.writeText(_canvasItems[_canvasIdx].content);toast('Copied to clipboard')}
 
-async function doSpawn(){const name=document.getElementById('sp-name').value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'');const role=document.getElementById('sp-role').value.trim();const tier=document.getElementById('sp-tier').value;const scopes=document.getElementById('sp-scopes').value.split(',').map(s=>s.trim()).filter(Boolean);
-  if(!name||!role){toast('Name and role required',false);return}
-  try{const r=await api('/api/agents/spawn',{method:'POST',body:{name,role,model_tier:tier,scopes}});if(r.ok){const d=await r.json();toast('✓ Agent "'+d.name+'" spawned'+(d.aidId?' — AID: '+d.aidId.slice(0,8)+'…':''));closeModal('spawn-modal');loadAgents();refreshThreads();document.getElementById('sp-name').value='';document.getElementById('sp-role').value=''}else{const e=await r.json();toast(e.error||'Spawn failed',false)}}catch(e){toast(e.message,false)}}
-
-/* ─── SKILLS ───────────────────────────────────────────────── */
-async function loadSkills(){try{const r=await api('/api/skills');const d=await r.json();document.getElementById('sk-table').innerHTML=d.map(s=>'<tr><td><strong>'+esc(s.name)+'</strong></td><td>'+s.endpoints+'</td><td>'+(s.reviewed?'<span class="badge badge-green">Reviewed</span>':'<span class="badge badge-yellow">Unreviewed</span>')+'</td><td style="color:var(--text-dim)">'+esc(s.source)+'</td></tr>').join('')||'<tr><td colspan=4 style="color:var(--text-dim)">No skills</td></tr>'}catch{}}
-
-/* ─── MEMORY ───────────────────────────────────────────────── */
-async function loadMemory(){try{const r=await api('/api/health');const h=await r.json();document.getElementById('mem-cards').innerHTML=[crd('Graph',h.cognee?'Cognee':'Local',h.cognee?'Remote graph':'Vector + SQLite'),crd('Vector','Active','TF-IDF similarity'),crd('Knowledge','Active','Facts · preferences · episodic')].join('')}catch{}}
-async function searchMem(){const q=document.getElementById('mem-q').value.trim();if(!q)return;const el=document.getElementById('mem-results');el.textContent='Searching...';try{const r=await api('/api/memory/search',{method:'POST',body:{query:q}});const d=await r.json();if(!d.length){el.textContent='No results.';return}el.innerHTML=d.map(x=>'<div style="padding:8px;margin-bottom:8px;background:var(--bg-2);border-radius:6px;border:1px solid var(--border)"><div style="font-size:.78rem">'+esc(x.content||x.text||JSON.stringify(x))+'</div>'+(x.score?'<div style="font-size:.65rem;color:var(--text-xs);margin-top:4px">Score: '+x.score.toFixed(3)+'</div>':'')+'</div>').join('')}catch(e){el.textContent='Error: '+e.message}}
-
-/* ─── SECRETS ──────────────────────────────────────────────── */
-const KEY_NAMES={anthropic_api_key:'Anthropic (Claude)',openai_api_key:'OpenAI',openrouter_api_key:'OpenRouter',groq_api_key:'Groq',google_api_key:'Google AI',xai_api_key:'xAI (Grok)',mistral_api_key:'Mistral',together_api_key:'Together AI',telegram_bot_token:'Telegram',discord_bot_token:'Discord',elevenlabs_api_key:'ElevenLabs',deepgram_api_key:'Deepgram',stripe_api_key:'Stripe',github_api_key:'GitHub',cognee_token:'Cognee',cloudflare_tunnel_token:'Cloudflare',agex_private_key:'AGEX Private Key'};
-const KEY_ORDER=Object.keys(KEY_NAMES);
-
-async function loadSecrets(){try{const r=await api('/api/secrets');const set=await r.json();const setKeys=new Set(set.map(s=>s.key));
-  // Show all known keys + any extra keys that are set
-  const allKeys=[...KEY_ORDER];set.forEach(s=>{if(!allKeys.includes(s.key))allKeys.push(s.key)});
-  document.getElementById('sec-table').innerHTML=allKeys.map(k=>{const has=setKeys.has(k);return'<tr><td><strong>'+(KEY_NAMES[k]||k)+'</strong></td><td style="font-family:JetBrains Mono;font-size:.7rem;color:var(--text-dim)">'+esc(k)+'</td><td>'+(has?'<span class="badge badge-green">Set</span>':'<span class="badge" style="background:var(--bg-3);color:var(--text-xs)">Not set</span>')+'</td><td style="text-align:right">'+(has?'<button class="btn btn-sm btn-danger" onclick="delKey(\''+k+'\')">Remove</button>':'<button class="btn btn-sm" onclick="quickKey(\''+k+'\')">Add</button>')+'</td></tr>'}).join('')}catch(e){document.getElementById('sec-table').innerHTML='<tr><td colspan=4 style="color:var(--red)">'+esc(e.message)+'</td></tr>'}}
-
-function quickKey(k){document.getElementById('key-sel').value=KEY_ORDER.includes(k)?k:'custom';document.getElementById('key-custom-wrap').style.display=KEY_ORDER.includes(k)?'none':'block';if(!KEY_ORDER.includes(k))document.getElementById('key-custom').value=k;document.getElementById('key-val').value='';openModal('key-modal');setTimeout(()=>document.getElementById('key-val').focus(),100)}
-
-async function doSaveKey(){let key=document.getElementById('key-sel').value;if(key==='custom')key=document.getElementById('key-custom').value.trim();if(!key){toast('Select a service',false);return}const val=document.getElementById('key-val').value.trim();if(!val){toast('Enter a value',false);return}
-  try{const r=await api('/api/secrets',{method:'POST',body:{key,value:val}});if(r.ok){toast('✓ Saved '+key);closeModal('key-modal');loadSecrets()}else{const e=await r.json();toast(e.error||'Failed',false)}}catch(e){toast(e.message,false)}}
-
-async function delKey(k){if(!confirm('Remove '+k+'? You may need to re-enter it.'))return;try{const r=await api('/api/secrets/'+encodeURIComponent(k),{method:'DELETE'});if(r.ok){toast('Removed '+k);loadSecrets()}}catch{}}
-
-/* ─── CONFIG ───────────────────────────────────────────────── */
-async function loadConfig(){try{const r=await api('/api/config');const cfg=await r.json();const ed=document.getElementById('cfg-editor');
-  function rO(obj,pfx=''){let h='';for(const[k,v]of Object.entries(obj)){if(k.startsWith('_'))continue;const fk=pfx?pfx+'.'+k:k;if(v&&typeof v==='object'&&!Array.isArray(v)){h+='<div class="config-section"><div class="config-section-title">'+esc(fk)+'</div>'+rO(v,fk)+'</div>'}else{const d=v==='***'?'***':JSON.stringify(v);const ok=v!=='***';h+='<div class="config-row"><div class="config-key">'+esc(k)+'</div><div class="config-val">'+(ok?'<input value="'+String(v).replace(/"/g,'&quot;')+'" onkeydown="if(event.key===\'Enter\')saveCfg(\''+fk+"',this.value)\">":"<span style=\"color:var(--text-dim)\">"+d+'</span>')+'</div>'+(ok?'<button class="btn btn-sm" onclick="saveCfg(\''+fk+"',this.parentElement.querySelector('input').value)\">Save</button>":'')+'</div>'}}return h}
-  ed.innerHTML=rO(cfg)}catch(e){document.getElementById('cfg-editor').innerHTML='<div style="color:var(--red)">'+esc(e.message)+'</div>'}}
-async function saveCfg(key,value){try{const r=await api('/api/config',{method:'POST',body:{key,value}});if((await r.json()).ok)toast('✓ Saved '+key);else toast('Failed',false)}catch{toast('Error',false)}}
-
-/* ─── LOGS ─────────────────────────────────────────────────── */
-async function loadLogs(filter){try{const r=await api('/api/audit?limit=100');let d=await r.json();if(filter==='error')d=d.filter(e=>e.action==='error'||e.action==='warning');const lv=document.getElementById('log-viewer');if(!d.length){lv.innerHTML='<div class="log-line info">No entries.</div>';return}lv.innerHTML=d.map(l=>'<div class="log-line '+(l.action==='error'?'error':l.action==='warning'?'warn':'info')+'">['+new Date(l.timestamp).toLocaleTimeString()+'] '+esc(l.actor)+' → '+esc(l.action)+(l.detail?' — '+esc(l.detail):'')+'</div>').join('');lv.scrollTop=lv.scrollHeight}catch{document.getElementById('log-viewer').innerHTML='<div class="log-line error">Error loading logs</div>'}}
-
-/* ─── RESTART ──────────────────────────────────────────────── */
-async function restartAgent(){if(!confirm('Restart the agent? Active chats will be interrupted.'))return;try{await api('/api/restart',{method:'POST'});toast('Restarting...');setTimeout(()=>location.reload(),3000)}catch{toast('Failed',false)}}
-
-/* ─── INIT ─────────────────────────────────────────────────── */
-if(TOKEN){refreshThreads();setInterval(refreshThreads,10000)}
+let _chTimer=null;function debounceSearch(){clearTimeout(_chTimer);_chTimer=setTimeout(()=>searchClawHub(),400)}
+async function searchClawHub(){const q=document.getElementById('sk-url').value.trim();const el=document.getElementById('ch-results');if(!q||q.startsWith('http')){el.innerHTML='';return}el.innerHTML='<div style="color:var(--text-dim);padding:8px">Searching ClawHub...</div>';try{const r=await api('/api/clawhub/search?q='+encodeURIComponent(q));const d=await r.json();if(d.ok&&d.results.length>0){el.innerHTML=d.results.map(s=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);cursor:pointer" onclick="document.getElementById(\'sk-url\').value=\''+esc(s.slug)+'\'" title="Click to select"><div><strong>'+esc(s.slug)+'</strong><div class="cs">'+esc(s.description||'')+'</div></div><div style="display:flex;gap:8px;font-size:12px;color:var(--text-dim);white-space:nowrap">'+(s.stars?'⭐'+s.stars:'')+(s.downloads?' ⬇'+s.downloads:'')+'</div></div>').join('')}else if(d.browseUrl){el.innerHTML='<div style="padding:8px"><a href="'+d.browseUrl+'" target="_blank">Search on clawhub.ai →</a><div class="cs" style="margin-top:4px">'+esc(d.message||'Install clawhub CLI for in-app search')+'</div></div>'}else{el.innerHTML='<div style="color:var(--text-dim);padding:8px">No results. <a href="https://clawhub.ai/skills?q='+encodeURIComponent(q)+'" target="_blank">Try clawhub.ai →</a></div>'}}catch{el.innerHTML='<div style="color:var(--text-dim);padding:8px">Search unavailable. <a href="https://clawhub.ai/skills" target="_blank">Browse clawhub.ai →</a></div>'}}
+async function doInstallSkill(){const url=document.getElementById('sk-url').value.trim();if(!url){toast('Enter a skill name or URL',false);return}const isUrl=url.startsWith('http');toast('Installing '+url+'...',true);try{const r=await api('/api/skills/install',{method:'POST',body:isUrl?{url}:{name:url}});const d=await r.json();if(r.ok){toast('✓ Skill installed'+(d.method==='clawhub-cli'?' via ClawHub':''));closeMo('sk-mo');loadSk();document.getElementById('sk-url').value='';document.getElementById('ch-results').innerHTML=''}else toast(d.error||'Install failed',false)}catch(e){toast(e.message,false)}}
+/* MEMORY */
+async function loadMem(){try{const r=await api('/api/health');const h=await r.json();document.getElementById('mem-cards').innerHTML=[crd('Graph',h.cognee?'Cognee':'Local',h.cognee?'Remote graph':'Vector + SQLite'),crd('Vector','Active','TF-IDF similarity'),crd('Knowledge','Active','Facts · preferences · episodic')].join('')}catch{}}
+async function searchMem(){const q=document.getElementById('mem-q').value.trim();if(!q)return;const el=document.getElementById('mem-res');el.textContent='Searching...';try{const r=await api('/api/memory/search',{method:'POST',body:{query:q}});const d=await r.json();if(!d.length){el.textContent='No results.';return}el.innerHTML=d.map(x=>'<div style="padding:6px;margin-bottom:6px;background:var(--bg-2);border-radius:5px;border:1px solid var(--border);font-size:.75rem">'+esc(x.content||x.text||JSON.stringify(x))+(x.score?'<div style="font-size:.62rem;color:var(--text-xs);margin-top:3px">Score: '+x.score.toFixed(3)+'</div>':'')+'</div>').join('')}catch(e){el.textContent='Error: '+e.message}}
+/* SECRETS */
+const KN={anthropic_api_key:'Anthropic (Claude)',openai_api_key:'OpenAI',openrouter_api_key:'OpenRouter',groq_api_key:'Groq',google_api_key:'Google AI',xai_api_key:'xAI (Grok)',mistral_api_key:'Mistral',together_api_key:'Together AI',telegram_bot_token:'Telegram',discord_bot_token:'Discord',elevenlabs_api_key:'ElevenLabs',deepgram_api_key:'Deepgram',slack_bot_token:'Slack Bot',slack_app_token:'Slack App',email_address:'Email Address',email_password:'Email Password',stripe_api_key:'Stripe',github_api_key:'GitHub',embedding_api_key:'Embeddings',cognee_token:'Cognee',cloudflare_tunnel_token:'Cloudflare',agex_private_key:'AGEX Key'};
+const KO=Object.keys(KN);
+async function loadSec(){try{const r=await api('/api/secrets');const data=await r.json();const setKeys=new Set(Array.isArray(data)?data.map(s=>typeof s==='string'?s:s.key):[]);const allKeys=[...KO];if(Array.isArray(data))data.forEach(s=>{const k=typeof s==='string'?s:s.key;if(!allKeys.includes(k))allKeys.push(k)});
+document.getElementById('sec-table').innerHTML=allKeys.map(k=>{const has=setKeys.has(k);return'<tr><td><strong>'+(KN[k]||k)+'</strong></td><td style="font-family:JetBrains Mono;font-size:.68rem;color:var(--text-dim)">'+esc(k)+'</td><td>'+(has?'<span class="badge badge-green">Set</span>':'<span class="badge" style="background:var(--bg-3);color:var(--text-xs)">Not set</span>')+'</td><td style="text-align:right">'+(has?'<button class="btn btn-sm btn-d" onclick="delKey(\''+k+'\')">Remove</button>':'<button class="btn btn-sm" onclick="qKey(\''+k+'\')">Add</button>')+'</td></tr>'}).join('')}catch(e){document.getElementById('sec-table').innerHTML='<tr><td colspan=4 style="color:var(--red)">'+esc(e.message)+'</td></tr>'}}
+function qKey(k){document.getElementById('k-sel').value=KO.includes(k)?k:'custom';document.getElementById('k-cw').style.display=KO.includes(k)?'none':'block';if(!KO.includes(k))document.getElementById('k-cn').value=k;document.getElementById('k-val').value='';openMo('key-mo');setTimeout(()=>document.getElementById('k-val').focus(),100)}
+async function doSaveKey(){let key=document.getElementById('k-sel').value;if(key==='custom')key=document.getElementById('k-cn').value.trim();if(!key){toast('Select a service',false);return}const val=document.getElementById('k-val').value.trim();if(!val){toast('Enter a value',false);return}try{const r=await api('/api/secrets',{method:'POST',body:{key,value:val}});if(r.ok){toast('✓ Saved '+key);closeMo('key-mo');loadSec()}else toast((await r.json()).error||'Failed',false)}catch(e){toast(e.message,false)}}
+async function delKey(k){if(!confirm('Remove '+k+'?'))return;try{if((await api('/api/secrets/'+encodeURIComponent(k),{method:'DELETE'})).ok){toast('Removed');loadSec()}}catch{}}
+/* CONFIG */
+async function loadCfg(){try{const r=await api('/api/config');const cfg=await r.json();const ed=document.getElementById('cfg-ed');function rO(obj,pfx=''){let h='';for(const[k,v]of Object.entries(obj)){if(k.startsWith('_'))continue;const fk=pfx?pfx+'.'+k:k;if(v&&typeof v==='object'&&!Array.isArray(v)){h+='<div class="cfg-s"><div class="cfg-st">'+esc(fk)+'</div>'+rO(v,fk)+'</div>'}else{const ok=v!=='***';h+='<div class="cfg-r"><div class="cfg-k">'+esc(k)+'</div><div class="cfg-v">'+(ok?'<input value="'+String(v).replace(/"/g,'&quot;')+'" onkeydown="if(event.key===\'Enter\')saveCfg(\''+fk+"',this.value)\" title=\"Press Enter to save\">":"<span style=\"color:var(--text-dim)\">***</span>")+'</div>'+(ok?'<button class="btn btn-sm" onclick="saveCfg(\''+fk+"',this.parentElement.querySelector('input').value)\">Save</button>":'')+'</div>'}}return h}ed.innerHTML=rO(cfg)}catch(e){document.getElementById('cfg-ed').innerHTML='<div style="color:var(--red)">'+esc(e.message)+'</div>'}}
+async function saveCfg(k,v){try{if((await api('/api/config',{method:'POST',body:{key:k,value:v}})).ok)toast('✓ '+k);else toast('Failed',false)}catch{toast('Error',false)}}
+/* LOGS */
+async function loadLogs(f){try{const r=await api('/api/audit?limit=100');let d=await r.json();if(f==='error')d=d.filter(e=>e.action==='error'||e.action==='warning');const lv=document.getElementById('lv');if(!d.length){lv.innerHTML='<div class="ll info">No entries.</div>';return}lv.innerHTML=d.map(l=>'<div class="ll '+(l.action==='error'?'error':l.action==='warning'?'warn':'info')+'">['+new Date(l.timestamp).toLocaleTimeString()+'] '+esc(l.actor)+' → '+esc(l.action)+(l.detail?' — '+esc(l.detail):'')+'</div>').join('');lv.scrollTop=lv.scrollHeight}catch{document.getElementById('lv').innerHTML='<div class="ll error">Error loading</div>'}}
+/* RESTART */
+async function doRestart(){if(!confirm('Restart? Active chats will be interrupted.'))return;try{await api('/api/restart',{method:'POST'});toast('Restarting...');setTimeout(()=>location.reload(),3000)}catch{toast('Failed',false)}}
+/* INIT */
+if(TK){refreshThreads();setInterval(refreshThreads,10000)}
 </script>
 </body>
 </html>

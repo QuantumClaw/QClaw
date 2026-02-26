@@ -118,6 +118,49 @@ export async function runOnboard() {
     }
   }
 
+  // ─── Step 2b: Discord (optional) ──────────────────────
+
+  const wantDiscord = await p.confirm({
+    message: 'Connect a Discord bot?',
+    initialValue: false,
+  });
+
+  let discordToken = null;
+  if (!p.isCancel(wantDiscord) && wantDiscord) {
+    p.note([
+      `1. Go to ${cyan}discord.com/developers/applications${reset}`,
+      `2. Create New Application → Bot → Reset Token → Copy`,
+      `3. Enable MESSAGE CONTENT intent in Bot settings`,
+      `4. Invite bot to your server with Messages + Read permissions`,
+    ].join('\n'), 'Discord setup');
+
+    let verified = false;
+    while (!verified) {
+      discordToken = await p.password({ message: 'Bot token:' });
+      if (p.isCancel(discordToken)) { discordToken = null; break; }
+
+      const s = p.spinner();
+      s.start('Checking...');
+      try {
+        const res = await fetch('https://discord.com/api/v10/users/@me', {
+          headers: { 'Authorization': `Bot ${discordToken}` },
+          signal: AbortSignal.timeout(10000),
+        });
+        const data = await res.json();
+        if (res.ok && data.username) {
+          s.stop(`${green}✓${reset} Bot: ${data.username}#${data.discriminator || '0'}`);
+          verified = true;
+        } else {
+          s.stop(`${yellow}✗${reset} Invalid token — try again`);
+          discordToken = null;
+        }
+      } catch {
+        s.stop(`${yellow}✗${reset} Can't reach Discord — try again`);
+        discordToken = null;
+      }
+    }
+  }
+
   // ─── Step 3: Embeddings for Knowledge Graph ──────────
   //
   // Cognee needs an embedding model to build the knowledge graph.
@@ -274,6 +317,13 @@ export async function runOnboard() {
       allowedUsers: []
     };
   }
+  if (discordToken) {
+    config.channels.discord = {
+      enabled: true,
+      allowedUsers: [],
+      allowedChannels: [], // empty = respond to @mentions everywhere
+    };
+  }
 
   // Dashboard config
   const { randomBytes } = await import('crypto');
@@ -295,6 +345,7 @@ export async function runOnboard() {
   await secrets.load();
   if (apiKey) secrets.set(`${provider}_api_key`, apiKey);
   if (telegramToken) secrets.set('telegram_bot_token', telegramToken);
+  if (discordToken) secrets.set('discord_bot_token', discordToken);
   if (tunnelToken) secrets.set('cloudflare_tunnel_token', tunnelToken);
   if (embeddingKey) secrets.set('embedding_api_key', embeddingKey);
 

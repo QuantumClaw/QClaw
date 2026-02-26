@@ -43,7 +43,15 @@ export class Heartbeat {
     this.heartbeatCostToday = 0;
     this._learnQuestionsToday = 0;
     this._lastLearnTime = 0;
+    this._channels = null; // set via wireChannels()
+    this._broadcast = null; // set via wireBroadcast()
   }
+
+  /** Wire channel manager for proactive push (called after channels start) */
+  wireChannels(channelManager) { this._channels = channelManager; }
+
+  /** Wire dashboard broadcast (called after dashboard starts) */
+  wireBroadcast(fn) { this._broadcast = fn; }
 
   async start() {
     this.running = true;
@@ -72,7 +80,105 @@ export class Heartbeat {
       log.info('Heartbeat: auto-learn enabled');
     }
 
+    // Weekly summary — every Sunday at 9am (or configurable)
+    if (heartbeatConfig.weeklySummary !== false) {
+      this._startWeeklySummary();
+    }
+
     log.debug('Heartbeat started');
+  }
+
+  _startWeeklySummary() {
+    // Check every hour if it's Sunday morning
+    const timer = setInterval(async () => {
+      if (!this.running) return;
+      const now = new Date();
+      const hour = now.getHours();
+      const day = now.getDay(); // 0 = Sunday
+      if (day !== 0 || hour !== 9) return;
+
+      // Only send once per day
+      const lastSummary = this.memory?.getContext?.('weekly_summary_last');
+      const today = now.toISOString().slice(0, 10);
+      if (lastSummary === today) return;
+
+      try {
+        const agent = this.agents.primary();
+        if (!agent) return;
+
+        const result = await agent.process(
+          '[SYSTEM] Generate a brief weekly summary for the owner. Include: messages processed this week, key topics discussed, any pending tasks or follow-ups, and a motivational note. Keep it under 200 words.',
+          { source: 'weekly-summary' }
+        );
+        this.heartbeatCostToday += result.cost || 0;
+
+        if (result.content) {
+          await this.pushToUser(`📊 **Weekly Summary**\n\n${result.content}`, { source: 'weekly-summary' });
+        }
+
+        this.memory?.setContext?.('weekly_summary_last', today);
+        log.info('Weekly summary sent');
+      } catch (err) {
+        log.debug(`Weekly summary failed: ${err.message}`);
+      }
+    }, 60 * 60 * 1000); // check hourly
+    this.timers.push(timer);
+  }
+
+  /**
+   * Push a message to the user across all active channels + dashboard.
+   * This is the core proactive messaging capability.
+   */
+  async pushToUser(message, options = {}) {
+    const agent = this.agents.primary();
+    const agentName = agent?.name || 'system';
+    let sent = false;
+
+    // Push to dashboard via WebSocket
+    if (this._broadcast) {
+      this._broadcast({
+        type: 'proactive_message',
+        content: message,
+        agent: agentName,
+        source: options.source || 'heartbeat',
+        timestamp: Date.now(),
+      });
+      sent = true;
+    }
+
+    // Push to all active channels
+    if (this._channels?.channels) {
+      for (const channel of this._channels.channels) {
+        const channelName = channel.channelConfig?.channelName;
+        const allowedUsers = channel.channelConfig?.allowedUsers || [];
+
+        for (const userId of allowedUsers) {
+          try {
+            if (channelName === 'telegram' && channel.bot) {
+              await channel.bot.api.sendMessage(userId, message);
+              sent = true;
+            } else if (channelName === 'discord' && channel.client) {
+              const user = await channel.client.users.fetch(userId).catch(() => null);
+              if (user) {
+                const dm = await user.createDM().catch(() => null);
+                if (dm) { await dm.send(message); sent = true; }
+              }
+            } else if (channelName === 'whatsapp' && channel.client) {
+              await channel.client.sendMessage(userId, message);
+              sent = true;
+            }
+          } catch (err) {
+            log.debug(`Push to ${channelName}/${userId} failed: ${err.message}`);
+          }
+        }
+      }
+    }
+
+    if (!sent) {
+      log.debug(`Proactive message queued (no active channels): ${message.slice(0, 60)}`);
+    }
+
+    return sent;
   }
 
   async stop() {
@@ -108,6 +214,12 @@ export class Heartbeat {
           const agent = this.agents.get(task.agent) || this.agents.primary();
           const result = await agent.process(task.prompt, { source: 'heartbeat' });
           this.heartbeatCostToday += result.cost || 0;
+
+          // Push result to user if task is flagged as notify
+          if (task.notify !== false && result.content) {
+            const prefix = task.name ? `📋 ${task.name}:\n` : '📋 Scheduled update:\n';
+            await this.pushToUser(prefix + result.content, { source: 'scheduled' });
+          }
 
           log.agent(agent.name, `Heartbeat: ${task.name || task.schedule} (£${(result.cost || 0).toFixed(4)})`);
 
@@ -295,29 +407,12 @@ export class Heartbeat {
       this.memory.setContext('autolearn_asked', asked);
     }
 
-    // Send the question to the user via delivery queue (picked up by channels)
-    const deliveryMessage = {
-      type: 'autolearn',
-      question,
-      timestamp: Date.now(),
-      agent: agent.name,
-    };
+    // Push question to user via active channels
+    await this.pushToUser(`💡 Quick question: ${question}`);
 
-    // Store in memory as a system note (not as conversation — avoids context bloat)
+    // Store in memory as a system note
     this.memory.setContext('autolearn_last_question', question);
     this.memory.setContext('autolearn_last_time', Date.now());
-
-    // Write to delivery queue for channels to pick up
-    try {
-      const { writeFileSync, existsSync, mkdirSync } = await import('fs');
-      const { join } = await import('path');
-      const queueDir = join(this.config._dir, 'workspace', 'delivery-queue');
-      if (!existsSync(queueDir)) mkdirSync(queueDir, { recursive: true });
-      const filename = `autolearn_${Date.now()}.json`;
-      writeFileSync(join(queueDir, filename), JSON.stringify(deliveryMessage));
-    } catch (err) {
-      log.debug(`Auto-learn delivery write failed: ${err.message}`);
-    }
 
     this._learnQuestionsToday++;
     this._lastLearnTime = Date.now();

@@ -19,6 +19,7 @@ import { SkillLoader } from './skills/loader.js';
 import { ChannelManager } from './channels/manager.js';
 import { DashboardServer } from './dashboard/server.js';
 import { Heartbeat } from './core/heartbeat.js';
+import { VoiceEngine } from './core/voice.js';
 import { ToolRegistry } from './tools/registry.js';
 import { ToolExecutor } from './tools/executor.js';
 import { getDb, closeDb } from './core/database.js';
@@ -295,6 +296,7 @@ class QuantumClaw {
         completionCache: this.completionCache,
         deliveryQueue: this.deliveryQueue,
         approvals: this.approvals,
+        voice: new VoiceEngine(this.credentials),
       });
       await this.agents.loadAll();
 
@@ -336,6 +338,14 @@ class QuantumClaw {
         // Wire up dashboard broadcast to channels so Telegram messages appear in dashboard
         if (this.channels) {
           this.channels.setBroadcast((data) => this.dashboard.broadcast(data));
+        }
+        // Wire canvas tools to dashboard broadcast
+        if (this.tools) {
+          this.tools.setBroadcast((data) => this.dashboard.broadcast(data));
+        }
+        // Wire trust kernel to tools for scope enforcement
+        if (this.tools && this.trustKernel) {
+          this.tools.setTrustKernel(this.trustKernel);
         }
 
         // If we generated a new token, save it to config for `qclaw dashboard` command
@@ -403,6 +413,11 @@ class QuantumClaw {
         }
       }
       this.heartbeat = new Heartbeat(this.config, this.agents, this.memory, this.audit);
+
+      // Wire proactive push to channels and dashboard
+      if (this.channels) this.heartbeat.wireChannels(this.channels);
+      if (this.dashboard) this.heartbeat.wireBroadcast((data) => this.dashboard.broadcast(data));
+
       await this.heartbeat.start();
     } catch (err) {
       log.warn(`Heartbeat failed: ${err.message} — agent works without it`);

@@ -288,6 +288,52 @@ export class MemoryManager {
    *   RAG_COMPLETION    — LLM answer from retrieved chunks
    *   FEELING_LUCKY     — auto-select search type
    */
+  /**
+   * Get knowledge graph as nodes + edges for visualization.
+   */
+  async getGraph() {
+    const nodes = [];
+    const edges = [];
+    const nodeMap = new Map();
+
+    const addNode = (id, label, type) => {
+      if (!nodeMap.has(id)) {
+        nodeMap.set(id, nodes.length);
+        nodes.push({ id, label: label.slice(0, 60), type });
+      }
+      return nodeMap.get(id);
+    };
+
+    // Pull knowledge entries
+    if (this.knowledge) {
+      for (const type of ['semantic', 'episodic', 'procedural']) {
+        const entries = this.knowledge.getByType(type, 100);
+        for (const entry of entries) {
+          const nodeId = `k-${entry.id || entries.indexOf(entry)}`;
+          addNode(nodeId, entry.content || entry.text || '', type);
+
+          // Extract entity references and create edges
+          const text = (entry.content || entry.text || '').toLowerCase();
+          for (const other of entries) {
+            if (other === entry) continue;
+            const otherId = `k-${other.id || entries.indexOf(other)}`;
+            const otherText = (other.content || other.text || '').toLowerCase();
+            // Simple co-reference: if entries share significant words
+            const words = text.split(/\s+/).filter(w => w.length > 4);
+            for (const word of words) {
+              if (otherText.includes(word)) {
+                edges.push({ source: nodeId, target: otherId, label: word });
+                break; // one edge per pair
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return { nodes, edges };
+  }
+
   async graphQuery(query) {
     // Try Cognee first (remote knowledge graph)
     if (this.cogneeConnected) {
@@ -517,7 +563,61 @@ export class MemoryManager {
       }
     } catch {
       // Non-fatal — settings push failed, env vars are the fallback
-      log.debug('Cognee settings API not available — using env vars');
+      log.debug('Cognee settings API not available — trying Docker restart');
+      await this._restartDockerCogneeWithEnv(settings);
+    }
+  }
+
+  /**
+   * If Cognee runs in Docker, restart the container with correct env vars.
+   * This is a fallback when the /api/v1/settings endpoint isn't available.
+   */
+  async _restartDockerCogneeWithEnv(settings) {
+    try {
+      const { execSync } = await import('child_process');
+      // Check if quantumclaw-cognee container exists
+      const ps = execSync('docker ps -a --format "{{.Names}}" 2>/dev/null', { encoding: 'utf-8' });
+      if (!ps.includes('quantumclaw-cognee')) return;
+
+      // Build env flags
+      const envMap = {
+        llm_api_key: 'LLM_API_KEY', llm_provider: 'LLM_PROVIDER', llm_model: 'LLM_MODEL',
+        embedding_api_key: 'EMBEDDING_API_KEY', embedding_provider: 'EMBEDDING_PROVIDER',
+        embedding_model: 'EMBEDDING_MODEL', embedding_dimensions: 'EMBEDDING_DIMENSIONS',
+        embedding_endpoint: 'EMBEDDING_ENDPOINT',
+      };
+      const envFlags = Object.entries(settings)
+        .filter(([k, v]) => envMap[k] && v)
+        .map(([k, v]) => `-e ${envMap[k]}="${String(v).replace(/"/g, '\\"')}"`)
+        .join(' ');
+
+      if (!envFlags) return;
+
+      log.debug('Restarting Docker Cognee with env vars...');
+      execSync('docker stop quantumclaw-cognee 2>/dev/null || true', { encoding: 'utf-8' });
+      execSync('docker rm quantumclaw-cognee 2>/dev/null || true', { encoding: 'utf-8' });
+      execSync(
+        `docker run -d --name quantumclaw-cognee --restart unless-stopped ` +
+        `-p 8000:8000 -e VECTOR_DB_PROVIDER=lancedb -e ENABLE_BACKEND_ACCESS_CONTROL=false ` +
+        `${envFlags} ` +
+        `-v quantumclaw-cognee-data:/app/cognee/.cognee_system ` +
+        `cognee/cognee:main`,
+        { encoding: 'utf-8' }
+      );
+      log.info('Docker Cognee restarted with LLM/embedding config');
+
+      // Wait for it to come back up
+      for (let i = 0; i < 15; i++) {
+        try {
+          const res = await fetch(`${this.cogneeUrl}/health`, { signal: AbortSignal.timeout(2000) });
+          if (res.ok) { log.debug('Docker Cognee healthy after restart'); return; }
+        } catch { /* waiting */ }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      log.warn('Docker Cognee restart: health check timed out (may still be starting)');
+    } catch (err) {
+      // Docker not available or not a Docker install — that's fine
+      log.debug(`Docker Cognee restart skipped: ${err.message}`);
     }
   }
 

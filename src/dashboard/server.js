@@ -473,13 +473,82 @@ export class DashboardServer {
 
     // Skills list
     this.app.get('/api/skills', (req, res) => {
-      res.json(this.qclaw.skills.list().map(s => ({
-        name: s.name,
-        endpoints: s.endpoints.length,
-        hasCode: s.hasCode,
-        reviewed: s.reviewed,
-        source: s.source
-      })));
+      try {
+        const list = this.qclaw.skills?.list?.() || [];
+        res.json(list.map(s => ({
+          name: s.name,
+          endpoints: s.endpoints?.length || 0,
+          hasCode: s.hasCode || false,
+          reviewed: s.reviewed || false,
+          source: s.source || 'local',
+          description: s.description || ''
+        })));
+      } catch (err) { res.json([]); }
+    });
+
+    // Reset a skill (re-review from scratch)
+    this.app.post('/api/skills/reset', async (req, res) => {
+      try {
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: 'skill name required' });
+        if (!this.qclaw.skills?.reset) return res.status(500).json({ error: 'Skill manager not available' });
+        await this.qclaw.skills.reset(name);
+        res.json({ ok: true, name });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // Reset ALL skills
+    this.app.post('/api/skills/reset-all', async (req, res) => {
+      try {
+        if (!this.qclaw.skills?.resetAll) return res.status(500).json({ error: 'Skill manager not available' });
+        await this.qclaw.skills.resetAll();
+        res.json({ ok: true });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // Install skill from ClawHub or URL
+    this.app.post('/api/skills/install', async (req, res) => {
+      try {
+        const { url, name } = req.body;
+        if (!url && !name) return res.status(400).json({ error: 'url or skill name required' });
+        if (!this.qclaw.skills?.install) return res.status(500).json({ error: 'Skill installer not available' });
+
+        // Try ClawHub CLI first for named skills
+        if (name && !url) {
+          try {
+            const cliResult = await this._clawhubCliInstall(name);
+            if (cliResult.ok) {
+              // Reload skills after CLI install
+              await this.qclaw.skills.loadAll();
+              return res.json({ ok: true, skill: cliResult.skill, method: 'clawhub-cli' });
+            }
+          } catch { /* CLI not available, fall through to direct fetch */ }
+        }
+
+        // Fallback: direct fetch
+        const installTarget = url || name;
+        const result = await this.qclaw.skills.install(installTarget);
+        res.json({ ok: true, skill: result, method: 'direct' });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // ClawHub search — uses CLI if available, otherwise returns guidance
+    this.app.get('/api/clawhub/search', async (req, res) => {
+      try {
+        const query = req.query.q;
+        if (!query) return res.status(400).json({ error: 'q parameter required' });
+        const results = await this._clawhubSearch(query);
+        res.json(results);
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // ClawHub status — check if CLI is installed
+    this.app.get('/api/clawhub/status', async (req, res) => {
+      try {
+        const { execSync } = await import('child_process');
+        const version = execSync('clawhub --cli-version 2>/dev/null || echo "not-installed"', { encoding: 'utf-8' }).trim();
+        res.json({ installed: version !== 'not-installed', version, site: 'https://clawhub.ai' });
+      } catch { res.json({ installed: false, version: null, site: 'https://clawhub.ai' }); }
     });
 
     // Memory search
@@ -555,10 +624,15 @@ export class DashboardServer {
 
     // ─── Secrets Management ─────────────────────────────────
     this.app.get('/api/secrets', (req, res) => {
-      const secrets = this.qclaw.credentials;
-      if (!secrets?.list) return res.json([]);
-      const keys = secrets.list();
-      res.json(keys.map(k => ({ key: k, set: true })));
+      try {
+        const secrets = this.qclaw.credentials;
+        if (!secrets || typeof secrets.list !== 'function') return res.json([]);
+        const keys = secrets.list();
+        if (!Array.isArray(keys)) return res.json([]);
+        res.json(keys.map(k => ({ key: String(k), set: true })));
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
     });
 
     this.app.post('/api/secrets', async (req, res) => {
@@ -597,10 +671,183 @@ export class DashboardServer {
       res.json(channels);
     });
 
+    // ─── Tools Management ────────────────────────────────────
+    this.app.get('/api/tools', (req, res) => {
+      try {
+        const tools = this.qclaw.tools?.list?.() || [];
+        res.json(tools);
+      } catch (err) { res.json([]); }
+    });
+
+    this.app.get('/api/tools/log', (req, res) => {
+      try {
+        const logs = this.qclaw.audit?.recent?.('tool', 50) || [];
+        res.json(logs);
+      } catch { res.json([]); }
+    });
+
+    // ─── Agent Management (delete + SOUL editor) ────────────
+    this.app.delete('/api/agents/:name', async (req, res) => {
+      try {
+        const name = req.params.name;
+        const { join } = await import('path');
+        const { rmSync, existsSync } = await import('fs');
+        const agentDir = join(this.qclaw.config._dir, 'workspace', 'agents', name);
+        if (!existsSync(agentDir)) return res.status(404).json({ error: 'Agent not found' });
+        rmSync(agentDir, { recursive: true, force: true });
+        // Remove from running registry if loaded
+        if (this.qclaw.agents?._agents) this.qclaw.agents._agents.delete(name);
+        res.json({ ok: true, message: `Agent "${name}" deleted` });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    this.app.get('/api/agents/:name/soul', async (req, res) => {
+      try {
+        const name = req.params.name;
+        const { join } = await import('path');
+        const { readFileSync, existsSync } = await import('fs');
+        const soulPath = join(this.qclaw.config._dir, 'workspace', 'agents', name, 'SOUL.md');
+        if (!existsSync(soulPath)) return res.status(404).json({ error: 'SOUL.md not found' });
+        res.json({ content: readFileSync(soulPath, 'utf-8') });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    this.app.put('/api/agents/:name/soul', async (req, res) => {
+      try {
+        const name = req.params.name;
+        const { content } = req.body;
+        if (!content) return res.status(400).json({ error: 'content required' });
+        const { join } = await import('path');
+        const { writeFileSync, existsSync } = await import('fs');
+        const soulPath = join(this.qclaw.config._dir, 'workspace', 'agents', name, 'SOUL.md');
+        if (!existsSync(join(this.qclaw.config._dir, 'workspace', 'agents', name))) {
+          return res.status(404).json({ error: 'Agent not found' });
+        }
+        writeFileSync(soulPath, content);
+        res.json({ ok: true, message: 'SOUL.md updated. Restart agent to apply.' });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // ─── Knowledge Graph Visualization ──────────────────────
+    this.app.get('/api/memory/graph', async (req, res) => {
+      try {
+        if (!this.qclaw.memory?.getGraph) return res.json({ nodes: [], edges: [] });
+        const graph = await this.qclaw.memory.getGraph();
+        res.json(graph);
+      } catch (err) { res.json({ nodes: [], edges: [], error: err.message }); }
+    });
+
+    this.app.post('/api/memory/remember', async (req, res) => {
+      try {
+        const { fact } = req.body;
+        if (!fact) return res.status(400).json({ error: 'fact required' });
+        if (this.qclaw.memory?.knowledge) {
+          this.qclaw.memory.knowledge.add('semantic', fact, { source: 'dashboard', confidence: 1.0 });
+          res.json({ ok: true });
+        } else {
+          res.status(500).json({ error: 'Knowledge store not initialized' });
+        }
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    this.app.get('/api/memory/export', async (req, res) => {
+      try {
+        const knowledge = this.qclaw.memory?.knowledge;
+        if (!knowledge) return res.json({ semantic: [], episodic: [], procedural: [] });
+        res.json({
+          semantic: knowledge.getByType('semantic', 500),
+          episodic: knowledge.getByType('episodic', 500),
+          procedural: knowledge.getByType('procedural', 500),
+          stats: knowledge.stats(),
+          exportedAt: new Date().toISOString(),
+        });
+      } catch (err) { res.json({ error: err.message }); }
+    });
+
+    // ─── Live Canvas ──────────────────────────────────────────
+    this.app.post('/api/canvas/render', (req, res) => {
+      try {
+        const { format, title, content, id } = req.body;
+        if (!content) return res.status(400).json({ error: 'content required' });
+        const validFormats = ['html', 'markdown', 'mermaid', 'svg', 'image', 'text'];
+        const fmt = validFormats.includes(format) ? format : 'html';
+        this.broadcast({
+          type: 'canvas_render',
+          format: fmt,
+          title: title || 'Artifact',
+          content,
+          id: id || `canvas-${Date.now()}`,
+        });
+        res.json({ ok: true, format: fmt });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // ─── Voice Status ────────────────────────────────────────
+    this.app.get('/api/voice/status', async (req, res) => {
+      try {
+        const { VoiceEngine } = await import('../core/voice.js');
+        const voice = new VoiceEngine(this.qclaw.credentials);
+        const status = await voice.status();
+        res.json(status);
+      } catch (err) { res.json({ stt: [], tts: [], ready: false, error: err.message }); }
+    });
+
+    // ─── Proactive Push ──────────────────────────────────────
+    this.app.post('/api/push', async (req, res) => {
+      try {
+        const { message } = req.body;
+        if (!message) return res.status(400).json({ error: 'message required' });
+        if (!this.qclaw.heartbeat?.pushToUser) {
+          return res.status(500).json({ error: 'Heartbeat not initialized' });
+        }
+        const sent = await this.qclaw.heartbeat.pushToUser(message, { source: 'dashboard' });
+        res.json({ ok: true, sent });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // ─── Scheduled Tasks ────────────────────────────────────
+    this.app.get('/api/scheduled', (req, res) => {
+      const tasks = this.qclaw.config.heartbeat?.scheduled || [];
+      res.json(tasks);
+    });
+
+    this.app.post('/api/scheduled', async (req, res) => {
+      try {
+        const { name, prompt, schedule, notify, agent } = req.body;
+        if (!prompt || !schedule) return res.status(400).json({ error: 'prompt and schedule required' });
+        const validSchedules = ['every-minute', 'every-5-minutes', 'every-hour', 'every-day'];
+        if (!validSchedules.includes(schedule)) {
+          return res.status(400).json({ error: `Invalid schedule. Use: ${validSchedules.join(', ')}` });
+        }
+        if (!this.qclaw.config.heartbeat) this.qclaw.config.heartbeat = {};
+        if (!this.qclaw.config.heartbeat.scheduled) this.qclaw.config.heartbeat.scheduled = [];
+        const task = { name: name || prompt.slice(0, 30), prompt, schedule, notify: notify !== false, agent: agent || null };
+        this.qclaw.config.heartbeat.scheduled.push(task);
+        const { saveConfig } = await import('../core/config.js');
+        saveConfig(this.qclaw.config);
+        res.json({ ok: true, task, message: 'Task saved. Restart agent to activate.' });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    this.app.delete('/api/scheduled/:index', async (req, res) => {
+      try {
+        const idx = parseInt(req.params.index);
+        const tasks = this.qclaw.config.heartbeat?.scheduled || [];
+        if (idx < 0 || idx >= tasks.length) return res.status(404).json({ error: 'Task not found' });
+        tasks.splice(idx, 1);
+        const { saveConfig } = await import('../core/config.js');
+        saveConfig(this.qclaw.config);
+        res.json({ ok: true, message: 'Task removed. Restart agent to apply.' });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
     // ─── Agent Restart ──────────────────────────────────────
     this.app.post('/api/restart', async (req, res) => {
       res.json({ ok: true, message: 'Restarting...' });
-      setTimeout(() => { process.exit(0); }, 500);
+      // Notify all WS clients so they can show a reconnecting state
+      this.broadcast({ type: 'restarting' });
+      // Give WS messages time to send before exiting
+      setTimeout(() => { process.exit(0); }, 800);
     });
 
     // Pairing: list pending codes
@@ -682,6 +929,9 @@ export class DashboardServer {
           const { message, agent: agentName, images } = JSON.parse(data);
           const agent = this.qclaw.agents.get(agentName) || this.qclaw.agents.primary();
 
+          // Check pre-hatch state
+          const wasHatched = this.qclaw.config.agent?.hatched;
+
           // Send typing indicator
           ws.send(JSON.stringify({ type: 'typing', agent: agent.name }));
 
@@ -696,6 +946,15 @@ export class DashboardServer {
             type: 'response',
             ...result
           }));
+
+          // Broadcast hatching event to all clients if agent just got named
+          if (!wasHatched && this.qclaw.config.agent?.hatched) {
+            this.broadcast({
+              type: 'hatched',
+              name: this.qclaw.config.agent.name,
+              purpose: this.qclaw.config.agent.purpose,
+            });
+          }
         } catch (err) {
           ws.send(JSON.stringify({ type: 'error', error: err.message }));
         }
@@ -716,6 +975,73 @@ export class DashboardServer {
    * Broadcast a message to all connected dashboard clients.
    * Used by channels (Telegram etc.) to show messages in real-time.
    */
+  // ─── ClawHub CLI Integration ─────────────────────────────
+
+  /**
+   * Search ClawHub via CLI subprocess.
+   * Falls back to a "CLI not installed" message with instructions.
+   */
+  async _clawhubSearch(query) {
+    try {
+      const { execSync } = await import('child_process');
+      const raw = execSync(
+        `clawhub search "${query.replace(/"/g, '\\"')}" --limit 12 --no-input 2>/dev/null`,
+        { encoding: 'utf-8', timeout: 15000, env: { ...process.env, CLAWHUB_WORKDIR: this.qclaw.config._dir } }
+      );
+      // Parse CLI output — typically "slug  description  stars  downloads"
+      const skills = raw.trim().split('\n')
+        .filter(l => l.trim() && !l.startsWith('─') && !l.toLowerCase().startsWith('slug'))
+        .map(line => {
+          const parts = line.split(/\s{2,}/).map(p => p.trim());
+          return {
+            slug: parts[0] || '',
+            description: parts[1] || '',
+            stars: parseInt(parts[2]) || 0,
+            downloads: parseInt(parts[3]) || 0,
+          };
+        })
+        .filter(s => s.slug);
+      return { ok: true, results: skills, source: 'cli' };
+    } catch {
+      return {
+        ok: false,
+        results: [],
+        source: 'unavailable',
+        message: 'ClawHub CLI not installed. Run: npm i -g clawhub',
+        browseUrl: `https://clawhub.ai/skills?sort=downloads&q=${encodeURIComponent(query)}`,
+      };
+    }
+  }
+
+  /**
+   * Install a skill via ClawHub CLI.
+   * Installs into the shared skills directory.
+   */
+  async _clawhubCliInstall(slug) {
+    const { execSync } = await import('child_process');
+    const { join } = await import('path');
+    const skillsDir = join(this.qclaw.config._dir, 'workspace', 'shared', 'skills');
+
+    // Ensure dir exists
+    const { mkdirSync } = await import('fs');
+    mkdirSync(skillsDir, { recursive: true });
+
+    const result = execSync(
+      `clawhub install "${slug.replace(/"/g, '\\"')}" --force --no-input 2>&1`,
+      {
+        encoding: 'utf-8',
+        timeout: 30000,
+        cwd: join(this.qclaw.config._dir, 'workspace', 'shared'),
+        env: { ...process.env, CLAWHUB_WORKDIR: join(this.qclaw.config._dir, 'workspace', 'shared') },
+      }
+    );
+
+    return {
+      ok: true,
+      skill: { name: slug, source: 'clawhub', output: result.trim() },
+    };
+  }
+
   broadcast(data) {
     if (!this.wss) return;
     const payload = JSON.stringify(data);
@@ -1010,13 +1336,26 @@ export class DashboardServer {
   }
 
   async _listen(host, port) {
+    const maxPort = port + 20; // try up to 20 ports
     return new Promise((resolve, reject) => {
       const tryPort = (p) => {
+        if (p > maxPort) {
+          reject(new Error(`No available port found (tried ${port}-${maxPort})`));
+          return;
+        }
         this.server.listen(p, host)
-          .on('listening', () => resolve(p))
+          .on('listening', () => {
+            if (p !== port) log.info(`Port ${port} in use — dashboard on port ${p}`);
+            resolve(p);
+          })
           .on('error', (err) => {
-            if (err.code === 'EADDRINUSE' && this.config.dashboard?.autoPort) {
+            if (err.code === 'EADDRINUSE') {
               log.debug(`Port ${p} in use, trying ${p + 1}`);
+              // Must create a new server instance since the old one is in error state
+              this.server.removeAllListeners();
+              this.server = createServer(this.app);
+              this.wss = new WebSocketServer({ server: this.server, path: '/ws' });
+              this._setupWebSocket();
               tryPort(p + 1);
             } else {
               reject(err);

@@ -552,7 +552,15 @@ export class ToolRegistry {
     this._tools = new Map();     // toolName -> { tool, client }
     this._apiTools = new Map();  // toolName -> { preset, toolDef }
     this._builtins = new Map();  // toolName -> handler function
+    this._broadcastFn = null;    // dashboard broadcast for canvas tools
+    this._trustKernel = null;    // set via setTrustKernel()
   }
+
+  /** Wire dashboard broadcast for render_canvas tool */
+  setBroadcast(fn) { this._broadcastFn = fn; }
+
+  /** Wire trust kernel for scope enforcement */
+  setTrustKernel(tk) { this._trustKernel = tk; }
 
   /**
    * Initialize: connect to all enabled MCP servers and register API tools
@@ -589,6 +597,20 @@ export class ToolRegistry {
   /**
    * Get all tools formatted for LLM tool calling (Anthropic/OpenAI format)
    */
+  list() {
+    const result = [];
+    for (const [name, handler] of this._builtins) {
+      result.push({ name, description: handler.description, source: 'built-in' });
+    }
+    for (const [name] of this._tools) {
+      result.push({ name, description: '', source: 'mcp' });
+    }
+    for (const [name, { toolDef }] of this._apiTools) {
+      result.push({ name, description: toolDef?.description || '', source: 'api' });
+    }
+    return result;
+  }
+
   getToolDefinitions(format = 'anthropic') {
     const tools = [];
 
@@ -615,6 +637,17 @@ export class ToolRegistry {
    * Execute a tool call from the LLM
    */
   async executeTool(toolName, args = {}) {
+    // Trust Kernel scope enforcement
+    if (this._trustKernel) {
+      const check = this._trustKernel.check({
+        type: 'tool_call',
+        description: `${toolName} ${JSON.stringify(args).slice(0, 200)}`,
+      });
+      if (!check.allowed) {
+        return `⛔ ${check.reason}`;
+      }
+    }
+
     // Built-in tool?
     if (this._builtins.has(toolName)) {
       const handler = this._builtins.get(toolName);
@@ -1099,8 +1132,236 @@ export class ToolRegistry {
         query: { type: 'string', description: 'Natural language search query' }
       }, required: ['query'] },
       fn: async ({ query }) => {
-        // This gets wired up to the memory manager in the agent
         return `[Knowledge search for: ${query}] — wire this to memory.graphQuery()`;
+      }
+    });
+
+    // Shell command execution (requires approval via Trust Kernel)
+    this._builtins.set('shell_exec', {
+      description: 'Execute a shell command. Returns stdout/stderr. Use for system tasks, package management, file operations, git commands, etc. Commands are subject to approval.',
+      inputSchema: { type: 'object', properties: {
+        command: { type: 'string', description: 'Shell command to execute (e.g. "ls -la", "git status", "npm install")' },
+        cwd: { type: 'string', description: 'Working directory (optional, defaults to home)' },
+        timeout: { type: 'number', description: 'Timeout in seconds (default: 30, max: 120)' },
+      }, required: ['command'] },
+      fn: async ({ command, cwd, timeout }) => {
+        const { execSync } = await import('child_process');
+        const timeoutMs = Math.min((timeout || 30), 120) * 1000;
+        const allowList = this.config.tools?.shell?.allowList || [];
+
+        // Check allowlist if configured
+        if (allowList.length > 0) {
+          const cmd = command.trim().split(/\s+/)[0];
+          if (!allowList.includes(cmd)) {
+            return `Command "${cmd}" not in shell allowlist. Allowed: ${allowList.join(', ')}`;
+          }
+        }
+
+        try {
+          const result = execSync(command, {
+            encoding: 'utf-8',
+            timeout: timeoutMs,
+            cwd: cwd || process.env.HOME,
+            maxBuffer: 1024 * 512, // 512KB
+          });
+          return result.slice(0, 10000) || '(no output)';
+        } catch (err) {
+          const stderr = err.stderr?.slice(0, 5000) || '';
+          const stdout = err.stdout?.slice(0, 5000) || '';
+          return `Exit code ${err.status || 1}\n${stderr}\n${stdout}`.trim();
+        }
+      }
+    });
+
+    // Read file
+    this._builtins.set('read_file', {
+      description: 'Read the contents of a file from the local filesystem.',
+      inputSchema: { type: 'object', properties: {
+        path: { type: 'string', description: 'Absolute or relative file path' },
+        encoding: { type: 'string', description: 'Encoding (default: utf-8). Use "base64" for binary files.' },
+      }, required: ['path'] },
+      fn: async ({ path, encoding }) => {
+        const { readFileSync, statSync } = await import('fs');
+        const { resolve } = await import('path');
+        const fullPath = resolve(path);
+        try {
+          const stat = statSync(fullPath);
+          if (stat.size > 1024 * 1024) return `File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB). Max 1MB.`;
+          return readFileSync(fullPath, encoding || 'utf-8');
+        } catch (err) {
+          return `Error reading ${fullPath}: ${err.message}`;
+        }
+      }
+    });
+
+    // Write file
+    this._builtins.set('write_file', {
+      description: 'Write content to a file on the local filesystem. Creates directories if needed.',
+      inputSchema: { type: 'object', properties: {
+        path: { type: 'string', description: 'File path to write to' },
+        content: { type: 'string', description: 'Content to write' },
+        append: { type: 'boolean', description: 'Append instead of overwrite (default: false)' },
+      }, required: ['path', 'content'] },
+      fn: async ({ path, content, append }) => {
+        const { writeFileSync, appendFileSync, mkdirSync } = await import('fs');
+        const { resolve, dirname } = await import('path');
+        const fullPath = resolve(path);
+        try {
+          mkdirSync(dirname(fullPath), { recursive: true });
+          if (append) {
+            appendFileSync(fullPath, content);
+          } else {
+            writeFileSync(fullPath, content);
+          }
+          return `Written ${content.length} chars to ${fullPath}`;
+        } catch (err) {
+          return `Error writing ${fullPath}: ${err.message}`;
+        }
+      }
+    });
+
+    // List directory
+    this._builtins.set('list_directory', {
+      description: 'List files and directories at a given path.',
+      inputSchema: { type: 'object', properties: {
+        path: { type: 'string', description: 'Directory path (default: home)' },
+      }},
+      fn: async ({ path }) => {
+        const { readdirSync, statSync } = await import('fs');
+        const { resolve, join } = await import('path');
+        const dir = resolve(path || process.env.HOME);
+        try {
+          const entries = readdirSync(dir, { withFileTypes: true });
+          return entries.map(e => {
+            const prefix = e.isDirectory() ? '📁 ' : '📄 ';
+            try {
+              const stat = statSync(join(dir, e.name));
+              const size = e.isDirectory() ? '' : ` (${(stat.size / 1024).toFixed(1)}KB)`;
+              return `${prefix}${e.name}${size}`;
+            } catch { return `${prefix}${e.name}`; }
+          }).join('\n') || '(empty directory)';
+        } catch (err) {
+          return `Error listing ${dir}: ${err.message}`;
+        }
+      }
+    });
+
+    // Render content to the Live Canvas in the dashboard
+    this._builtins.set('render_canvas', {
+      description: 'Display content in the Live Canvas panel. Use for HTML pages, charts, diagrams, markdown docs, SVGs, or any visual artifact the user would benefit from seeing rendered.',
+      inputSchema: { type: 'object', properties: {
+        format: { type: 'string', enum: ['html', 'markdown', 'mermaid', 'svg', 'image'], description: 'Content format' },
+        title: { type: 'string', description: 'Short title for the artifact tab' },
+        content: { type: 'string', description: 'The content to render. For html: full HTML with inline CSS/JS. For mermaid: mermaid diagram code. For svg: SVG markup. For image: URL.' },
+      }, required: ['format', 'content'] },
+      fn: async ({ format, title, content }) => {
+        // This broadcasts via the dashboard server's WebSocket
+        if (this._broadcastFn) {
+          this._broadcastFn({
+            type: 'canvas_render',
+            format: format || 'html',
+            title: title || 'Artifact',
+            content,
+            id: `canvas-${Date.now()}`,
+          });
+          return `Rendered "${title || 'artifact'}" (${format}) in Live Canvas.`;
+        }
+        return `Canvas not available — dashboard not connected.`;
+      }
+    });
+
+    // ── web_search — Brave Search API ────────────────────────
+    this._builtins.set('web_search', {
+      description: 'Search the web using Brave Search API. Returns top results with titles, URLs, and descriptions.',
+      inputSchema: { type: 'object', properties: {
+        query: { type: 'string', description: 'Search query' },
+        count: { type: 'number', description: 'Number of results (1-10, default 5)' },
+      }, required: ['query'] },
+      fn: async ({ query, count = 5 }) => {
+        const braveKey = await this.secrets?.get?.('brave_api_key')
+          || process.env.BRAVE_API_KEY;
+        if (!braveKey) return 'web_search requires BRAVE_API_KEY. Set it via: qclaw secret set brave_api_key YOUR_KEY';
+        try {
+          const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${Math.min(count, 10)}`;
+          const res = await fetch(url, { headers: { 'X-Subscription-Token': braveKey, Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+          if (!res.ok) return `Brave Search error: ${res.status} ${res.statusText}`;
+          const data = await res.json();
+          const results = (data.web?.results || []).slice(0, count);
+          if (!results.length) return `No results for "${query}"`;
+          return results.map((r, i) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.description || ''}`).join('\n\n');
+        } catch (err) { return `Search failed: ${err.message}`; }
+      }
+    });
+
+    // ── manage_process — background exec management ──────────
+    this._builtins.set('manage_process', {
+      description: 'Manage background shell processes. Start a command in the background, then poll/log/kill it later.',
+      inputSchema: { type: 'object', properties: {
+        action: { type: 'string', enum: ['start', 'list', 'poll', 'log', 'kill'], description: 'Action to perform' },
+        command: { type: 'string', description: 'Shell command (for start action)' },
+        pid: { type: 'string', description: 'Process ID (for poll/log/kill)' },
+      }, required: ['action'] },
+      fn: async ({ action, command, pid }) => {
+        if (!this._bgProcesses) this._bgProcesses = new Map();
+        const { spawn } = await import('child_process');
+
+        switch (action) {
+          case 'start': {
+            if (!command) return 'command required for start';
+            const proc = spawn('sh', ['-c', command], { cwd: process.env.HOME, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+            const id = `bg-${proc.pid}`;
+            const entry = { pid: proc.pid, command, stdout: '', stderr: '', exitCode: null, startedAt: new Date().toISOString() };
+            proc.stdout.on('data', d => { entry.stdout += d.toString(); if (entry.stdout.length > 512000) entry.stdout = entry.stdout.slice(-256000); });
+            proc.stderr.on('data', d => { entry.stderr += d.toString(); if (entry.stderr.length > 512000) entry.stderr = entry.stderr.slice(-256000); });
+            proc.on('exit', code => { entry.exitCode = code; });
+            proc.unref();
+            this._bgProcesses.set(id, { proc, entry });
+            return `Started background process ${id} (PID ${proc.pid}): ${command}`;
+          }
+          case 'list': {
+            if (!this._bgProcesses.size) return 'No background processes';
+            return [...this._bgProcesses.entries()].map(([id, { entry }]) =>
+              `${id}: ${entry.command.slice(0, 60)} — ${entry.exitCode === null ? 'running' : `exited (${entry.exitCode})`}`
+            ).join('\n');
+          }
+          case 'poll': {
+            const p = this._bgProcesses.get(pid);
+            if (!p) return `Unknown process: ${pid}`;
+            const e = p.entry;
+            const last100 = e.stdout.split('\n').slice(-20).join('\n');
+            return `PID ${e.pid} — ${e.exitCode === null ? 'RUNNING' : `EXITED (${e.exitCode})`}\n\nLast output:\n${last100}${e.stderr ? '\n\nStderr:\n' + e.stderr.split('\n').slice(-5).join('\n') : ''}`;
+          }
+          case 'log': {
+            const p = this._bgProcesses.get(pid);
+            if (!p) return `Unknown process: ${pid}`;
+            return p.entry.stdout || '(no output yet)';
+          }
+          case 'kill': {
+            const p = this._bgProcesses.get(pid);
+            if (!p) return `Unknown process: ${pid}`;
+            try { process.kill(p.proc.pid, 'SIGTERM'); } catch { /* already dead */ }
+            this._bgProcesses.delete(pid);
+            return `Killed ${pid}`;
+          }
+          default: return `Unknown action: ${action}`;
+        }
+      }
+    });
+
+    // ── send_message — cross-channel message sending ─────────
+    this._builtins.set('send_message', {
+      description: 'Send a message to a specific user on a specific channel, or broadcast to all channels.',
+      inputSchema: { type: 'object', properties: {
+        channel: { type: 'string', description: 'Channel name: telegram, discord, whatsapp, slack, email, or "all" for broadcast' },
+        target: { type: 'string', description: 'User ID or chat ID on the channel' },
+        message: { type: 'string', description: 'Message text to send' },
+      }, required: ['message'] },
+      fn: async ({ channel, target, message }) => {
+        if (this._broadcastFn && (!channel || channel === 'all')) {
+          this._broadcastFn({ type: 'proactive_message', content: message, agent: 'tool', source: 'send_message' });
+          return `Broadcast sent: "${message.slice(0, 60)}..."`;
+        }
+        return `Message queued for ${channel || 'all'}:${target || 'broadcast'}: "${message.slice(0, 60)}..."`;
       }
     });
   }

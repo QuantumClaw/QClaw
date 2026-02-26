@@ -59,6 +59,10 @@ const SERVICE_MAP = {
   telegram_bot_token: { local: true },
   discord_bot_token:  { local: true },
   slack_bot_token:    { local: true },
+  slack_app_token:    { local: true },
+  email_address:      { local: true },
+  email_password:     { local: true },
+  brave_api_key:      { local: true },
 
   // Cognee (local - infrastructure)
   cognee_token:         { local: true },
