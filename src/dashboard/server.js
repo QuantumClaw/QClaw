@@ -111,13 +111,13 @@ export class DashboardServer {
     // Create HTTP server
     this.server = createServer(this.app);
 
-    // WebSocket for real-time chat
-    this.wss = new WebSocketServer({ server: this.server, path: '/ws' });
-    this._setupWebSocket();
-
-    // Find available port
+    // Find available port FIRST, then attach WebSocket
     const actualPort = await this._listen(host, port);
     this.actualPort = actualPort;
+
+    // WebSocket for real-time chat (attach AFTER port is bound)
+    this.wss = new WebSocketServer({ server: this.server, path: '/ws' });
+    this._setupWebSocket();
     const localHost = (host === '0.0.0.0' || host === '127.0.0.1') ? 'localhost' : host;
     const localUrl = `http://${localHost}:${actualPort}`;
 
@@ -1336,31 +1336,28 @@ export class DashboardServer {
   }
 
   async _listen(host, port) {
-    const maxPort = port + 20; // try up to 20 ports
+    const maxPort = port + 20;
     return new Promise((resolve, reject) => {
       const tryPort = (p) => {
         if (p > maxPort) {
           reject(new Error(`No available port found (tried ${port}-${maxPort})`));
           return;
         }
-        this.server.listen(p, host)
-          .on('listening', () => {
-            if (p !== port) log.info(`Port ${port} in use — dashboard on port ${p}`);
-            resolve(p);
-          })
-          .on('error', (err) => {
-            if (err.code === 'EADDRINUSE') {
-              log.debug(`Port ${p} in use, trying ${p + 1}`);
-              // Must create a new server instance since the old one is in error state
-              this.server.removeAllListeners();
-              this.server = createServer(this.app);
-              this.wss = new WebSocketServer({ server: this.server, path: '/ws' });
-              this._setupWebSocket();
-              tryPort(p + 1);
-            } else {
-              reject(err);
-            }
-          });
+        this.server.once('listening', () => {
+          if (p !== port) log.info(`Port ${port} in use — dashboard on port ${p}`);
+          resolve(p);
+        });
+        this.server.once('error', (err) => {
+          if (err.code === 'EADDRINUSE') {
+            log.debug(`Port ${p} in use, trying ${p + 1}`);
+            this.server.close();
+            this.server = createServer(this.app);
+            tryPort(p + 1);
+          } else {
+            reject(err);
+          }
+        });
+        this.server.listen(p, host);
       };
       tryPort(port);
     });
