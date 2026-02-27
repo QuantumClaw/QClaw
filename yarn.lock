@@ -3,9 +3,9 @@
 
 
 "@agexhq/core@^1.0.0":
-  version "1.0.0"
-  resolved "https://registry.npmjs.org/@agexhq/core/-/core-1.0.0.tgz"
-  integrity sha512-s+aFn02Ih1788lzgPnMPG4f05oDAJATr1YfvofOMbR4Jeu6Ak4uqOMPx/1HfnMUxS4xTiTDB+WzJKfByFgZc5g==
+  version "1.0.4"
+  resolved "https://registry.npmjs.org/@agexhq/core/-/core-1.0.4.tgz"
+  integrity sha512-3ubFp5hCTWehWslOVzkrh6z8lZl4kQo1rZV+zh3fFwEaLkrt3YthzsvdB2r9C/V2oC9tsTCeIRzmpSLTRLlthg==
   dependencies:
     "@noble/ciphers" "^0.5.0"
     "@noble/curves" "^1.3.0"
@@ -15,17 +15,25 @@
     uuid "^9.0.0"
     zod "^3.22.4"
 
-"@agexhq/sdk@^1.0.0":
-  version "1.0.0"
-  resolved "https://registry.npmjs.org/@agexhq/sdk/-/sdk-1.0.0.tgz"
-  integrity sha512-9LGlpkfkuLyOwKolWn5i/gYQbIIWgG/VzuSBSIlGmnC3JzKldMUimrB0cRJbTXdhGUO6DLz4Roi/sRJ0unoxHA==
+"@agexhq/hub-lite@1.0.1":
+  version "1.0.1"
+  resolved "https://registry.npmjs.org/@agexhq/hub-lite/-/hub-lite-1.0.1.tgz"
+  integrity sha512-t587AvDBJJoalKHc6pD0h4bZY+9BwqcYq53ya5mz7fd4tjABjEvIQLWyB6N10gQ50AYf5eRg6Ig3InJphylVNg==
+  dependencies:
+    "@agexhq/core" "^1.0.0"
+    "@agexhq/store" "^1.0.0"
+
+"@agexhq/sdk@1.0.1":
+  version "1.0.1"
+  resolved "https://registry.npmjs.org/@agexhq/sdk/-/sdk-1.0.1.tgz"
+  integrity sha512-qWS9/E0ytovSIWe5qDGig/yb3geqI6C/SoEEb0y63SwH9+K/6lwvqc0tpsQdOvkoALbNyzgzP1iWS0zEHgEaow==
   dependencies:
     "@agexhq/core" "^1.0.0"
 
-"@agexhq/store@^1.1.0":
-  version "1.1.0"
-  resolved "https://registry.npmjs.org/@agexhq/store/-/store-1.1.0.tgz"
-  integrity sha512-dbwQcNU0NwlW5NmJxFGd8KkjJZOJzSMQK21u9gEoopt4PZpdMUr66QyX455Q9HulEkH+hWOvPBCRiS7JErPMQg==
+"@agexhq/store@^1.0.0", "@agexhq/store@^1.1.1":
+  version "1.1.1"
+  resolved "https://registry.npmjs.org/@agexhq/store/-/store-1.1.1.tgz"
+  integrity sha512-cLakhKAbPWabeWt64mycGau0Nqypi0XUfzT9V+NRbWMohloR+VmKLc3uYaNBdhTrhByDWWRgifNNZ2IKK0RY5A==
   dependencies:
     "@agexhq/core" "^1.0.0"
     sql.js "^1.10.0"

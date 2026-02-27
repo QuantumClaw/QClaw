@@ -3,6 +3,29 @@
 All notable changes to QuantumClaw will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+## [1.5.5] - 2026-02-26
+
+### AGEX hub-lite race condition fix
+
+### Fixed
+- **Hub-lite health check race condition** — `startHubLite()` returned before `server.listen()` completed, so the immediate `/health` check got connection refused. Now retries up to 20 times (5s max) waiting for hub to respond before proceeding with AID generation.
+
+
+## [1.5.4] - 2026-02-26
+
+### AGEX identity system — actually working now
+
+### Fixed
+- **AGEX packages moved to required dependencies** — were `optionalDependencies`, meaning npm silently skipped them if any sub-dep failed. Agents never got AIDs because `@agexhq/sdk` wasn't installed. Now in `dependencies` so install fails loudly if something goes wrong.
+- **Default contact email** — was `agent@localhost` which Zod's `.email()` validator could reject. Now `agent@quantumclaw.dev`.
+- **AGEX failure logging** — was `log.debug()` (invisible by default). Now `log.warn()` so you actually see when AGEX isn't connecting.
+
+### Added
+- **`postinstall` verification** — after `npm install`, automatically checks all critical deps loaded, tests AGEX crypto by generating a throwaway AID.
+- **`install.sh`** — one-command installer. Checks Node ≥20, clones repo, installs deps, verifies AGEX. Works on Linux, WSL, macOS. `curl -fsSL https://install.quantumclaw.dev | bash` or `bash install.sh`.
+
+### Upstream (publish separately)
+- **`@agexhq/store@1.1.1`** — `detectBackend()` was a sync function using `await import()`. Syntax error that broke auto-detection of native vs sql.js backend. Now `async function detectBackend()`.
 
 ## [1.5.3] - 2026-02-26
 

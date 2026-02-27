@@ -166,7 +166,7 @@ export class CredentialManager {
       if (err.message?.includes('SDK not found') || err.message?.includes('Cannot find')) {
         log.debug('AGEX SDK not installed — using local secrets');
       } else {
-        log.debug(`AGEX Hub: ${err.message} — using local secrets`);
+        log.warn(`AGEX Hub: ${err.message} — using local secrets`); console.error(err.stack);
       }
       this._startReconnectLoop();
     }
@@ -384,7 +384,16 @@ export class CredentialManager {
         // Update hub URL to match what we started
         this._hubUrl = `http://localhost:${hubPort}`;
         log.success(`AGEX hub-lite started on port ${hubPort}`);
-        hubRunning = true;
+
+        // Wait for hub to actually be ready (server.listen is async)
+        for (let i = 0; i < 20; i++) {
+          try {
+            const check = await fetch(`${this._hubUrl}/health`, { signal: AbortSignal.timeout(500) });
+            if (check.ok) { hubRunning = true; break; }
+          } catch { /* not ready yet */ }
+          await new Promise(r => setTimeout(r, 250));
+        }
+        if (!hubRunning) throw new Error('hub-lite started but /health never responded');
       } catch (err) {
         throw new Error(`Hub not reachable and hub-lite failed to start: ${err.message}`);
       }
@@ -453,7 +462,7 @@ export class CredentialManager {
       agentType: agentName ? 'worker' : 'orchestrator',
       capabilities: agentName ? ['chat'] : ['chat', 'skills', 'memory', 'web'],
       organisation: this.config.agent?.owner || 'QuantumClaw User',
-      contact: this.config.agex?.contact || 'agent@localhost',
+      contact: this.config.agex?.contact || 'agent@quantumclaw.dev',
       jurisdiction: this.config.agex?.jurisdiction || 'GB'
     });
 

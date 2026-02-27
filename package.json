@@ -1,6 +1,6 @@
 {
   "name": "quantumclaw",
-  "version": "1.5.3",
+  "version": "1.5.5",
   "description": "The agent runtime with a knowledge graph for a brain.",
   "type": "module",
   "bin": {
@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node src/index.js",
+    "postinstall": "node src/cli/postinstall.js",
     "onboard": "node src/cli/index.js onboard",
     "update": "node src/cli/index.js update",
     "status": "node src/cli/index.js status",
@@ -41,6 +42,10 @@
     "url": "https://github.com/QuantumClaw/QClaw/issues"
   },
   "dependencies": {
+    "@agexhq/core": "^1.0.0",
+    "@agexhq/hub-lite": "1.0.1",
+    "@agexhq/sdk": "1.0.1",
+    "@agexhq/store": "^1.1.1",
     "@clack/prompts": "^0.9.1",
     "chalk": "^5.4.1",
     "express": "^4.21.0",
@@ -49,10 +54,6 @@
     "ws": "^8.18.0"
   },
   "optionalDependencies": {
-    "@agexhq/core": "^1.0.0",
-    "@agexhq/hub-lite": "^1.0.0",
-    "@agexhq/sdk": "^1.0.0",
-    "@agexhq/store": "^1.1.0",
     "better-sqlite3": "^11.0.0"
   },
   "devDependencies": {

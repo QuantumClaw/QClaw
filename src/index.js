@@ -98,10 +98,11 @@ class QuantumClaw {
         log.success(`AGEX Hub connected (AID: ${status.aidId?.slice(0, 8)}..., Tier ${status.trustTier})`);
         this.audit.log('system', 'agex_connected', `Hub: ${status.hubUrl}`);
       } else {
-        log.debug('AGEX Hub not available — using local secrets');
+        log.warn('AGEX Hub not available — agents will run without cryptographic identity');
+        log.debug('Run: node -e "import(\'@agexhq/sdk\').then(() => console.log(\'OK\'))"  to test');
       }
     } catch (err) {
-      log.debug(`AGEX: ${err.message} — using local secrets`);
+      log.warn(`AGEX: ${err.message} — falling back to local secrets`);
       // CredentialManager wraps SecretStore, so fall back to raw secrets
       this.credentials = this.secrets;
     }
