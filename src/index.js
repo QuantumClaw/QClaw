@@ -26,6 +26,9 @@ import { getDb, closeDb } from './core/database.js';
 import { DeliveryQueue } from './core/delivery-queue.js';
 import { CompletionCache } from './core/completion-cache.js';
 import { ExecApprovals } from './security/approvals.js';
+import { ApprovalGate } from './security/approval-gate.js';
+import { RateLimiter } from './security/rate-limiter.js';
+import { ContentQueue } from './security/content-queue.js';
 import { banner } from './cli/brand.js';
 import { log } from './core/logger.js';
 import { writeFileSync, unlinkSync } from 'fs';
@@ -266,6 +269,15 @@ class QuantumClaw {
           return `Failed to spawn agent: ${err.message}`;
         }
       });
+
+      // AGEX Security Stack
+      const approvalGate = new ApprovalGate('charlie', join(this.config._dir, 'workspace'));
+      const rateLimiter = new RateLimiter('charlie', join(this.config._dir, 'workspace'), {
+        stripe: 100,
+        ghl: 200,
+        'n8n-router': 50
+      });
+      const contentQueue = new ContentQueue('charlie', join(this.config._dir, 'workspace'));
 
       this.toolExecutor = new ToolExecutor(this.router, this.tools, {
         requireApproval: this.config.tools?.requireApproval || ['shell', 'file_write'],
