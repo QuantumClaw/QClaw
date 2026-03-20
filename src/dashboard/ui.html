@@ -11,6 +11,8 @@
     *{margin:0;padding:0;box-sizing:border-box}
     body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;display:flex;height:100vh;overflow:hidden;font-size:14px}
     ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+    /* Sidebar */
     .sidebar{width:var(--sidebar-w);background:var(--bg-1);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;z-index:20}
     .sidebar-logo{padding:14px 0;text-align:center;border-bottom:1px solid var(--border);font-size:1.3rem;cursor:default}
     .nav-item{display:flex;align-items:center;justify-content:center;padding:12px 0;cursor:pointer;color:var(--text-dim);transition:all .15s;position:relative;font-size:1.1rem}
@@ -23,14 +25,22 @@
     .nav-bottom{margin-top:auto}
     .dot-sm{width:7px;height:7px;border-radius:50%;position:absolute;bottom:8px;right:14px}
     .dot-sm.on{background:var(--green);box-shadow:0 0 4px var(--green)}.dot-sm.off{background:var(--red)}
+
+    /* Main layout */
     .main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
     .topbar{height:48px;background:var(--bg-1);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px;flex-shrink:0}
     .topbar-title{font-weight:600;font-size:.9rem}
     .topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+
+    /* Badges */
     .badge{font-size:.65rem;padding:2px 8px;border-radius:10px;font-weight:500}
     .badge-green{background:var(--green-bg);color:var(--green)}.badge-red{background:var(--red-bg);color:var(--red)}.badge-yellow{background:var(--yellow-bg);color:var(--yellow)}.badge-accent{background:var(--accent-bg);color:var(--accent-l)}.badge-blue{background:var(--blue-bg);color:var(--blue)}
+
+    /* Pages */
     .page{display:none;flex:1;overflow:hidden}.page.active{display:flex;flex-direction:column}
     .page-scroll{flex:1;overflow-y:auto;padding:20px}
+
+    /* Section / Cards / Tables */
     .section-title{font-size:.95rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
     .section-sub{font-size:.75rem;color:var(--text-dim);margin-bottom:16px}
     .section-actions{margin-left:auto;display:flex;gap:6px}
@@ -45,6 +55,8 @@
     th{text-align:left;padding:8px 12px;color:var(--text-dim);font-weight:500;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border)}
     td{padding:8px 12px;border-bottom:1px solid var(--border)}
     tr:hover td{background:var(--bg-hover)}
+
+    /* Buttons & Inputs */
     .btn{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg-3);color:var(--text-dim);cursor:pointer;font-family:Outfit;font-size:.78rem;transition:all .15s;font-weight:500}
     .btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
     .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}.btn-primary:hover{background:var(--accent-l)}
@@ -53,7 +65,8 @@
     .input{width:100%;padding:8px 12px;background:var(--bg-2);border:1px solid var(--border);color:var(--text);border-radius:8px;outline:none;font-family:Outfit;font-size:.85rem}
     .input:focus{border-color:var(--accent)}
     .input-mono{font-family:'JetBrains Mono';font-size:.78rem}
-    /* Chat */
+
+    /* Chat layout */
     .chat-layout{display:flex;flex:1;overflow:hidden}
     .thread-list{width:240px;background:var(--bg-1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
     .thread-list-header{padding:12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
@@ -65,6 +78,8 @@
     .thread-item-meta{font-size:.7rem;color:var(--text-dim);display:flex;justify-content:space-between}
     .new-chat-btn{margin:8px;padding:8px;background:var(--accent-bg);border:1px solid #8b5cf644;border-radius:8px;color:var(--accent-l);cursor:pointer;text-align:center;font-size:.8rem;font-weight:500;transition:all .15s}
     .new-chat-btn:hover{background:var(--accent);color:#fff}
+
+    /* Chat pane */
     .chat-pane{flex:1;display:flex;flex-direction:column;overflow:hidden}
     .chat-messages{flex:1;overflow-y:auto;padding:16px}
     .msg{margin-bottom:12px;max-width:75%}.msg.user{margin-left:auto}
@@ -84,6 +99,8 @@
     .copy-btn{position:absolute;top:6px;right:6px;background:var(--bg-3);border:1px solid var(--border);color:var(--text-dim);padding:2px 8px;border-radius:4px;cursor:pointer;font-size:.65rem;font-family:Outfit;opacity:0;transition:opacity .15s}
     pre:hover .copy-btn{opacity:1}.copy-btn:hover{color:var(--text);background:var(--accent)}
     #typing{display:none;padding:0 16px 8px;color:var(--text-dim);font-size:.8rem;font-style:italic}
+
+    /* Chat input */
     .chat-input-area{border-top:1px solid var(--border);background:var(--bg-1);padding:8px 16px 12px}
     .image-preview{display:flex;gap:6px;flex-wrap:wrap;padding:0 0 8px}
     .image-preview-item{position:relative;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
@@ -98,10 +115,13 @@
     .drop-overlay{display:none;position:absolute;inset:0;background:var(--accent-bg);border:2px dashed var(--accent);border-radius:12px;z-index:10;align-items:center;justify-content:center;font-size:1.1rem;color:var(--accent-l);font-weight:500}
     .empty-chat{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--text-dim);gap:8px}
     .empty-chat span:first-child{font-size:2rem}
-    .pairing-banner{background:var(--yellow-bg);border:1px solid #eab30833;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:none}
+
+    /* Pairing banner */
+    .pairing-banner{background:var(--yellow-bg);border:1px solid #eab30833;border-radius:8px;padding:12px 16px;margin:12px 16px 0;display:none}
     .pairing-banner-title{font-size:.8rem;font-weight:600;color:var(--yellow);margin-bottom:6px}
     .pairing-item{display:flex;align-items:center;justify-content:space-between;padding:4px 0;font-size:.8rem}
     .pairing-item button{padding:4px 12px;background:var(--green);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:.75rem}
+
     /* Config */
     .config-section{margin-bottom:20px}
     .config-section-title{font-size:.82rem;font-weight:600;color:var(--accent-l);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
@@ -109,14 +129,17 @@
     .config-key{font-family:'JetBrains Mono';font-size:.75rem;color:var(--text-dim);min-width:160px;flex-shrink:0}
     .config-val{flex:1}.config-val input{width:100%;padding:5px 8px;background:var(--bg-2);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:'JetBrains Mono';font-size:.75rem;outline:none}
     .config-val input:focus{border-color:var(--accent)}
+
     /* Logs */
     .log-viewer{background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:12px;font-family:'JetBrains Mono';font-size:.72rem;overflow-y:auto;max-height:calc(100vh - 200px);line-height:1.6}
     .log-line{padding:1px 0}.log-line.error{color:var(--red)}.log-line.warn{color:var(--yellow)}.log-line.info{color:var(--text-dim)}
+
     /* Usage bars */
     .usage-bar-wrap{margin-bottom:12px}
     .usage-bar-label{display:flex;justify-content:space-between;font-size:.75rem;margin-bottom:4px}
     .usage-bar{height:6px;background:var(--bg-3);border-radius:3px;overflow:hidden}
     .usage-bar-fill{height:100%;border-radius:3px;transition:width .5s}
+
     /* Modal */
     .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
     .modal-bg.show{display:flex}
@@ -126,10 +149,13 @@
     .fg label{font-size:.75rem;color:var(--text-dim);margin-bottom:6px;display:block}
     .fg-help{font-size:.65rem;color:var(--text-xs);margin-top:4px}
     .modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+
     /* Toast */
     .toast{position:fixed;bottom:20px;right:20px;background:var(--bg-3);border:1px solid var(--border);padding:10px 16px;border-radius:8px;font-size:.82rem;z-index:200;display:none;animation:toastIn .2s}
     .toast.ok{border-color:var(--green);color:var(--green)}.toast.err{border-color:var(--red);color:var(--red)}
     @keyframes toastIn{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+    /* Responsive */
     @media(max-width:768px){.sidebar{width:48px}.thread-list{width:180px}.msg{max-width:90%}.cards{grid-template-columns:1fr 1fr}.config-key{min-width:120px}}
     @media(max-width:480px){.thread-list{display:none}.cards{grid-template-columns:1fr}}
   </style>
@@ -137,206 +163,712 @@
 <body>
 
   <!-- Sidebar -->
-  <nav class="sidebar" id="sidebar">
-    <div class="sidebar-logo">
-      <span>⚛</span>
-      <span>QClaw</span>
-    </div>
-
-    <div class="sidebar-group">
-      <div class="sidebar-group-label">Chat</div>
-      <div class="sidebar-item active" data-page="chat"><span class="icon">💬</span> Chat</div>
-    </div>
-
-    <div class="sidebar-group">
-      <div class="sidebar-group-label">Control</div>
-      <div class="sidebar-item" data-page="overview"><span class="icon">📊</span> Overview</div>
-      <div class="sidebar-item" data-page="channels"><span class="icon">📡</span> Channels</div>
-      <div class="sidebar-item" data-page="instances"><span class="icon">🖥️</span> Instances</div>
-      <div class="sidebar-item" data-page="sessions"><span class="icon">🔗</span> Sessions</div>
-      <div class="sidebar-item" data-page="usage"><span class="icon">📈</span> Usage</div>
-      <div class="sidebar-item" data-page="cron"><span class="icon">⏰</span> Cron Jobs</div>
-    </div>
-
-    <div class="sidebar-group">
-      <div class="sidebar-group-label">Agent</div>
-      <div class="sidebar-item" data-page="agents"><span class="icon">🤖</span> Agents</div>
-      <div class="sidebar-item" data-page="skills"><span class="icon">🔧</span> Skills</div>
-      <div class="sidebar-item" data-page="nodes"><span class="icon">🔌</span> Nodes</div>
-    </div>
-
-    <div class="sidebar-group">
-      <div class="sidebar-group-label">Settings</div>
-      <div class="sidebar-item" data-page="config"><span class="icon">⚙️</span> Config</div>
-      <div class="sidebar-item" data-page="debug"><span class="icon">🔍</span> Debug</div>
-      <div class="sidebar-item" data-page="logs"><span class="icon">📋</span> Logs</div>
-      <div class="sidebar-item" data-page="resources"><span class="icon">💾</span> Resources</div>
-      <div class="sidebar-item" data-page="docs"><span class="icon">📖</span> Docs</div>
-    </div>
-
-    <div class="sidebar-footer" id="sidebar-footer">
-      <span class="status-dot"></span> Connecting...
+  <nav class="sidebar">
+    <div class="sidebar-logo">⚛</div>
+    <div class="nav-item active" data-page="chat">💬<span class="tip">Chat</span></div>
+    <div class="nav-item" data-page="overview">📊<span class="tip">Overview</span></div>
+    <div class="nav-item" data-page="channels">📡<span class="tip">Channels</span></div>
+    <div class="nav-item" data-page="usage">📈<span class="tip">Usage & Costs</span></div>
+    <div class="nav-sep"></div>
+    <div class="nav-item" data-page="agents">🤖<span class="tip">Agents</span></div>
+    <div class="nav-item" data-page="skills">🔧<span class="tip">Skills</span></div>
+    <div class="nav-sep"></div>
+    <div class="nav-item" data-page="config">⚙️<span class="tip">Config</span></div>
+    <div class="nav-item" data-page="logs">📋<span class="tip">Logs</span></div>
+    <div class="nav-bottom">
+      <div class="nav-item" id="nav-status">
+        <span class="dot-sm off" id="status-dot"></span>
+        ●<span class="tip" id="status-tip">Connecting...</span>
+      </div>
     </div>
   </nav>
 
   <!-- Main -->
   <div class="main">
     <div class="topbar">
-      <button class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
-      <span class="topbar-title" id="page-title">Chat</span>
+      <span class="topbar-title" id="topbar-title">Chat</span>
       <div class="topbar-right">
-        <span class="topbar-badge badge-green" id="status-badge">●</span>
+        <span class="badge badge-accent" id="agent-badge">—</span>
+        <span class="badge badge-green" id="status-badge">●</span>
       </div>
     </div>
 
-    <div class="content">
-
-      <!-- CHAT PAGE -->
-      <div class="page active" id="page-chat">
-        <div class="pairing-bar" id="pairing-bar"><div id="pairing-list"></div></div>
-        <div class="chat-messages" id="messages"></div>
-        <div class="typing" id="typing">Thinking...</div>
-        <div class="chat-input">
-          <input type="text" id="chat-input" placeholder="Talk to your agent..." autofocus>
-          <button id="chat-send">Send</button>
+    <!-- ═══ CHAT ═══ -->
+    <div class="page active" id="page-chat">
+      <div class="chat-layout">
+        <div class="thread-list">
+          <div class="thread-list-header">
+            <select id="thread-channel">
+              <option value="">All channels</option>
+              <option value="dashboard">Dashboard</option>
+              <option value="telegram">Telegram</option>
+            </select>
+          </div>
+          <div class="new-chat-btn" id="new-chat-btn">+ New chat</div>
+          <div class="thread-items" id="thread-items"></div>
+        </div>
+        <div class="chat-pane">
+          <div class="pairing-banner" id="pairing-banner">
+            <div class="pairing-banner-title">Pending pairings</div>
+            <div id="pairing-list"></div>
+          </div>
+          <div class="chat-messages" id="messages">
+            <div class="empty-chat" id="empty-chat">
+              <span>⚛</span>
+              <span>Send a message to begin</span>
+            </div>
+          </div>
+          <div id="typing">Thinking...</div>
+          <div class="chat-input-area">
+            <div class="image-preview" id="image-preview"></div>
+            <div class="chat-input-row">
+              <input type="file" id="image-input" accept="image/*" multiple hidden>
+              <button class="chat-btn" id="attach-btn" title="Attach image">📎</button>
+              <textarea id="chat-input" rows="1" placeholder="Talk to your agent..."></textarea>
+              <button class="chat-btn send" id="send-btn">Send</button>
+            </div>
+          </div>
+          <div class="drop-overlay" id="drop-overlay">Drop images here</div>
         </div>
       </div>
+    </div>
 
-      <!-- OVERVIEW PAGE -->
-      <div class="page" id="page-overview">
-        <div class="card-grid" id="overview-cards"></div>
-      </div>
-
-      <!-- CHANNELS PAGE -->
-      <div class="page" id="page-channels">
-        <div style="overflow:auto;padding:0">
-          <table class="data-table" id="channels-table">
-            <thead><tr><th>Channel</th><th>Status</th><th>Users</th><th>Messages</th></tr></thead>
-            <tbody></tbody>
+    <!-- ═══ OVERVIEW ═══ -->
+    <div class="page" id="page-overview">
+      <div class="page-scroll">
+        <div class="section-title">System Overview</div>
+        <div class="cards" id="overview-cards"></div>
+        <div class="section-title">Recent Activity</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Action</th><th>Agent</th><th>Detail</th></tr></thead>
+            <tbody id="overview-audit"></tbody>
           </table>
         </div>
       </div>
+    </div>
 
-      <!-- SESSIONS PAGE -->
-      <div class="page" id="page-sessions">
-        <div style="overflow:auto;padding:0">
-          <table class="data-table" id="sessions-table">
-            <thead><tr><th>Session</th><th>Channel</th><th>Age</th><th>Messages</th></tr></thead>
-            <tbody></tbody>
+    <!-- ═══ CHANNELS ═══ -->
+    <div class="page" id="page-channels">
+      <div class="page-scroll">
+        <div class="section-title">Connected Channels</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Channel</th><th>Status</th><th>Bot</th><th>Paired Users</th><th>Pending</th></tr></thead>
+            <tbody id="channels-body"></tbody>
           </table>
         </div>
       </div>
+    </div>
 
-      <!-- INSTANCES PAGE -->
-      <div class="page" id="page-instances">
-        <div class="card-grid" id="instances-cards"></div>
-      </div>
-
-      <!-- CRON JOBS PAGE -->
-      <div class="page" id="page-cron">
-        <div style="overflow:auto;padding:0">
-          <table class="data-table" id="cron-table">
-            <thead><tr><th>Job</th><th>Schedule</th><th>Last Run</th><th>Status</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- USAGE PAGE -->
-      <div class="page" id="page-usage">
-        <div style="margin-bottom:1.5rem; display:flex; justify-content:space-between; align-items:center;">
-          <h2 style="font-size:1.2rem; font-weight:600;">Usage & Costs</h2>
-          <div style="display:flex; gap:0.8rem; align-items:center;">
-            <label style="font-size:0.85rem; color:var(--text-dim);">Currency:</label>
-            <select id="currency-selector" onchange="changeCurrency()" style="background:var(--bg-2); color:var(--text); border:1px solid var(--border); padding:0.4rem 0.8rem; border-radius:0.375rem; font-size:0.85rem; cursor:pointer;">
+    <!-- ═══ USAGE & COSTS ═══ -->
+    <div class="page" id="page-usage">
+      <div class="page-scroll">
+        <div class="section-title">
+          Usage & Costs
+          <div class="section-actions">
+            <select id="currency-sel" class="input" style="width:auto;padding:4px 10px;font-size:.78rem">
               <option value="GBP">GBP (£)</option>
               <option value="USD">USD ($)</option>
               <option value="EUR">EUR (€)</option>
             </select>
           </div>
         </div>
-        <div id="alerts-section" style="background:var(--bg-1); border:1px solid var(--border); border-radius:0.5rem; padding:1.25rem; margin-bottom:1.5rem;">
-          <h3 style="font-size:1rem; font-weight:600; margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem;">
-            <span>⚠️</span> Recent Alerts
-          </h3>
-          <div id="alerts-list">Loading alerts...</div>
-        </div>
-        <div class="card-grid" id="usage-cards"></div>
 
-      <!-- AGENTS PAGE -->
-      <div class="page" id="page-agents">
-        <div style="overflow:auto;padding:0">
-          <table class="data-table" id="agents-table">
-            <thead><tr><th>Agent</th><th>Model</th><th>Status</th><th>Skills</th></tr></thead>
-            <tbody></tbody>
+        <div class="cards" id="cost-cards"></div>
+
+        <div class="section-title">Message Volume</div>
+        <div class="cards" id="msg-cards"></div>
+
+        <div class="section-title">Cost Per Message</div>
+        <div class="cards" id="cpm-cards"></div>
+
+        <div class="section-title">Cost by Channel</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Channel</th><th>Messages</th><th>Cost</th><th>Avg/msg</th></tr></thead>
+            <tbody id="cost-channel-body"></tbody>
+          </table>
+        </div>
+
+        <div class="section-title">Alerts</div>
+        <div id="alerts-list" style="font-size:.82rem;color:var(--text-dim)">Loading...</div>
+      </div>
+    </div>
+
+    <!-- ═══ AGENTS ═══ -->
+    <div class="page" id="page-agents">
+      <div class="page-scroll">
+        <div class="section-title">
+          Agents
+          <div class="section-actions"><button class="btn btn-sm" id="spawn-btn">+ Spawn</button></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Agent</th><th>Model</th><th>Skills</th><th>Threads</th><th>Messages</th><th>AID</th></tr></thead>
+            <tbody id="agents-body"></tbody>
           </table>
         </div>
       </div>
+    </div>
 
-      <!-- SKILLS PAGE -->
-      <div class="page" id="page-skills">
-        <div style="overflow:auto;padding:0">
-          <table class="data-table" id="skills-table">
-            <thead><tr><th>Skill</th><th>Endpoints</th><th>Status</th><th>Source</th></tr></thead>
-            <tbody></tbody>
+    <!-- ═══ SKILLS ═══ -->
+    <div class="page" id="page-skills">
+      <div class="page-scroll">
+        <div class="section-title">Skills</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Skill</th><th>Endpoints</th><th>Reviewed</th><th>Source</th></tr></thead>
+            <tbody id="skills-body"></tbody>
           </table>
         </div>
       </div>
+    </div>
 
-      <!-- NODES PAGE -->
-      <div class="page" id="page-nodes">
-        <div class="card-grid" id="nodes-cards"></div>
+    <!-- ═══ CONFIG ═══ -->
+    <div class="page" id="page-config">
+      <div class="page-scroll">
+        <div class="section-title">
+          Configuration
+          <div class="section-actions"><button class="btn btn-sm" id="config-refresh-btn">Refresh</button></div>
+        </div>
+        <div id="config-sections"></div>
+
+        <div class="section-title" style="margin-top:24px">
+          Secrets
+          <div class="section-actions"><button class="btn btn-sm" id="add-secret-btn">+ Add</button></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Key</th><th>Status</th><th></th></tr></thead>
+            <tbody id="secrets-body"></tbody>
+          </table>
+        </div>
       </div>
+    </div>
 
-      <!-- CONFIG PAGE -->
-      <div class="page" id="page-config">
-        <div class="config-editor"><pre id="config-json">Loading...</pre></div>
-      </div>
-
-      <!-- LOGS PAGE -->
-      <div class="page" id="page-logs">
-        <div class="log-viewer" id="log-viewer"></div>
-      </div>
-
-      <!-- DEBUG PAGE -->
-      <div class="page" id="page-debug">
-        <div class="card-grid" id="debug-cards"></div>
-      </div>
-
-      <!-- RESOURCES PAGE -->
-      <div class="page" id="page-resources">
-        <div class="card-grid" id="resources-cards"></div>
-      </div>
-
-      <!-- DOCS PAGE -->
-      <div class="page" id="page-docs">
-        <div style="padding:1.5rem">
-          <div style="max-width:700px">
-            <h2 style="font-size:1.3rem;margin-bottom:1rem;font-weight:600">Documentation</h2>
-            <div class="card" style="margin-bottom:0.8rem;cursor:pointer" onclick="window.open('https://github.com/QuantumClaw/QClaw','_blank')">
-              <div class="card-title">GitHub Repository</div>
-              <div class="card-sub">Source code, issues, and releases</div>
-            </div>
-            <div class="card" style="margin-bottom:0.8rem;cursor:pointer" onclick="window.open('https://agexhq.com','_blank')">
-              <div class="card-title">AGEX Protocol</div>
-              <div class="card-sub">Agent Gateway Exchange specification</div>
-            </div>
-            <div class="card" style="margin-bottom:0.8rem">
-              <div class="card-title">CLI Reference</div>
-              <div class="card-sub" style="font-family:'JetBrains Mono';font-size:0.75rem;line-height:2;margin-top:0.5rem">
-                qclaw start — Start agent runtime<br>
-                qclaw onboard — Setup wizard<br>
-                qclaw dashboard — Open dashboard<br>
-                qclaw diagnose — Health check<br>
-                qclaw pairing list — Show pending pairings<br>
-                qclaw pairing approve &lt;ch&gt; &lt;code&gt; — Approve pairing
-              </div>
-            </div>
+    <!-- ═══ LOGS ═══ -->
+    <div class="page" id="page-logs">
+      <div class="page-scroll">
+        <div class="section-title">
+          Audit Log
+          <div class="section-actions">
+            <button class="btn btn-sm" id="logs-refresh-btn">Refresh</button>
           </div>
         </div>
+        <div class="log-viewer" id="log-viewer">Loading...</div>
       </div>
-
     </div>
   </div>
+
+  <!-- Spawn Agent Modal -->
+  <div class="modal-bg" id="spawn-modal">
+    <div class="modal">
+      <h3>Spawn Agent</h3>
+      <div class="fg"><label>Name</label><input class="input" id="spawn-name" placeholder="e.g. researcher"></div>
+      <div class="fg"><label>Role</label><input class="input" id="spawn-role" placeholder="e.g. Research assistant"></div>
+      <div class="fg"><label>Tier</label>
+        <select class="input" id="spawn-tier"><option value="simple">Simple</option><option value="standard">Standard</option><option value="advanced">Advanced</option></select>
+      </div>
+      <div class="modal-btns">
+        <button class="btn" onclick="closeModal('spawn-modal')">Cancel</button>
+        <button class="btn btn-primary" id="spawn-confirm">Spawn</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Secret Modal -->
+  <div class="modal-bg" id="secret-modal">
+    <div class="modal">
+      <h3>Add Secret</h3>
+      <div class="fg"><label>Key</label><input class="input input-mono" id="secret-key" placeholder="e.g. openai_api_key"></div>
+      <div class="fg"><label>Value</label><input class="input input-mono" id="secret-value" type="password" placeholder="sk-..."></div>
+      <div class="modal-btns">
+        <button class="btn" onclick="closeModal('secret-modal')">Cancel</button>
+        <button class="btn btn-primary" id="secret-confirm">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+<script>
+/* ─── State ───────────────────────────────────────────── */
+const TOKEN = new URLSearchParams(location.search).get('token') || '';
+const API = (path) => path + (path.includes('?') ? '&' : '?') + 'token=' + TOKEN;
+let ws = null;
+let chatHistory = [];
+let pendingImages = [];
+let currentCurrency = 'GBP';
+const SYM = { GBP: '£', USD: '$', EUR: '€' };
+
+/* ─── Helpers ─────────────────────────────────────────── */
+function $(id) { return document.getElementById(id); }
+function toast(msg, type) {
+  const t = $('toast'); t.textContent = msg; t.className = 'toast ' + (type || 'ok'); t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+function closeModal(id) { $(id).classList.remove('show'); }
+function openModal(id) { $(id).classList.add('show'); }
+function timeAgo(ts) {
+  const s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+  if (s < 60) return s + 's ago'; if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago'; return Math.floor(s/86400) + 'd ago';
+}
+async function api(path, opts) {
+  const r = await fetch(API('/api' + path), opts);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+  return r.json();
+}
+
+/* ─── Navigation ──────────────────────────────────────── */
+const TITLES = { chat:'Chat', overview:'Overview', channels:'Channels', usage:'Usage & Costs', agents:'Agents', skills:'Skills', config:'Config', logs:'Logs' };
+document.querySelectorAll('.nav-item[data-page]').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+    const page = el.dataset.page;
+    $('page-' + page).classList.add('active');
+    $('topbar-title').textContent = TITLES[page] || page;
+    if (page === 'overview') loadOverview();
+    if (page === 'channels') loadChannels();
+    if (page === 'usage') loadUsage();
+    if (page === 'agents') loadAgents();
+    if (page === 'skills') loadSkills();
+    if (page === 'config') loadConfig();
+    if (page === 'logs') loadLogs();
+  });
+});
+
+/* ─── WebSocket Chat ──────────────────────────────────── */
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(proto + '://' + location.host + '/ws?token=' + TOKEN);
+  ws.onopen = () => {
+    $('status-dot').className = 'dot-sm on';
+    $('status-tip').textContent = 'Connected';
+    $('status-badge').textContent = '● Online';
+    $('status-badge').className = 'badge badge-green';
+  };
+  ws.onclose = () => {
+    $('status-dot').className = 'dot-sm off';
+    $('status-tip').textContent = 'Disconnected';
+    $('status-badge').textContent = '● Offline';
+    $('status-badge').className = 'badge badge-red';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onerror = () => {};
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.type === 'typing') { $('typing').style.display = 'block'; return; }
+    if (data.type === 'error') { $('typing').style.display = 'none'; addMsg('assistant', 'Error: ' + data.error); return; }
+    if (data.type === 'response') {
+      $('typing').style.display = 'none';
+      const text = data.reply || data.response || data.text || JSON.stringify(data);
+      addMsg('assistant', text, data);
+      if (data.agent) $('agent-badge').textContent = data.agent;
+    }
+    if (data.type === 'autolearn') {
+      addMsg('assistant', '📚 Auto-learned: ' + data.question);
+    }
+  };
+}
+
+function sendChat() {
+  const input = $('chat-input');
+  const msg = input.value.trim();
+  if (!msg && pendingImages.length === 0) return;
+  if (!ws || ws.readyState !== 1) { toast('Not connected', 'err'); return; }
+
+  $('empty-chat').style.display = 'none';
+  if (msg) addMsg('user', msg, null, pendingImages.length > 0 ? [...pendingImages] : null);
+
+  const payload = { message: msg };
+  if (pendingImages.length > 0) {
+    payload.images = pendingImages.map(i => ({ data: i.data, mediaType: i.type }));
+  }
+  ws.send(JSON.stringify(payload));
+
+  input.value = '';
+  input.style.height = 'auto';
+  pendingImages = [];
+  $('image-preview').innerHTML = '';
+  $('typing').style.display = 'block';
+}
+
+/* ─── Messages ────────────────────────────────────────── */
+function addMsg(role, text, meta, images) {
+  const container = $('messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+
+  let html = '<div class="msg-header">' + (role === 'user' ? 'You' : (meta?.agent || 'Agent')) + '</div>';
+  if (images && images.length) {
+    html += '<div class="msg-images">';
+    images.forEach(img => { html += '<img src="' + img.preview + '">'; });
+    html += '</div>';
+  }
+  html += '<div class="msg-bubble">' + renderMarkdown(text) + '</div>';
+  if (meta?.model) html += '<div class="msg-meta">' + meta.model + (meta.tokens ? ' · ' + meta.tokens + ' tok' : '') + '</div>';
+
+  div.innerHTML = html;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+
+  // Add copy buttons to code blocks
+  div.querySelectorAll('pre').forEach(pre => {
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn'; btn.textContent = 'Copy';
+    btn.onclick = () => { navigator.clipboard.writeText(pre.textContent.replace('Copy', '').trim()); btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); };
+    pre.appendChild(btn);
+  });
+}
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => '<pre><code>' + code.trim() + '</code></pre>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+    .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>')
+    .replace(/^/, '<p>').replace(/$/, '</p>');
+}
+
+/* ─── Image Upload ────────────────────────────────────── */
+$('attach-btn').onclick = () => $('image-input').click();
+$('image-input').onchange = (e) => handleFiles(e.target.files);
+
+function handleFiles(files) {
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) continue;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target.result.split(',')[1];
+      const preview = e.target.result;
+      pendingImages.push({ data: base64, type: file.type, preview });
+      renderImagePreviews();
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+function renderImagePreviews() {
+  const container = $('image-preview');
+  container.innerHTML = pendingImages.map((img, i) =>
+    '<div class="image-preview-item"><img src="' + img.preview + '"><button class="remove" onclick="removeImage(' + i + ')">×</button></div>'
+  ).join('');
+}
+function removeImage(i) { pendingImages.splice(i, 1); renderImagePreviews(); }
+
+// Drag and drop
+const chatPane = document.querySelector('.chat-pane');
+chatPane.addEventListener('dragover', (e) => { e.preventDefault(); $('drop-overlay').style.display = 'flex'; });
+chatPane.addEventListener('dragleave', () => { $('drop-overlay').style.display = 'none'; });
+chatPane.addEventListener('drop', (e) => { e.preventDefault(); $('drop-overlay').style.display = 'none'; handleFiles(e.dataTransfer.files); });
+
+/* ─── Chat Input ──────────────────────────────────────── */
+$('send-btn').onclick = sendChat;
+$('chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+});
+$('chat-input').addEventListener('input', function() {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+});
+
+/* ─── Threads ─────────────────────────────────────────── */
+async function loadThreads() {
+  try {
+    const threads = await api('/threads');
+    const container = $('thread-items');
+    if (!threads.length) { container.innerHTML = '<div style="padding:16px;color:var(--text-xs);font-size:.78rem;text-align:center">No threads yet</div>'; return; }
+    container.innerHTML = threads.map(t =>
+      '<div class="thread-item" data-channel="' + (t.channel || '') + '" data-user="' + (t.userId || '') + '">' +
+        '<div class="thread-item-name">' + (t.channel || 'dashboard') + ' <span class="badge badge-accent">' + t.messageCount + '</span></div>' +
+        '<div class="thread-item-meta"><span>' + (t.userId || 'anonymous') + '</span><span>' + timeAgo(t.lastMessage || t.created) + '</span></div>' +
+      '</div>'
+    ).join('');
+    container.querySelectorAll('.thread-item').forEach(el => {
+      el.addEventListener('click', () => loadThreadHistory(el.dataset.channel, el.dataset.user));
+    });
+  } catch { /* threads not available yet */ }
+}
+
+async function loadThreadHistory(channel, userId) {
+  try {
+    const history = await api('/threads/history?channel=' + (channel || '') + '&userId=' + (userId || '') + '&limit=50');
+    $('messages').innerHTML = '';
+    $('empty-chat').style.display = 'none';
+    history.forEach(m => addMsg(m.role, m.content || m.text, m));
+  } catch(e) { toast('Failed to load history', 'err'); }
+}
+
+$('new-chat-btn').addEventListener('click', () => {
+  $('messages').innerHTML = '<div class="empty-chat" id="empty-chat"><span>⚛</span><span>Send a message to begin</span></div>';
+  chatHistory = [];
+  document.querySelectorAll('.thread-item').forEach(t => t.classList.remove('active'));
+});
+
+/* ─── Pairing ─────────────────────────────────────────── */
+async function checkPairings() {
+  try {
+    const pending = await api('/pairing/pending');
+    const banner = $('pairing-banner');
+    if (!pending.length) { banner.style.display = 'none'; return; }
+    banner.style.display = 'block';
+    $('pairing-list').innerHTML = pending.map(p =>
+      '<div class="pairing-item"><span>' + p.channel + ': ' + (p.username || p.code) + '</span>' +
+      '<button onclick="approvePairing(\'' + p.channel + '\',\'' + p.code + '\')">Approve</button></div>'
+    ).join('');
+  } catch { /* no pairing support */ }
+}
+
+async function approvePairing(channel, code) {
+  try {
+    await api('/pairing/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel, code }) });
+    toast('Pairing approved');
+    checkPairings();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+/* ─── Overview ────────────────────────────────────────── */
+async function loadOverview() {
+  try {
+    const [stats, agents, channels] = await Promise.all([api('/stats'), api('/agents'), api('/channels')]);
+    const costs = stats.costs || {};
+    const mem = stats.memory || {};
+    $('overview-cards').innerHTML =
+      card('Agents', agents.length, agents.map(a => a.name).join(', ')) +
+      card('Channels', channels.length, channels.map(c => c.name).join(', ')) +
+      card('Threads', mem.threads || 0) +
+      card('Messages', mem.messages || 0) +
+      card('Cost Today', SYM[currentCurrency] + fmt(costs.today || 0)) +
+      card('Cost This Week', SYM[currentCurrency] + fmt(costs.week || 0));
+
+    const audit = await api('/audit?limit=15');
+    $('overview-audit').innerHTML = audit.map(a =>
+      '<tr><td>' + timeAgo(a.timestamp) + '</td><td>' + (a.action || '') + '</td><td>' + (a.agent || '') + '</td><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (a.detail || a.input || '') + '</td></tr>'
+    ).join('');
+  } catch(e) { $('overview-cards').innerHTML = '<div style="color:var(--text-dim);padding:20px">Failed to load: ' + e.message + '</div>'; }
+}
+
+/* ─── Channels ────────────────────────────────────────── */
+async function loadChannels() {
+  try {
+    const channels = await api('/channels');
+    $('channels-body').innerHTML = channels.map(c =>
+      '<tr><td>' + c.name + '</td><td><span class="badge badge-green">' + (c.status || 'active') + '</span></td>' +
+      '<td>' + (c.botName || '—') + '</td><td>' + (c.paired || 0) + '</td><td>' + (c.pending || 0) + '</td></tr>'
+    ).join('');
+  } catch(e) { $('channels-body').innerHTML = '<tr><td colspan="5" style="color:var(--text-dim)">Failed to load</td></tr>'; }
+}
+
+/* ─── Usage & Costs ───────────────────────────────────── */
+async function loadUsage() {
+  try {
+    const costs = await api('/costs');
+    const audit = await api('/audit?limit=5000');
+
+    // Count messages by period
+    const now = Date.now();
+    const dayMs = 86400000, weekMs = 7 * dayMs, monthMs = 30 * dayMs;
+    const completions = audit.filter(a => a.action === 'completion');
+    const msgToday = completions.filter(a => now - new Date(a.timestamp).getTime() < dayMs).length;
+    const msgWeek = completions.filter(a => now - new Date(a.timestamp).getTime() < weekMs).length;
+
+    const s = SYM[currentCurrency] || '£';
+    const today = costs.today || 0, week = costs.week || 0, month = costs.month || 0;
+
+    $('cost-cards').innerHTML =
+      card('Cost Today', s + fmt(today)) +
+      card('Cost This Week', s + fmt(week)) +
+      card('Cost This Month', s + fmt(month));
+
+    $('msg-cards').innerHTML =
+      card('Messages Today', msgToday) +
+      card('Messages This Week', msgWeek) +
+      card('Total Completions', completions.length);
+
+    const cpmToday = msgToday > 0 ? today / msgToday : 0;
+    const cpmWeek = msgWeek > 0 ? week / msgWeek : 0;
+    $('cpm-cards').innerHTML =
+      card('Cost/Message Today', s + fmt(cpmToday)) +
+      card('Cost/Message Week', s + fmt(cpmWeek));
+
+    // Cost by channel
+    try {
+      const byChannel = await api('/costs/by-channel?period=today');
+      const rows = Object.entries(byChannel);
+      $('cost-channel-body').innerHTML = rows.length ? rows.map(([ch, d]) =>
+        '<tr><td>' + ch + '</td><td>' + (d.messages || 0) + '</td><td>' + s + fmt(d.cost || 0) + '</td><td>' + s + fmt((d.messages || 0) > 0 ? (d.cost || 0) / d.messages : 0) + '</td></tr>'
+      ).join('') : '<tr><td colspan="4" style="color:var(--text-dim)">No data yet</td></tr>';
+    } catch { $('cost-channel-body').innerHTML = '<tr><td colspan="4" style="color:var(--text-dim)">Not available</td></tr>'; }
+
+    // Alerts
+    try {
+      const alertData = await api('/alerts?limit=5');
+      const alerts = alertData.alerts || [];
+      $('alerts-list').innerHTML = alerts.length ? alerts.map(a =>
+        '<div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center">' +
+        '<span class="badge badge-' + (a.severity === 'high' ? 'red' : 'yellow') + '">' + (a.severity || 'info') + '</span>' +
+        '<span style="font-size:.82rem">' + (a.message || a.type || 'Alert') + '</span>' +
+        '<span style="margin-left:auto;font-size:.7rem;color:var(--text-xs)">' + (a.timestamp ? timeAgo(a.timestamp) : '') + '</span>' +
+        '</div>'
+      ).join('') : '<div style="color:var(--text-xs);font-size:.82rem">No recent alerts</div>';
+    } catch { $('alerts-list').innerHTML = '<div style="color:var(--text-xs)">Alerts not available</div>'; }
+  } catch(e) { $('cost-cards').innerHTML = '<div style="color:var(--text-dim);padding:20px">Failed to load: ' + e.message + '</div>'; }
+}
+
+$('currency-sel').onchange = function() {
+  currentCurrency = this.value;
+  loadUsage();
+};
+
+/* ─── Agents ──────────────────────────────────────────── */
+async function loadAgents() {
+  try {
+    const agents = await api('/agents');
+    $('agents-body').innerHTML = agents.map(a =>
+      '<tr>' +
+      '<td>' + a.name + (a.isPrimary ? ' <span class="badge badge-accent">primary</span>' : '') + '</td>' +
+      '<td><span class="badge badge-blue">' + (a.provider || '') + '/' + (a.model || '') + '</span></td>' +
+      '<td>' + (a.skills || 0) + '</td><td>' + (a.threads || 0) + '</td><td>' + (a.messages || 0) + '</td>' +
+      '<td>' + (a.aidId ? '<span class="badge badge-green">T' + (a.trustTier ?? '') + '</span>' : '<span class="badge badge-yellow">local</span>') + '</td>' +
+      '</tr>'
+    ).join('') || '<tr><td colspan="6" style="color:var(--text-dim)">No agents</td></tr>';
+    if (agents.length) $('agent-badge').textContent = agents.find(a => a.isPrimary)?.name || agents[0].name;
+  } catch(e) { $('agents-body').innerHTML = '<tr><td colspan="6" style="color:var(--text-dim)">Failed to load</td></tr>'; }
+}
+
+$('spawn-btn').onclick = () => openModal('spawn-modal');
+$('spawn-confirm').onclick = async () => {
+  const name = $('spawn-name').value.trim();
+  const role = $('spawn-role').value.trim();
+  const tier = $('spawn-tier').value;
+  if (!name || !role) { toast('Name and role required', 'err'); return; }
+  try {
+    await api('/agents/spawn', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, role, model_tier: tier }) });
+    toast('Agent spawned: ' + name);
+    closeModal('spawn-modal');
+    loadAgents();
+  } catch(e) { toast(e.message, 'err'); }
+};
+
+/* ─── Skills ──────────────────────────────────────────── */
+async function loadSkills() {
+  try {
+    const skills = await api('/skills');
+    $('skills-body').innerHTML = skills.map(s =>
+      '<tr><td>' + s.name + '</td><td>' + s.endpoints + '</td>' +
+      '<td>' + (s.reviewed ? '<span class="badge badge-green">yes</span>' : '<span class="badge badge-yellow">no</span>') + '</td>' +
+      '<td>' + (s.source || 'local') + '</td></tr>'
+    ).join('') || '<tr><td colspan="4" style="color:var(--text-dim)">No skills loaded</td></tr>';
+  } catch(e) { $('skills-body').innerHTML = '<tr><td colspan="4" style="color:var(--text-dim)">Failed to load</td></tr>'; }
+}
+
+/* ─── Config ──────────────────────────────────────────── */
+async function loadConfig() {
+  try {
+    const config = await api('/config');
+    const container = $('config-sections');
+    container.innerHTML = '';
+    renderConfigObj(container, config, '');
+  } catch(e) { $('config-sections').innerHTML = '<div style="color:var(--text-dim)">Failed to load config</div>'; }
+
+  try {
+    const secrets = await api('/secrets');
+    $('secrets-body').innerHTML = secrets.map(s =>
+      '<tr><td style="font-family:JetBrains Mono;font-size:.75rem">' + s.key + '</td>' +
+      '<td><span class="badge badge-green">set</span></td>' +
+      '<td><button class="btn btn-sm btn-danger" onclick="deleteSecret(\'' + s.key + '\')">Delete</button></td></tr>'
+    ).join('') || '<tr><td colspan="3" style="color:var(--text-dim)">No secrets</td></tr>';
+  } catch { /* secrets not available */ }
+}
+
+function renderConfigObj(container, obj, prefix) {
+  for (const [key, val] of Object.entries(obj)) {
+    const fullKey = prefix ? prefix + '.' + key : key;
+    if (val && typeof val === 'object' && !Array.isArray(val)) {
+      const section = document.createElement('div');
+      section.className = 'config-section';
+      section.innerHTML = '<div class="config-section-title">' + fullKey + '</div>';
+      renderConfigObj(section, val, fullKey);
+      container.appendChild(section);
+    } else {
+      const row = document.createElement('div');
+      row.className = 'config-row';
+      const displayVal = Array.isArray(val) ? JSON.stringify(val) : String(val);
+      row.innerHTML = '<div class="config-key">' + key + '</div><div class="config-val"><input value="' + displayVal.replace(/"/g, '&quot;') + '" data-key="' + fullKey + '"></div>';
+      row.querySelector('input').addEventListener('change', async function() {
+        try {
+          await api('/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: fullKey, value: this.value }) });
+          toast('Saved: ' + fullKey);
+        } catch(e) { toast(e.message, 'err'); }
+      });
+      container.appendChild(row);
+    }
+  }
+}
+
+$('config-refresh-btn').onclick = loadConfig;
+
+async function deleteSecret(key) {
+  if (!confirm('Delete secret: ' + key + '?')) return;
+  try {
+    await fetch(API('/api/secrets/' + key), { method: 'DELETE' });
+    toast('Deleted: ' + key);
+    loadConfig();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+$('add-secret-btn').onclick = () => openModal('secret-modal');
+$('secret-confirm').onclick = async () => {
+  const key = $('secret-key').value.trim();
+  const value = $('secret-value').value;
+  if (!key || !value) { toast('Key and value required', 'err'); return; }
+  try {
+    await api('/secrets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, value }) });
+    toast('Secret saved: ' + key);
+    closeModal('secret-modal');
+    $('secret-key').value = ''; $('secret-value').value = '';
+    loadConfig();
+  } catch(e) { toast(e.message, 'err'); }
+};
+
+/* ─── Logs ────────────────────────────────────────────── */
+async function loadLogs() {
+  try {
+    const logs = await api('/audit?limit=200');
+    $('log-viewer').innerHTML = logs.map(l => {
+      const level = (l.action || '').includes('error') ? 'error' : (l.action || '').includes('warn') ? 'warn' : 'info';
+      const ts = l.timestamp ? new Date(l.timestamp).toLocaleTimeString() : '';
+      return '<div class="log-line ' + level + '">[' + ts + '] ' + (l.agent || 'system') + ' ' + (l.action || '') + ' ' + (l.detail || l.input || '').substring(0, 120) + '</div>';
+    }).join('') || '<div class="log-line info">No logs yet</div>';
+  } catch(e) { $('log-viewer').innerHTML = '<div class="log-line error">Failed to load: ' + e.message + '</div>'; }
+}
+
+$('logs-refresh-btn').onclick = loadLogs;
+
+/* ─── Utilities ───────────────────────────────────────── */
+function card(label, value, sub) {
+  return '<div class="card"><div class="card-label">' + label + '</div><div class="card-value">' + value + '</div>' + (sub ? '<div class="card-sub">' + sub + '</div>' : '') + '</div>';
+}
+function fmt(n) { return Number(n).toFixed(4); }
+
+/* ─── Init ────────────────────────────────────────────── */
+connectWS();
+loadThreads();
+checkPairings();
+setInterval(checkPairings, 30000);
+setInterval(loadThreads, 60000);
+</script>
 </body>
 </html>
