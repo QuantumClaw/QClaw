@@ -54,7 +54,7 @@
     "@agexhq/hub-lite": "^1.0.0",
     "@agexhq/sdk": "^1.0.0",
     "@agexhq/store": "^1.1.0",
-    "better-sqlite3": "^11.0.0"
+    "better-sqlite3": "11.10.0"
   },
   "devDependencies": {
     "eslint": "^9.0.0"
