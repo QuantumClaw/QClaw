@@ -1146,8 +1146,8 @@ export class ToolRegistry {
         const isGet = method === 'GET';
         let fetchUrl = url;
         let body = undefined;
-        if (isGet && args && Object.keys(args).leew URLSearchParams(args);
-          fetchUrl = `${url}?${params}`;
+        if (isGet && args && Object.keys(args).length > 0) {
+          const params = new URLSearchParams(args);
         } else if (!isGet && args) {
           body = JSON.stringify(args);
           headers['Content-Type'] = 'application/json';
