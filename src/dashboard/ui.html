@@ -466,7 +466,7 @@ function connectWS() {
     if (data.type === 'error') { $('typing').style.display = 'none'; addMsg('assistant', 'Error: ' + data.error); return; }
     if (data.type === 'response') {
       $('typing').style.display = 'none';
-      const text = data.reply || data.response || data.text || JSON.stringify(data);
+      const text = data.content || data.reply || data.response || data.text || JSON.stringify(data);
       addMsg('assistant', text, data);
       if (data.agent) $('agent-badge').textContent = data.agent;
     }
