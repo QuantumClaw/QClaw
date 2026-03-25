@@ -234,9 +234,10 @@ export class DashboardServer {
 
       const ip = req.ip || req.socket.remoteAddress;
 
+      const isLocalhost = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
       // Check auth lockout
       const lockout = this.authAttempts.get(ip);
-      if (lockout?.lockedUntil && Date.now() < lockout.lockedUntil) {
+      if (!isLocalhost && lockout?.lockedUntil && Date.now() < lockout.lockedUntil) {
         const remaining = Math.ceil((lockout.lockedUntil - Date.now()) / 60000);
         return res.status(429).json({ error: `Locked out. Try again in ${remaining} minutes.` });
       }
