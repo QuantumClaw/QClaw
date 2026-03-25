@@ -1127,7 +1127,8 @@ export class ToolRegistry {
       if (preset.name?.startsWith('skill:')) {
         const endpoint = toolDef.endpoint || toolDef.path || '';
         const method = toolDef.method || 'GET';
-    {};
+        const headers = {};
+
         // Resolve all headers — replace {{secrets.key}} with actual secret values
         for (const [k, v] of Object.entries(preset.headers || {})) {
           if (v && v.includes('{{secrets.')) {
@@ -1142,16 +1143,18 @@ export class ToolRegistry {
             headers[k] = v;
           }
         }
+
         // Build query params or body
-        const isGet = method === 'GET';
         let fetchUrl = url;
         let body = undefined;
-        if (isGet && args && Object.keys(args).length > 0) {
+        if (method === 'GET' && args && Object.keys(args).length > 0) {
           const params = new URLSearchParams(args);
-        } else if (!isGet && args) {
+          fetchUrl = `${url}?${params}`;
+        } else if (method !== 'GET' && args) {
           body = JSON.stringify(args);
           headers['Content-Type'] = 'application/json';
         }
+
         const res = await fetch(fetchUrl, { method, headers, body, signal: AbortSignal.timeout(15000) });
         const text = await res.text();
         if (!res.ok) return `${preset.name} error ${res.status}: ${text.slice(0, 500)}`;
