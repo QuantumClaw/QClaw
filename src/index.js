@@ -267,6 +267,25 @@ class QuantumClaw {
         }
       });
 
+      // AGEX Security Stack
+      const workspaceDir = this.config._dir ? join(this.config._dir, 'workspace') : join(homedir(), '.quantumclaw', 'workspace');
+      const approvalGate = new ApprovalGate(this.approvals, {
+        gatedTools: this.config.tools?.requireApproval,
+      });
+      const rateLimiter = new RateLimiter({
+        _dir: workspaceDir,
+        rateLimits: {
+          social_posts: { daily: 10, hourly: 3 },
+          emails: { daily: 50, hourly: 10 },
+          file_changes: { daily: 100, hourly: 20 },
+          api_calls: { daily: 1000, hourly: 200 },
+          shell_commands: { daily: 50, hourly: 10 },
+        },
+      });
+      const contentQueue = new ContentQueue({
+        _dir: workspaceDir,
+      });
+
       this.toolExecutor = new ToolExecutor(this.router, this.tools, {
         requireApproval: this.config.tools?.requireApproval || ['shell', 'file_write'],
         onToolCall: (call) => {

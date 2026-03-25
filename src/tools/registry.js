@@ -788,7 +788,23 @@ export class ToolRegistry {
   // ─── Private ──────────────────────────────────────────
 
   async _connectServer(name, serverConf) {
-    // Substitute placeholders in server args
+    // Guard: stdio servers require a command; SSE servers require a url
+    if (serverConf.transport === 'sse' && !serverConf.url) {
+      throw new Error(`SSE server "${name}" has no url configured`);
+    }
+    if (serverConf.transport !== 'sse' && !serverConf.command) {
+      // Try to fill in from preset defaults
+      const preset = PRESET_SERVERS[name];
+      if (preset?.command) {
+        serverConf.command = preset.command;
+        serverConf.args = serverConf.args || [...(preset.args || [])];
+        serverConf.transport = serverConf.transport || preset.transport;
+      } else {
+        throw new Error(`Server "${name}" has no command configured`);
+      }
+    }
+
+    // Substitute placeholders in args (same logic as enablePreset)
     const workspace = this.config._dir ? `${this.config._dir}/workspace` : '.';
     if (serverConf.args && Array.isArray(serverConf.args)) {
       serverConf = {
