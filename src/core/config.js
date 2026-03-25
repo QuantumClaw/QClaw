@@ -86,6 +86,12 @@ const DEFAULTS = {
       quietHoursEnd: 8,     // Don't message before 8am
     }
   },
+  tools: {
+    mcp: {}
+  },
+  agex: {
+    hubUrl: null
+  },
   evolution: {
     enabled: false // off by default, user opts in
   }
