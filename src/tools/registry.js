@@ -1127,6 +1127,7 @@ export class ToolRegistry {
       if (preset.name?.startsWith('skill:')) {
         const endpoint = toolDef.endpoint || toolDef.path || '';
         const method = toolDef.method || 'GET';
+        const url = `${preset.baseUrl}${endpoint}`;
         const headers = {};
 
         // Resolve all headers — replace {{secrets.key}} with actual secret values
