@@ -22,6 +22,7 @@ import { Heartbeat } from './core/heartbeat.js';
 import { ToolRegistry } from './tools/registry.js';
 import { ToolExecutor } from './tools/executor.js';
 import { getDb, closeDb } from './core/database.js';
+import { homedir } from 'os';
 import { DeliveryQueue } from './core/delivery-queue.js';
 import { CompletionCache } from './core/completion-cache.js';
 import { ExecApprovals } from './security/approvals.js';
@@ -302,13 +303,14 @@ class QuantumClaw {
       });
 
       // AGEX Security Stack
-      const approvalGate = new ApprovalGate('charlie', join(this.config._dir, 'workspace'));
-      const rateLimiter = new RateLimiter('charlie', join(this.config._dir, 'workspace'), {
+      const workspaceDir = this.config._dir ? join(this.config._dir, 'workspace') : join(homedir(), '.quantumclaw', 'workspace');
+      const approvalGate = new ApprovalGate('charlie', workspaceDir);
+      const rateLimiter = new RateLimiter('charlie', workspaceDir, {
         stripe: 100,
         ghl: 200,
         'n8n-router': 50
       });
-      const contentQueue = new ContentQueue('charlie', join(this.config._dir, 'workspace'));
+      const contentQueue = new ContentQueue('charlie', workspaceDir);
 
       this.toolExecutor = new ToolExecutor(this.router, this.tools, {
         requireApproval: this.config.tools?.requireApproval || ['shell', 'file_write'],
