@@ -606,7 +606,7 @@ async function loadThreadHistory(channel, userId) {
   try {
     const history = await api('/threads/history?channel=' + (channel || '') + '&userId=' + (userId || '') + '&limit=50');
     $('messages').innerHTML = '';
-    $('empty-chat').style.display = 'none';
+    const ec = $('empty-chat'); if (ec) ec.style.display = 'none';
     history.forEach(m => addMsg(m.role, m.content || m.text, m));
   } catch(e) { toast('Failed to load history', 'err'); }
 }
