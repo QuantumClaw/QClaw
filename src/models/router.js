@@ -192,7 +192,9 @@ export class ModelRouter {
       /^check my/i, /^show me/i, /^how many/i, /^list/i,
       /^next meeting/i, /^schedule/i, /^what's (on|next)/i
     ];
-    return simplePatterns.some(p => p.test(msg)) || msg.split(' ').length <= 5;
+    const dataKeywords = /ghl|stripe|contact|invoice|opportunit|n8n|webhook|payment|subscript|customer/i;
+    if (dataKeywords.test(msg)) return false;
+    return simplePatterns.some(p => p.test(msg)) || msg.split(' ').length <= 4;
   }
 
   _isComplex(msg) {

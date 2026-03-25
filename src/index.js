@@ -28,6 +28,7 @@ import { ExecApprovals } from './security/approvals.js';
 import { ApprovalGate } from './security/approval-gate.js';
 import { RateLimiter } from './security/rate-limiter.js';
 import { ContentQueue } from './security/content-queue.js';
+import { ScopedSecretProxy } from './security/scoped-secret-proxy.js';
 import { banner } from './cli/brand.js';
 import { log } from './core/logger.js';
 import { writeFileSync, unlinkSync } from 'fs';
@@ -250,11 +251,40 @@ class QuantumClaw {
             } catch {}
           }
 
-          // Load into registry
+          // ── AGEX credential delegation ──
+          // Issue scoped, time-bounded envelopes instead of passing raw credentials.
+          // Determine which secret keys the child needs based on requested scopes.
+          const childRecipientId = childAid?.aid_id || safeName;
+          let scopedSecrets = this.credentials;
+
+          if (this.credentials?.issueEnvelope) {
+            try {
+              const keysForScopes = this._resolveKeysForScopes(scopes || ['chat']);
+              const envelopes = await this.credentials.issueEnvelopes(
+                keysForScopes,
+                childRecipientId,
+                3600 // 1 hour TTL for sub-agents
+              );
+              // Create a scoped proxy backed by envelopes + local secrets for provider keys
+              scopedSecrets = new ScopedSecretProxy(envelopes, this.secrets, safeName);
+              log.debug(`[AGEX] Issued ${envelopes.length} envelope(s) for sub-agent "${safeName}"`);
+              this.audit.log('system', 'credential_delegation', safeName, {
+                envelopes: envelopes.map(e => e.toJSON()),
+                recipientAid: childRecipientId,
+              });
+            } catch (err) {
+              log.debug(`Envelope issuance failed for ${safeName}: ${err.message} — using parent credentials`);
+              // Fall back to parent credentials — sub-agent still works
+            }
+          }
+
+          // Load into registry with scoped credentials
           const agent = new Agent(safeName, agentDir, {
             router: this.router, memory: this.memory,
             audit: this.audit, toolExecutor: this.toolExecutor,
-            trustKernel: this.trustKernel
+            trustKernel: this.trustKernel,
+            secrets: scopedSecrets,
+            toolRegistry: this.tools,
           });
           await agent.load();
           this.agents.agents.set(safeName, agent);
@@ -262,7 +292,10 @@ class QuantumClaw {
           this.audit.log('system', 'agent_spawned', safeName, { role, scopes });
 
           const aidInfo = childAid ? ` AID: ${childAid.aid_id.slice(0, 12)}..., Tier ${childAid.trust_tier}.` : '';
-          return `Agent "${safeName}" spawned successfully.${aidInfo} Role: ${role}. Scopes: ${(scopes || ['chat']).join(', ')}.`;
+          const envelopeInfo = scopedSecrets instanceof ScopedSecretProxy
+            ? ` Delegated ${scopedSecrets.activeEnvelopes().length} credential(s).`
+            : '';
+          return `Agent "${safeName}" spawned successfully.${aidInfo}${envelopeInfo} Role: ${role}. Scopes: ${(scopes || ['chat']).join(', ')}.`;
         } catch (err) {
           return `Failed to spawn agent: ${err.message}`;
         }
@@ -478,6 +511,40 @@ class QuantumClaw {
 
     process.on('SIGINT', () => shutdown('SIGINT'));
     process.on('SIGTERM', () => shutdown('SIGTERM'));
+  }
+
+  /**
+   * Map agent scopes (e.g. ['crm', 'chat']) to secret keys that need envelopes.
+   * Used by spawn_agent to determine which credentials to delegate.
+   */
+  _resolveKeysForScopes(scopes) {
+    // Scope-to-key mapping — which secret keys each scope category requires
+    const SCOPE_KEY_MAP = {
+      crm:       ['ghl_api_key', 'hubspot_api_key'],
+      knowledge: ['notion_api_key', 'airtable_api_key'],
+      payments:  ['stripe_api_key'],
+      code:      ['github_api_key', 'linear_api_key'],
+      voice:     ['elevenlabs_api_key', 'deepgram_api_key'],
+      cloud:     ['oracle_api_key', 'aws_api_key'],
+      // 'chat', 'memory', 'web', 'skills' don't require service credentials
+    };
+
+    const keys = new Set();
+    for (const scope of scopes) {
+      const mapped = SCOPE_KEY_MAP[scope];
+      if (mapped) {
+        for (const k of mapped) keys.add(k);
+      }
+    }
+
+    // If scopes include '*' or 'all', delegate everything
+    if (scopes.includes('*') || scopes.includes('all')) {
+      for (const vals of Object.values(SCOPE_KEY_MAP)) {
+        for (const k of vals) keys.add(k);
+      }
+    }
+
+    return [...keys];
   }
 }
 

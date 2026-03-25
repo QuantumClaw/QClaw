@@ -822,7 +822,31 @@ export class ToolRegistry {
   }
 
   async _executeAPITool(preset, toolDef, args) {
-    const apiKey = preset.secretKey ? await this.secrets.get(preset.secretKey) : null;
+    let apiKey = null;
+    if (preset.secretKey) {
+      // Issue a scoped envelope for skill/API tool execution (short TTL)
+      if (this.secrets.issueEnvelope && preset.name?.startsWith('skill:')) {
+        try {
+          const skillName = preset.name.slice(6); // strip 'skill:' prefix
+          const envelope = await this.secrets.issueEnvelope(
+            preset.secretKey,
+            `skill:${skillName}:${toolDef.name}`,
+            null,  // inherit default scopes from SERVICE_MAP
+            300    // 5-minute TTL for skill executions
+          );
+          if (envelope) {
+            apiKey = envelope.getValue();
+            log.debug(`[AGEX] Skill "${skillName}" using envelope (TTL ${envelope.ttlSeconds}s, source=${envelope.source})`);
+          }
+        } catch (err) {
+          log.debug(`[AGEX] Envelope failed for skill tool: ${err.message} — falling back to direct get`);
+        }
+      }
+      // Fallback: direct credential fetch (existing behaviour)
+      if (!apiKey) {
+        apiKey = await this.secrets.get(preset.secretKey);
+      }
+    }
     const toolName = toolDef.name;
 
     try {

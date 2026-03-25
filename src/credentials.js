@@ -21,6 +21,7 @@
 
 import { log } from './core/logger.js';
 import { SecretStore } from './security/secrets.js';
+import { CredentialEnvelope } from './security/credential-envelope.js';
 // AGEX SDK loaded dynamically — @agexhq/core uses syntax not all Node versions support
 let AgexClient = null;
 let startHubLite = null;
@@ -288,6 +289,95 @@ export class CredentialManager {
       log.error(`[AGEX] Delegation failed: ${err.message}`);
       return null;
     }
+  }
+
+  /**
+   * Issue a scoped, time-bounded credential envelope for a sub-agent or skill.
+   *
+   * AGEX-first: if Hub is online, delegates via CLC (scope-reduced, auditable).
+   * Fallback: wraps the local secret in an envelope with advisory scope/TTL.
+   *
+   * Always returns a CredentialEnvelope if the secret exists, null otherwise.
+   *
+   * @param {string} key             - Secret key (e.g. 'ghl_api_key')
+   * @param {string} recipientId     - Child AID id or agent/skill name
+   * @param {string[]} [subScopes]   - Scopes to grant (subset of SERVICE_MAP scopes)
+   * @param {number} [durationSeconds=3600] - TTL in seconds
+   * @returns {Promise<CredentialEnvelope|null>}
+   */
+  async issueEnvelope(key, recipientId, subScopes = null, durationSeconds = 3600) {
+    const mapping = SERVICE_MAP[key];
+    const durationMs = durationSeconds * 1000;
+    const parentAid = this.aid?.aid_id || 'local';
+
+    // Determine effective scopes — use requested subset, or fall back to mapping defaults
+    const effectiveScopes = subScopes
+      || (mapping && !mapping.local ? mapping.scopes : null)
+      || ['*'];
+
+    // ── AGEX path: scope-reduced CLC delegation ──
+    if (mapping && !mapping.local && this.agexAvailable && this.agex) {
+      try {
+        const clcResult = await this.agex.delegate(
+          mapping.serviceId,
+          recipientId,
+          effectiveScopes,
+          durationSeconds
+        );
+
+        if (clcResult?.value) {
+          const envelope = CredentialEnvelope.fromCLC({
+            key,
+            clcResult,
+            scopes: effectiveScopes,
+            issuedTo: recipientId,
+            issuedBy: parentAid,
+            durationMs,
+            serviceId: mapping.serviceId,
+          });
+          log.debug(`[AGEX] Envelope issued for ${key} → ${recipientId} (CLC ${envelope.clcId}, TTL ${durationSeconds}s)`);
+          return envelope;
+        }
+      } catch (err) {
+        log.debug(`[AGEX] Envelope delegation failed for ${key}: ${err.message} — falling back to local`);
+      }
+    }
+
+    // ── Local fallback: wrap raw secret in an envelope ──
+    const value = await this.get(key);
+    if (!value) {
+      return null;
+    }
+
+    const envelope = CredentialEnvelope.local({
+      key,
+      value,
+      scopes: effectiveScopes,
+      issuedTo: recipientId,
+      issuedBy: parentAid,
+      durationMs,
+      serviceId: mapping?.serviceId || null,
+    });
+    log.debug(`[LOCAL] Envelope issued for ${key} → ${recipientId} (TTL ${durationSeconds}s)`);
+    return envelope;
+  }
+
+  /**
+   * Issue envelopes for multiple keys at once.
+   * Convenience wrapper used by spawn_agent and skill execution.
+   *
+   * @param {string[]} keys          - Secret keys to issue
+   * @param {string} recipientId     - Child AID id or agent/skill name
+   * @param {number} [durationSeconds=3600] - TTL
+   * @returns {Promise<CredentialEnvelope[]>} - Only successfully issued envelopes
+   */
+  async issueEnvelopes(keys, recipientId, durationSeconds = 3600) {
+    const envelopes = [];
+    for (const key of keys) {
+      const envelope = await this.issueEnvelope(key, recipientId, null, durationSeconds);
+      if (envelope) envelopes.push(envelope);
+    }
+    return envelopes;
   }
 
   /**
