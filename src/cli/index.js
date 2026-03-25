@@ -643,7 +643,7 @@ switch (command) {
           if (data.refresh_token) secrets.set('cognee_refresh_token', data.refresh_token);
           console.log('\x1b[38;5;82m✓\x1b[0m Reconnected and re-authenticated.');
         } else {
-          if (loginRes.status === 405) { console.log("\x1b[38;5;82m✓\x1b[0m Reconnected (no auth required)."); } else { console.log(`\x1b[38;5;196m✗\x1b[0m Login failed (${loginRes.status}).`); }
+          if (loginRes.status === 405) { console.log("\x1b[38;5;82m✓\x1b[0m Reconnected (no auth required)."); } else { if (loginRes.status === 405) { console.log("\x1b[38;5;82m✓\x1b[0m Reconnected (no auth required)."); } else { console.log(`\x1b[38;5;196m✗\x1b[0m Login failed (${loginRes.status}).`); } }
         }
       } catch (err) {
         console.log(`\x1b[38;5;196m✗\x1b[0m Could not reach Cognee: ${err.message}`);
