@@ -1098,14 +1098,25 @@ export class ToolRegistry {
       if (preset.name?.startsWith('skill:')) {
         const endpoint = toolDef.endpoint || toolDef.path || '';
         const method = toolDef.method || 'GET';
-    {};
+        let url = `${preset.baseUrl}${endpoint}`;
+
+        // Resolve {{secrets.key}} patterns in endpoint URL (e.g. locationId query params)
+        const urlSecretMatches = url.matchAll(/\{\{secrets\.([^}]+)\}\}/g);
+        for (const match of urlSecretMatches) {
+          const val = await this.secrets.get(match[1]);
+          url = url.replace(match[0], (val || '').trim());
+        }
+
+        const headers = {};
+
         // Resolve all headers — replace {{secrets.key}} with actual secret values
+        // .trim() prevents stray newlines/whitespace from breaking auth headers
         for (const [k, v] of Object.entries(preset.headers || {})) {
           if (v && v.includes('{{secrets.')) {
             const secretKey = v.match(/\{\{secrets\.([^}]+)\}\}/)?.[1];
             if (secretKey) {
               const val = await this.secrets.get(secretKey);
-              headers[k] = v.replace(`{{secrets.${secretKey}}}`, val || '');
+              headers[k] = v.replace(`{{secrets.${secretKey}}}`, (val || '').trim());
             } else {
               headers[k] = v;
             }
@@ -1117,9 +1128,12 @@ export class ToolRegistry {
         const isGet = method === 'GET';
         let fetchUrl = url;
         let body = undefined;
-        if (isGet && args && Object.keys(args).leew URLSearchParams(args);
-          fetchUrl = `${url}?${params}`;
-        } else if (!isGet && args) {
+        if (method === 'GET' && args && Object.keys(args).length > 0) {
+          const params = new URLSearchParams(args);
+          // Append with & if URL already has query params, otherwise ?
+          const sep = url.includes('?') ? '&' : '?';
+          fetchUrl = `${url}${sep}${params}`;
+        } else if (method !== 'GET' && args) {
           body = JSON.stringify(args);
           headers['Content-Type'] = 'application/json';
         }
