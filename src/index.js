@@ -462,7 +462,7 @@ class QuantumClaw {
           };
         }
       }
-      this.heartbeat = new Heartbeat(this.config, this.agents, this.memory, this.audit);
+      this.heartbeat = new Heartbeat(this.config, this.agents, this.memory, this.audit, this.deliveryQueue);
       await this.heartbeat.start();
     } catch (err) {
       log.warn(`Heartbeat failed: ${err.message} — agent works without it`);

@@ -33,11 +33,12 @@ const LEARN_PROMPTS = [
 ];
 
 export class Heartbeat {
-  constructor(config, agents, memory, audit) {
+  constructor(config, agents, memory, audit, deliveryQueue = null) {
     this.config = config;
     this.agents = agents;
     this.memory = memory;
     this.audit = audit || null;
+    this.deliveryQueue = deliveryQueue;
     this.timers = [];
     this.running = false;
     this.heartbeatCostToday = 0;
@@ -85,6 +86,14 @@ export class Heartbeat {
   }
 
   _scheduleTask(task) {
+    // Check for "daily-at-HH:MM" schedule format
+    const dailyMatch = task.schedule?.match(/^daily-at-(\d{2}):(\d{2})$/);
+    if (dailyMatch) {
+      this._scheduleDailyAt(task, parseInt(dailyMatch[1], 10), parseInt(dailyMatch[2], 10));
+      return;
+    }
+
+    // Interval-based schedules
     const intervals = {
       'every-minute': 60 * 1000,
       'every-5-minutes': 5 * 60 * 1000,
@@ -94,35 +103,90 @@ export class Heartbeat {
 
     const interval = intervals[task.schedule];
     if (interval) {
-      const timer = setInterval(async () => {
-        if (!this.running) return;
-
-        // Daily cost cap for heartbeat (prevent runaway costs)
-        const maxDailyCost = this.config.heartbeat?.maxDailyCost || 0.50;
-        if (this.heartbeatCostToday >= maxDailyCost) {
-          log.debug(`Heartbeat: daily cost cap reached (£${this.heartbeatCostToday.toFixed(4)}/${maxDailyCost})`);
-          return;
-        }
-
-        try {
-          const agent = this.agents.get(task.agent) || this.agents.primary();
-          const result = await agent.process(task.prompt, { source: 'heartbeat' });
-          this.heartbeatCostToday += result.cost || 0;
-
-          log.agent(agent.name, `Heartbeat: ${task.name || task.schedule} (£${(result.cost || 0).toFixed(4)})`);
-
-          if (this.audit) {
-            this.audit.log(agent.name, 'heartbeat', task.name || task.schedule, {
-              cost: result.cost,
-              model: result.model,
-              tier: result.tier
-            });
-          }
-        } catch (err) {
-          log.debug(`Heartbeat task failed: ${err.message}`);
-        }
-      }, interval);
+      const timer = setInterval(() => this._runTask(task), interval);
       this.timers.push(timer);
+    }
+  }
+
+  /**
+   * Schedule a task to fire at a specific time each day.
+   * Uses the agent's configured timezone (config.agent.timezone, default UTC).
+   * Recursively schedules via setTimeout to hit the next occurrence.
+   */
+  _scheduleDailyAt(task, hour, minute) {
+    const tz = this.config.agent?.timezone || 'UTC';
+
+    const scheduleNext = () => {
+      if (!this.running) return;
+
+      const now = new Date();
+      // Build today's target time in the configured timezone
+      const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+      const targetLocal = new Date(`${todayStr}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`);
+
+      // Convert the local target to UTC by finding the offset
+      const nowInTz = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+      const tzOffsetMs = nowInTz.getTime() - now.getTime();
+      let targetUtc = new Date(targetLocal.getTime() - tzOffsetMs);
+
+      // If the target time already passed today, schedule for tomorrow
+      if (targetUtc.getTime() <= now.getTime()) {
+        targetUtc = new Date(targetUtc.getTime() + 24 * 60 * 60 * 1000);
+      }
+
+      const delayMs = targetUtc.getTime() - now.getTime();
+      log.debug(`Heartbeat: "${task.name}" next fire in ${Math.round(delayMs / 60000)}min (${hour}:${String(minute).padStart(2, '0')} ${tz})`);
+
+      const timer = setTimeout(async () => {
+        await this._runTask(task);
+        // Reschedule for tomorrow
+        scheduleNext();
+      }, delayMs);
+      this.timers.push(timer);
+    };
+
+    scheduleNext();
+  }
+
+  /**
+   * Execute a scheduled task: run the agent prompt, deliver result if channel configured.
+   */
+  async _runTask(task) {
+    if (!this.running) return;
+
+    // Daily cost cap for heartbeat (prevent runaway costs)
+    const maxDailyCost = this.config.heartbeat?.maxDailyCost || 0.50;
+    if (this.heartbeatCostToday >= maxDailyCost) {
+      log.debug(`Heartbeat: daily cost cap reached (£${this.heartbeatCostToday.toFixed(4)}/${maxDailyCost})`);
+      return;
+    }
+
+    try {
+      const agent = this.agents.get(task.agent) || this.agents.primary();
+      const result = await agent.process(task.prompt, { source: 'heartbeat' });
+      this.heartbeatCostToday += result.cost || 0;
+
+      log.agent(agent.name, `Heartbeat: ${task.name || task.schedule} (£${(result.cost || 0).toFixed(4)})`);
+
+      // Deliver result via channel if configured
+      if (task.channel && this.deliveryQueue) {
+        this.deliveryQueue.enqueue(task.channel, task.userId, result.content, {
+          source: 'heartbeat',
+          task: task.name || task.schedule,
+        });
+        log.debug(`Heartbeat: delivered "${task.name}" to ${task.channel}/${task.userId}`);
+      }
+
+      if (this.audit) {
+        this.audit.log(agent.name, 'heartbeat', task.name || task.schedule, {
+          cost: result.cost,
+          model: result.model,
+          tier: result.tier,
+          delivered: !!task.channel,
+        });
+      }
+    } catch (err) {
+      log.debug(`Heartbeat task failed: ${err.message}`);
     }
   }
 
