@@ -11,20 +11,20 @@
 
 | Component | Location | Details |
 |-----------|----------|---------|
-| QClaw Agent (Charlie) | DigitalOcean Droplet | IP: 138.68.138.214, LON1, 2GB |
-| n8n Server | DigitalOcean Droplet | IP: 157.230.216.158 |
+| QClaw Agent (Charlie) | DigitalOcean Droplet | IP: [QCLAW_SERVER_IP], LON1, 2GB |
+| n8n Server | DigitalOcean Droplet | IP: [N8N_SERVER_IP] |
 | Dashboard | https://agentboardroom.flowos.tech | Nginx + SSL + PM2 |
 | n8n Webhooks | https://webhook.flowos.tech | |
-| Supabase | fdabygmromuqtysitodp | Ads agency data |
+| Supabase | [SUPABASE_PROJECT_ID] | Ads agency data |
 
 ### SSH Aliases
 ```bash
-ssh qclaw        # root@138.68.138.214 — QClaw agent server
-ssh n8n          # n8nadmin@157.230.216.158 — n8n server
+ssh qclaw        # root@[QCLAW_SERVER_IP] — QClaw agent server
+ssh n8n          # n8nadmin@[N8N_SERVER_IP] — n8n server
 ```
 
 ### Dashboard Access
-URL: https://agentboardroom.flowos.tech/?token=18586775352e5301b7514c40f15d68bd Auth token: 18586775352e5301b7514c40f15d68bd PIN:
+URL: https://agentboardroom.flowos.tech/?token=[DASHBOARD_AUTH_TOKEN] Auth token: [DASHBOARD_AUTH_TOKEN] PIN: [DASHBOARD_PIN]
 
 ---
 
@@ -116,7 +116,7 @@ All workflows on: https://webhook.flowos.tech
 | Flow States Competitor Ad Research | QnCEES9T7WxW5vVR | /webhook/... | Untested |
 | QClaw Router | n8n manual | /webhook/qclaw-router | Working |
 
-### Ad Agency Supabase Tables (fdabygmromuqtysitodp)
+### Ad Agency Supabase Tables ([SUPABASE_PROJECT_ID])
 - copy_agent_output — stores copy variants with UTM URLs
 - ad_creation_sessions — conversational ad creation state
 
@@ -196,7 +196,7 @@ ssh qclaw "pm2 list"
 ssh qclaw "curl -s http://localhost:8000/health"
 
 # Check Charlie health
-ssh qclaw "curl -s http://localhost:4000/api/health --header 'Authorization: Bearer 18586775352e5301b7514c40f15d68bd'"
+ssh qclaw "curl -s http://localhost:4000/api/health --header 'Authorization: Bearer [DASHBOARD_AUTH_TOKEN]'"
 
 # Deploy latest code
 cd ~/QClaw && git push origin main
