@@ -381,7 +381,7 @@ class QuantumClaw {
 
     // ── Layer 6: Channels (non-fatal, dashboard is the fallback) ──
     try {
-      this.channels = new ChannelManager(this.config, this.agents, this.credentials, this.approvals);
+      this.channels = new ChannelManager(this.config, this.agents, this.credentials, this.approvals, this.deliveryQueue);
       await this.channels.startAll();
     } catch (err) {
       log.warn(`Channel startup failed: ${err.message} — dashboard still available`);

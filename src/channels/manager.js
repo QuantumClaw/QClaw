@@ -8,12 +8,14 @@
 import { log } from '../core/logger.js';
 
 export class ChannelManager {
-  constructor(config, agents, secrets, approvals) {
+  constructor(config, agents, secrets, approvals, deliveryQueue) {
     this.config = config;
     this.agents = agents;
     this.secrets = secrets;
     this.approvals = approvals;
+    this.deliveryQueue = deliveryQueue;
     this.channels = [];
+    this._channelsByName = new Map();
     this._broadcast = null;
   }
 
@@ -41,15 +43,30 @@ export class ChannelManager {
           channel._broadcast = this._broadcast;
           await channel.start();
           this.channels.push(channel);
+          this._channelsByName.set(name, channel);
           log.success(`Channel: ${name}`);
         }
       } catch (err) {
         log.warn(`Channel ${name} failed to start: ${err.message}`);
       }
     }
+
+    if (this.deliveryQueue) {
+      this.deliveryQueue.startRetryLoop(async (channel, recipient, content, metadata) => {
+        const ch = this._channelsByName.get(channel);
+        if (!ch || typeof ch.send !== 'function') {
+          throw new Error(`Channel "${channel}" not available for delivery`);
+        }
+        await ch.send(recipient, content, metadata);
+      });
+      log.debug('Delivery queue consumer started');
+    }
   }
 
   async stopAll() {
+    if (this.deliveryQueue) {
+      this.deliveryQueue.stop();
+    }
     for (const channel of this.channels) {
       try {
         await channel.stop();
@@ -393,6 +410,17 @@ await ctx.reply(
       } else {
         throw err;
       }
+    }
+  }
+
+  async send(recipient, content) {
+    if (!this.bot) throw new Error('Telegram bot not started');
+    const maxLen = 4096;
+    const chunks = content.length <= maxLen
+      ? [content]
+      : this._chunkMessage(content, maxLen);
+    for (const chunk of chunks) {
+      await this.bot.api.sendMessage(recipient, chunk);
     }
   }
 
