@@ -562,7 +562,9 @@
 
 <script>
 /* ─── State ───────────────────────────────────────────── */
-const TOKEN = new URLSearchParams(location.search).get('token') || '';
+const _urlToken = new URLSearchParams(location.search).get('token');
+if (_urlToken) sessionStorage.setItem('dashboard_token', _urlToken);
+const TOKEN = _urlToken || sessionStorage.getItem('dashboard_token') || '';
 const API = (path) => path + (path.includes('?') ? '&' : '?') + 'token=' + TOKEN;
 let ws = null;
 let chatHistory = [];
