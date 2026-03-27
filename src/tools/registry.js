@@ -788,7 +788,23 @@ export class ToolRegistry {
   // ─── Private ──────────────────────────────────────────
 
   async _connectServer(name, serverConf) {
-    // Substitute placeholders in server args
+    // Guard: stdio servers require a command; SSE servers require a url
+    if (serverConf.transport === 'sse' && !serverConf.url) {
+      throw new Error(`SSE server "${name}" has no url configured`);
+    }
+    if (serverConf.transport !== 'sse' && !serverConf.command) {
+      // Try to fill in from preset defaults
+      const preset = PRESET_SERVERS[name];
+      if (preset?.command) {
+        serverConf.command = preset.command;
+        serverConf.args = serverConf.args || [...(preset.args || [])];
+        serverConf.transport = serverConf.transport || preset.transport;
+      } else {
+        throw new Error(`Server "${name}" has no command configured`);
+      }
+    }
+
+    // Substitute placeholders in args (same logic as enablePreset)
     const workspace = this.config._dir ? `${this.config._dir}/workspace` : '.';
     if (serverConf.args && Array.isArray(serverConf.args)) {
       serverConf = {
@@ -1078,6 +1094,67 @@ export class ToolRegistry {
         return res.ok ? `Webhook triggered. Response: ${text.slice(0, 2000)}` : `Webhook error ${res.status}: ${text.slice(0, 500)}`;
       }
 
+      // ── Generic Skill HTTP Executor ─────────────────
+      if (preset.name?.startsWith('skill:')) {
+        const endpoint = toolDef.endpoint || toolDef.path || '';
+        const method = toolDef.method || 'GET';
+        let url = `${preset.baseUrl}${endpoint}`;
+
+        // Resolve {{secrets.key}} patterns in endpoint URL (e.g. locationId query params)
+        const urlSecretMatches = url.matchAll(/\{\{secrets\.([^}]+)\}\}/g);
+        for (const match of urlSecretMatches) {
+          const val = await this.secrets.get(match[1]);
+          url = url.replace(match[0], (val || '').trim());
+        }
+
+        const headers = {};
+
+        // Resolve all headers — replace {{secrets.key}} with actual secret values
+        // .trim() prevents stray newlines/whitespace from breaking auth headers
+        for (const [k, v] of Object.entries(preset.headers || {})) {
+          if (v && v.includes('{{secrets.')) {
+            const secretKey = v.match(/\{\{secrets\.([^}]+)\}\}/)?.[1];
+            if (secretKey) {
+              const val = await this.secrets.get(secretKey);
+              headers[k] = v.replace(`{{secrets.${secretKey}}}`, (val || '').trim());
+            } else {
+              headers[k] = v;
+            }
+          } else {
+            headers[k] = v;
+          }
+        }
+        // Build query params or body
+        const isGet = method === 'GET';
+        let fetchUrl = url;
+        let body = undefined;
+        if (method === 'GET' && args && Object.keys(args).length > 0) {
+          // Strip params already present in the URL to avoid duplicates (e.g. limit)
+          const existingUrl = new URL(url, 'http://placeholder');
+          const extra = {};
+          for (const [k, v] of Object.entries(args)) {
+            if (!existingUrl.searchParams.has(k)) extra[k] = v;
+          }
+          if (Object.keys(extra).length > 0) {
+            const params = new URLSearchParams(extra);
+            const sep = url.includes('?') ? '&' : '?';
+            fetchUrl = `${url}${sep}${params}`;
+          }
+        } else if (method !== 'GET' && args) {
+          body = JSON.stringify(args);
+          headers['Content-Type'] = 'application/json';
+        }
+        const res = await fetch(fetchUrl, { method, headers, body, signal: AbortSignal.timeout(15000) });
+        const text = await res.text();
+        if (!res.ok) return `${preset.name} error ${res.status}: ${text.slice(0, 500)}`;
+        try {
+          const json = JSON.parse(text);
+          // Array-heavy responses (e.g. contacts, invoices): compact JSON to fit more records
+          const topArrayKey = Object.keys(json).find(k => Array.isArray(json[k]));
+          if (topArrayKey) return JSON.stringify(json).slice(0, 8000);
+          return JSON.stringify(json, null, 2).slice(0, 8000);
+        } catch { return text.slice(0, 8000); }
+      }
       return `API tool ${toolName} not implemented for ${preset.name}`;
     } catch (err) {
       return `API error (${preset.name}/${toolName}): ${err.message}`;

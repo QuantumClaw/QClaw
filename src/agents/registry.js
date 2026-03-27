@@ -431,6 +431,10 @@ You exist to make your human's life easier and their business more profitable. Y
       parts.push(`\n${knowledgeContext}`);
     }
 
+    // Add tools instruction
+    if (this.services.toolExecutor) {
+      parts.push('\n## Tool Execution\nYou have registered function-calling tools. When the user requests data or actions from GHL, Stripe, or n8n, you MUST invoke the tool directly. Do not describe the action or show curl commands — execute the tool and report results.');
+    }
     // Add skills
     if (this.skills.length > 0) {
       parts.push('\n## Available Skills');
