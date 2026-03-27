@@ -215,3 +215,52 @@ ssh qclaw "cd ~/QClaw && npm test"
 
 - QClaw/AGEX devs — same team, in contact via Telegram. Bug report sent 26 Mar 2026.
 - n8n API key — stored in ~/.quantumclaw/.env as N8N_API_KEY
+
+---
+
+## Session: 27 March 2026
+
+### Completed This Session
+
+**Morning Brief:**
+- [x] Delivery queue consumer wired to Telegram channel (channels/manager.js)
+- [x] Morning brief confirmed delivering to Telegram
+- [x] Schedule corrected to 05:00 UTC = 08:00 Athens
+
+**Ad Creation Agent (lrGcirtmOHb1xTq8):**
+- [x] Full end-to-end test passed
+- [x] Bug fix: campaign name "undefined" — added campaignName to Step: Objective Selected return object
+- [x] Bug fix: no-adset-node fallback for undefined campaign name
+- [x] Bug fix: copy agent pull uses parseInt(ctx.chatId)
+
+**Competitor Research Agent (QnCEES9T7WxW5vVR):**
+- [x] Model updated to claude-haiku-4-5-20251001, max_tokens 800
+- [x] Truncation added at 3500 chars to fit Telegram limit
+- [x] Tested via dashboard Scout button — working
+
+**Charlie Routing:**
+- [x] ads-agency.md skill updated with CRITICAL ROUTING RULES
+- [x] Charlie calls ad-creation-agent webhook on "create ad"
+
+**Ad Agency Dashboard Room:**
+- [x] Agency page added (🎬 nav item)
+- [x] 5 Pixar/DreamWorks 3D characters generated via Gemini:
+  Rex (Strategist), Ledger (Media Buyer), Frame (Creative Dir),
+  Penny (Copywriter), Scout (Researcher)
+- [x] Characters at ~/QClaw/src/dashboard/agency-assets/
+- [x] Dark cinematic office floor, colour-coded desk cards, trigger buttons
+- [x] Modals for Scout, Penny, Frame — all calling correct webhooks
+- [x] Ledger routes to Telegram, Rex shows Coming Soon
+
+**Dashboard Fixes:**
+- [x] Token persistence — saved to sessionStorage, no more Unauthorised errors
+- [x] WebSocket timeout — Nginx proxy timeouts set to 3600s, fixes Offline badge
+
+### Pending / Next Session
+
+- [ ] Content Studio — Emma podcast "The Flow Lane with Emma Maidment"
+  video → YouTube/Buzzsprout → social clips → email → blog
+- [ ] Rex (Strategist) agent — not yet built
+- [ ] Trading Room + Gym (Monte Carlo, Polymarket)
+- [ ] Wire Charlie memory to Cognee graph
+- [ ] SproutCode continued development
