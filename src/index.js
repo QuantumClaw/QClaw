@@ -26,10 +26,14 @@ import { getDb, closeDb } from './core/database.js';
 import { DeliveryQueue } from './core/delivery-queue.js';
 import { CompletionCache } from './core/completion-cache.js';
 import { ExecApprovals } from './security/approvals.js';
+import { ApprovalGate } from './security/approval-gate.js';
+import { RateLimiter } from './security/rate-limiter.js';
+import { ContentQueue } from './security/content-queue.js';
 import { banner } from './cli/brand.js';
 import { log } from './core/logger.js';
 import { writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 
 class QuantumClaw {
   constructor() {

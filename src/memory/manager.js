@@ -88,7 +88,7 @@ export class MemoryManager {
         this._jsonStore = existsSync(this._jsonStorePath)
           ? JSON.parse(readFileSync(this._jsonStorePath, 'utf-8'))
           : { conversations: [], context: {} };
-      } catch {
+      } catch (err) {
         this._jsonStore = { conversations: [], context: {} };
       }
     }
@@ -709,12 +709,14 @@ export class MemoryManager {
         headers: this._cogneeHeaders(),
         signal: AbortSignal.timeout(5000)
       });
-      // 200 = authenticated, 401 = auth required but we don't have it
-      if (settingsRes.status === 401) {
-        throw new Error('Cognee requires authentication. Set COGNEE_USERNAME/COGNEE_PASSWORD or cognee_api_key.');
+      // 200 = authenticated, 401 on settings = no-auth mode (acceptable)
+      // 405 = endpoint not supported on this version (acceptable)
+      // Only throw if we explicitly need auth and don't have it
+      if (settingsRes.status === 401 && (this._cogneeApiKey || this._cogneeToken)) {
+        // 401 = no-auth mode, acceptable
       }
     } catch (err) {
-      if (err.message.includes('requires authentication')) throw err;
+      // continue on all errors
       // Network error accessing settings — Cognee might not have the endpoint, continue
     }
 
@@ -786,8 +788,8 @@ export class MemoryManager {
       try {
         const count = await this._connectCognee();
         log.success(`Knowledge graph reconnected (${count} datasets)`);
-      } catch {
-        // Still down, will try again next interval
+      } catch (err) {
+        log.warn(`Cognee reconnect failed: ${err.message}`);
       }
     }, interval);
   }

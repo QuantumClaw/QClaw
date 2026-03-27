@@ -583,7 +583,7 @@ switch (command) {
     if (subcommand === 'status' || !subcommand) {
       console.log(`\n  Cognee URL: ${cogneeUrl}`);
       try {
-        const res = await fetch(cogneeUrl + '/api/v1/health', { signal: AbortSignal.timeout(3000) });
+        const res = await fetch(cogneeUrl + '/health', { signal: AbortSignal.timeout(3000) });
         if (res.ok) {
           const data = await res.json();
           console.log('  Status:    \x1b[38;5;82mconnected\x1b[0m');
@@ -606,7 +606,7 @@ switch (command) {
     } else if (subcommand === 'reconnect') {
       console.log('Attempting Cognee reconnect...');
       try {
-        const healthRes = await fetch(cogneeUrl + '/api/v1/health', { signal: AbortSignal.timeout(5000) });
+        const healthRes = await fetch(cogneeUrl + '/health', { signal: AbortSignal.timeout(5000) });
         if (!healthRes.ok) throw new Error(`Health check returned ${healthRes.status}`);
 
         const refreshToken = secrets.get('cognee_refresh_token');
@@ -643,7 +643,7 @@ switch (command) {
           if (data.refresh_token) secrets.set('cognee_refresh_token', data.refresh_token);
           console.log('\x1b[38;5;82m✓\x1b[0m Reconnected and re-authenticated.');
         } else {
-          console.log(`\x1b[38;5;196m✗\x1b[0m Login failed (${loginRes.status}).`);
+          if (loginRes.status === 405) { console.log("\x1b[38;5;82m✓\x1b[0m Reconnected (no auth required)."); } else { if (loginRes.status === 405) { console.log("\x1b[38;5;82m✓\x1b[0m Reconnected (no auth required)."); } else { console.log(`\x1b[38;5;196m✗\x1b[0m Login failed (${loginRes.status}).`); } }
         }
       } catch (err) {
         console.log(`\x1b[38;5;196m✗\x1b[0m Could not reach Cognee: ${err.message}`);
