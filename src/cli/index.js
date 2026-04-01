@@ -1416,10 +1416,12 @@ Usage: qclaw <command>
 
   \x1b[1mAgents\x1b[0m
   agent list          List all agents with status
+  agent stats <name>  Show agent performance metrics
   agent remove <name> Remove a spawned agent
   agent pause <name>  Pause an agent
   agent resume <name> Resume a paused agent
   team list           Show active teams
+  team stats <id>     Show team performance metrics
   team presets        Show built-in team templates
   team create "Name"  Create a team from a preset
   team delete <id>    Delete a team (keeps agents)
@@ -1709,8 +1711,34 @@ Dashboard: http://localhost:3000 (when agent is running)
         else console.log(`\n  ${Y}!${RS} ${data.error}\n`);
       } catch { console.log(`\n  ${Y}!${RS} Agent is not running.\n`); }
 
+    } else if (subcommand === 'stats') {
+      const name = args[2];
+      if (!name) { console.log('Usage: qclaw agent stats <name>'); break; }
+      const { config: agCfg } = await loadCore();
+      const port = agCfg.dashboard?.port || 3000;
+      const token = agCfg.dashboard?.authToken || '';
+      try {
+        const res = await fetch(`http://localhost:${port}/api/agents/${name}/metrics`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!res.ok) { console.log(`\n  ${Y}!${RS} ${(await res.json()).error}\n`); break; }
+        const m = await res.json();
+        console.log(`\n  ${B}${m.name}${RS}  Performance\n`);
+        const sc = m.successRate >= 90 ? G : m.successRate >= 70 ? Y : '\x1b[38;5;196m';
+        console.log(`  Success rate:    ${sc}${m.successRate.toFixed(1)}%${RS}`);
+        console.log(`  Tasks:           ${m.tasksCompleted} completed / ${m.tasksFailed} failed`);
+        console.log(`  Avg response:    ${m.avgResponseTime}ms`);
+        console.log(`  Rating:          ${m.avgRating ? '★' + m.avgRating.toFixed(1) + ' (' + m.userRatings.length + ' ratings)' : 'No ratings'}`);
+        console.log(`  Total cost:      £${m.totalCost.toFixed(4)}`);
+        console.log(`  Total tokens:    ${m.totalTokensUsed.toLocaleString()}`);
+        console.log(`  Streak:          ${m.streak > 0 ? '🔥 ' + m.streak : '0'}`);
+        console.log(`  Last active:     ${m.lastActive ? new Date(m.lastActive).toLocaleString() : 'Never'}`);
+        console.log('');
+      } catch { console.log(`\n  ${Y}!${RS} Agent is not running.\n`); }
+
     } else {
-      console.log('Usage: qclaw agent <list|remove|pause|resume> [name]');
+      console.log('Usage: qclaw agent <list|remove|pause|resume|stats> [name]');
     }
     break;
   }
@@ -1808,8 +1836,31 @@ Dashboard: http://localhost:3000 (when agent is running)
         else console.log(`\n  ${Y}!${RS} ${data.error}\n`);
       } catch { console.log(`\n  ${Y}!${RS} Agent is not running.\n`); }
 
+    } else if (subcommand === 'stats') {
+      const teamId = args[2];
+      if (!teamId) { console.log('Usage: qclaw team stats <id>'); break; }
+      const { config: tCfg } = await loadCore();
+      const port = tCfg.dashboard?.port || 3000;
+      const token = tCfg.dashboard?.authToken || '';
+      try {
+        const res = await fetch(`http://localhost:${port}/api/teams/${teamId}/metrics`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!res.ok) { console.log(`\n  ${Y}!${RS} ${(await res.json()).error}\n`); break; }
+        const m = await res.json();
+        console.log(`\n  ${B}Team: ${teamId}${RS}  Performance\n`);
+        const sc = m.teamSuccessRate >= 90 ? G : m.teamSuccessRate >= 70 ? Y : '\x1b[38;5;196m';
+        console.log(`  Success rate:    ${sc}${m.teamSuccessRate.toFixed(1)}%${RS}`);
+        console.log(`  Tasks:           ${m.teamTasksCompleted} completed / ${m.teamTasksFailed} failed`);
+        console.log(`  Avg response:    ${m.avgTeamResponseTime}ms`);
+        console.log(`  Total cost:      £${m.teamCost.toFixed(4)}`);
+        console.log(`  Team rating:     ${m.teamRating ? '★' + m.teamRating.toFixed(1) : 'No ratings'}`);
+        console.log('');
+      } catch { console.log(`\n  ${Y}!${RS} Agent is not running.\n`); }
+
     } else {
-      console.log('Usage: qclaw team <list|create|delete|presets> [name]');
+      console.log('Usage: qclaw team <list|create|delete|presets|stats> [name]');
     }
     break;
   }

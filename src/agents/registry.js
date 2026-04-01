@@ -7,6 +7,7 @@
 
 import { readdirSync, existsSync, readFileSync, renameSync } from 'fs';
 import { join } from 'path';
+import { createHash } from 'crypto';
 import { log } from '../core/logger.js';
 
 export class AgentRegistry {
@@ -173,6 +174,23 @@ export class AgentRegistry {
     return { ok: true };
   }
 
+  getTeamMetrics(teamId) {
+    const team = this.teams.get(teamId);
+    if (!team) return null;
+    const members = team.agentNames.map(n => this.agents.get(n)).filter(Boolean);
+    if (members.length === 0) return { teamSuccessRate: 0, teamTasksCompleted: 0, teamTasksFailed: 0, avgTeamResponseTime: 0, teamCost: 0, teamRating: 0 };
+    const completed = members.reduce((s, a) => s + a.metrics.tasksCompleted, 0);
+    const failed = members.reduce((s, a) => s + a.metrics.tasksFailed, 0);
+    const rates = members.filter(a => a.metrics.tasksCompleted + a.metrics.tasksFailed > 0).map(a => a.successRate);
+    const avgRate = rates.length > 0 ? rates.reduce((s, r) => s + r, 0) / rates.length : 0;
+    const respTimes = members.filter(a => a.avgResponseTime > 0).map(a => a.avgResponseTime);
+    const avgResp = respTimes.length > 0 ? Math.round(respTimes.reduce((s, t) => s + t, 0) / respTimes.length) : 0;
+    const cost = members.reduce((s, a) => s + a.metrics.totalCost, 0);
+    const ratings = members.filter(a => a.avgRating > 0).map(a => a.avgRating);
+    const avgRating = ratings.length > 0 ? ratings.reduce((s, r) => s + r, 0) / ratings.length : 0;
+    return { teamSuccessRate: Math.round(avgRate * 100) / 100, teamTasksCompleted: completed, teamTasksFailed: failed, avgTeamResponseTime: avgResp, teamCost: Math.round(cost * 10000) / 10000, teamRating: Math.round(avgRating * 100) / 100 };
+  }
+
   setTeamLead(teamId, agentName) {
     const team = this.teams.get(teamId);
     if (!team) return { ok: false, error: `Team "${teamId}" not found` };
@@ -288,10 +306,88 @@ export class Agent {
     this.role = null;
     this.spawnedAt = null;
     this.teamId = null;
+    this.metrics = {
+      tasksCompleted: 0,
+      tasksFailed: 0,
+      totalTokensUsed: 0,
+      totalCost: 0,
+      totalResponseTime: 0,
+      streak: 0,
+      lastActive: null,
+      statusSince: Date.now(),
+      userRatings: [],
+    };
   }
 
   pause() { this.status = 'paused'; }
   resume() { this.status = 'active'; }
+
+  get successRate() {
+    const total = this.metrics.tasksCompleted + this.metrics.tasksFailed;
+    if (total === 0) return 0;
+    // Partial successes (ratings < 3) count as 0.5
+    const partials = this.metrics.userRatings.filter(r => r.rating > 0 && r.rating < 3).length;
+    return ((this.metrics.tasksCompleted - partials * 0.5) / total) * 100;
+  }
+
+  get avgResponseTime() {
+    const total = this.metrics.tasksCompleted + this.metrics.tasksFailed;
+    return total > 0 ? Math.round(this.metrics.totalResponseTime / total) : 0;
+  }
+
+  get uptime() {
+    return this.status === 'active' ? Date.now() - (this.metrics.statusSince || Date.now()) : 0;
+  }
+
+  recordSuccess(duration, tokens, cost) {
+    this.metrics.tasksCompleted++;
+    this.metrics.totalResponseTime += duration || 0;
+    this.metrics.totalTokensUsed += tokens || 0;
+    this.metrics.totalCost += cost || 0;
+    this.metrics.streak++;
+    this.metrics.lastActive = Date.now();
+  }
+
+  recordFailure(duration, tokens, cost) {
+    this.metrics.tasksFailed++;
+    this.metrics.totalResponseTime += duration || 0;
+    this.metrics.totalTokensUsed += tokens || 0;
+    this.metrics.totalCost += cost || 0;
+    this.metrics.streak = 0;
+    this.metrics.lastActive = Date.now();
+  }
+
+  addRating(rating, messageId) {
+    this.metrics.userRatings.push({
+      rating: Math.max(1, Math.min(5, rating)),
+      messageId: messageId || null,
+      timestamp: Date.now(),
+    });
+    // Keep last 500 ratings
+    if (this.metrics.userRatings.length > 500) {
+      this.metrics.userRatings = this.metrics.userRatings.slice(-500);
+    }
+  }
+
+  get avgRating() {
+    const r = this.metrics.userRatings;
+    if (r.length === 0) return 0;
+    return r.reduce((s, x) => s + x.rating, 0) / r.length;
+  }
+
+  exportForMarketplace() {
+    const data = {
+      agentId: this.aid?.aid_id || this.name,
+      successRate: Math.round(this.successRate * 100) / 100,
+      tasksCompleted: this.metrics.tasksCompleted,
+      avgRating: Math.round(this.avgRating * 100) / 100,
+      avgResponseTime: this.avgResponseTime,
+      totalCost: Math.round(this.metrics.totalCost * 10000) / 10000,
+      uptime: this.uptime,
+    };
+    data.hash = createHash('sha256').update(JSON.stringify(data)).digest('hex');
+    return data;
+  }
 
   toJSON() {
     return {
@@ -301,6 +397,7 @@ export class Agent {
       spawnedAt: this.spawnedAt,
       teamId: this.teamId,
       aidId: this.aid?.aid_id || null,
+      metrics: this.metrics,
     };
   }
 
@@ -408,17 +505,27 @@ export class Agent {
 
     // Call LLM — use tool executor if available (agentic), otherwise direct completion (chat-only)
     let result;
-    if (this.services.toolExecutor) {
-      result = await this.services.toolExecutor.run(messages, {
-        model: route.model,
-        system: systemPrompt
-      });
-    } else {
-      const completion = await router.complete(messages, {
-        model: route.model,
-        system: systemPrompt
-      });
-      result = { ...completion, toolCalls: [] };
+    const _t0 = Date.now();
+    try {
+      if (this.services.toolExecutor) {
+        result = await this.services.toolExecutor.run(messages, {
+          model: route.model,
+          system: systemPrompt
+        });
+      } else {
+        const completion = await router.complete(messages, {
+          model: route.model,
+          system: systemPrompt
+        });
+        result = { ...completion, toolCalls: [] };
+      }
+      const _dur = Date.now() - _t0;
+      const _tok = (result.usage?.input_tokens || 0) + (result.usage?.output_tokens || 0);
+      this.recordSuccess(_dur, _tok, result.cost || 0);
+    } catch (err) {
+      const _dur = Date.now() - _t0;
+      this.recordFailure(_dur, 0, 0);
+      throw err;
     }
 
     // Store in conversation memory (working memory / episodic log)

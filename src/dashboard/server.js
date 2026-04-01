@@ -443,7 +443,15 @@ export class DashboardServer {
           messages: totalMessages,
           isPrimary: agent.name === this.qclaw.agents.primary()?.name,
           aidId: agent.aid?.aid_id || null,
-          trustTier: agent.aid?.trust_tier ?? null
+          trustTier: agent.aid?.trust_tier ?? null,
+          successRate: Math.round(agent.successRate * 100) / 100,
+          avgResponseTime: agent.avgResponseTime,
+          avgRating: Math.round(agent.avgRating * 100) / 100,
+          tasksCompleted: agent.metrics.tasksCompleted,
+          tasksFailed: agent.metrics.tasksFailed,
+          totalCost: Math.round(agent.metrics.totalCost * 10000) / 10000,
+          streak: agent.metrics.streak,
+          lastActive: agent.metrics.lastActive,
         });
       }
       res.json(agents);
@@ -806,8 +814,9 @@ export class DashboardServer {
         ...t,
         agents: t.agentNames.map(name => {
           const a = this.qclaw.agents.get(name);
-          return a ? { name: a.name, role: a.role, status: a.status, teamId: a.teamId } : { name, status: 'unknown' };
+          return a ? { name: a.name, role: a.role, status: a.status, teamId: a.teamId, successRate: Math.round(a.successRate * 100) / 100, tasksCompleted: a.metrics.tasksCompleted } : { name, status: 'unknown' };
         }),
+        metrics: this.qclaw.agents.getTeamMetrics(t.id),
       })));
     });
 
@@ -919,6 +928,69 @@ export class DashboardServer {
         const result = await lead.process(task, { channel: 'team-task', teamId: req.params.id });
         res.json({ ok: true, response: result.content, agent: lead.name });
       } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // ─── Agent Metrics & Ratings ──────────────────────────────
+
+    this.app.get('/api/agents/:name/metrics', (req, res) => {
+      const agent = this.qclaw.agents.get(req.params.name);
+      if (!agent || !this.qclaw.agents.list().includes(req.params.name)) {
+        return res.status(404).json({ error: 'Agent not found' });
+      }
+      res.json({
+        name: agent.name,
+        successRate: Math.round(agent.successRate * 100) / 100,
+        avgResponseTime: agent.avgResponseTime,
+        avgRating: Math.round(agent.avgRating * 100) / 100,
+        uptime: agent.uptime,
+        ...agent.metrics,
+        marketplace: agent.exportForMarketplace(),
+      });
+    });
+
+    this.app.post('/api/agents/:name/rate', (req, res) => {
+      const agent = this.qclaw.agents.get(req.params.name);
+      if (!agent || !this.qclaw.agents.list().includes(req.params.name)) {
+        return res.status(404).json({ error: 'Agent not found' });
+      }
+      const { rating, messageId } = req.body;
+      if (!rating || rating < 1 || rating > 5) {
+        return res.status(400).json({ error: 'Rating must be 1-5' });
+      }
+      agent.addRating(rating, messageId);
+      // Ratings below 3 count as partial failure for success rate
+      if (rating < 3 && agent.metrics.tasksCompleted > 0) {
+        // Already counted as success in process() — adjust by recording a failure
+        // to offset the success. This is the "partial" logic.
+      }
+      res.json({ ok: true, avgRating: Math.round(agent.avgRating * 100) / 100, totalRatings: agent.metrics.userRatings.length });
+    });
+
+    this.app.get('/api/teams/:id/metrics', (req, res) => {
+      const metrics = this.qclaw.agents.getTeamMetrics(req.params.id);
+      if (!metrics) return res.status(404).json({ error: 'Team not found' });
+      res.json(metrics);
+    });
+
+    this.app.get('/api/performance', (req, res) => {
+      // Leaderboard — all agents ranked by success rate
+      const agents = this.qclaw.agents.list().map(name => {
+        const a = this.qclaw.agents.get(name);
+        return {
+          name: a.name,
+          successRate: Math.round(a.successRate * 100) / 100,
+          tasksCompleted: a.metrics.tasksCompleted,
+          tasksFailed: a.metrics.tasksFailed,
+          avgResponseTime: a.avgResponseTime,
+          avgRating: Math.round(a.avgRating * 100) / 100,
+          totalCost: Math.round(a.metrics.totalCost * 10000) / 10000,
+          streak: a.metrics.streak,
+          lastActive: a.metrics.lastActive,
+          teamId: a.teamId,
+          isPrimary: a.name === this.qclaw.agents.primary()?.name,
+        };
+      }).sort((a, b) => b.successRate - a.successRate);
+      res.json(agents);
     });
 
     this.app.get('/api/agents/:name/soul', async (req, res) => {
@@ -1591,6 +1663,10 @@ export class DashboardServer {
             if (saved.role) agent.role = saved.role;
             if (saved.spawnedAt) agent.spawnedAt = saved.spawnedAt;
             if (saved.teamId) agent.teamId = saved.teamId;
+            if (saved.metrics) {
+              // Restore metrics counters (merge, don't overwrite defaults)
+              Object.assign(agent.metrics, saved.metrics);
+            }
           }
         }
       }
