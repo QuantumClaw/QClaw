@@ -47,6 +47,7 @@
     "@agexhq/sdk": "1.0.1",
     "@agexhq/store": "^1.1.1",
     "@clack/prompts": "^0.9.1",
+    "bcryptjs": "3.0.3",
     "chalk": "^5.4.1",
     "express": "^4.21.0",
     "grammy": "^1.30.0",

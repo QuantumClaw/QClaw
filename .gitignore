@@ -13,6 +13,9 @@ node_modules/
 
 # QuantumClaw runtime
 .quantumclaw/
+config.json
+state.json
+creds/
 workspace/agents/*/memory/
 workspace/memory/
 workspace/logs/

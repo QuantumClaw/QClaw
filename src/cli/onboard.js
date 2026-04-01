@@ -16,8 +16,11 @@ import { saveConfig, loadConfig } from '../core/config.js';
 import { SecretStore } from '../security/secrets.js';
 import { TrustKernel } from '../security/trust-kernel.js';
 import { existsSync } from 'fs';
+import bcrypt from 'bcryptjs';
 
 const { green, yellow, cyan, reset, dim, bold, white } = theme;
+
+const isFullMode = process.argv.includes('--full');
 
 export async function runOnboard() {
   banner();
@@ -77,155 +80,154 @@ export async function runOnboard() {
     }
   }
 
-  // ─── Step 2: Telegram (optional) ──────────────────────
-
-  const wantTelegram = await p.confirm({
-    message: 'Connect a Telegram bot?',
-    initialValue: true,
-  });
+  // ─── Steps 2-3: Channels + Embeddings (full mode only) ──
 
   let telegramToken = null;
-  if (!p.isCancel(wantTelegram) && wantTelegram) {
-    p.note([
-      `1. Open Telegram → search ${cyan}@BotFather${reset}`,
-      `2. Send ${cyan}/newbot${reset} → pick a name`,
-      `3. Copy the token`,
-    ].join('\n'), 'Quick setup');
-
-    let verified = false;
-    while (!verified) {
-      telegramToken = await p.password({ message: 'Bot token:' });
-      if (p.isCancel(telegramToken)) { telegramToken = null; break; }
-
-      const s = p.spinner();
-      s.start('Checking...');
-      try {
-        const res = await fetch(`https://api.telegram.org/bot${telegramToken}/getMe`, {
-          signal: AbortSignal.timeout(10000)
-        });
-        const data = await res.json();
-        if (data.ok) {
-          s.stop(`${green}✓${reset} Bot: @${data.result.username}`);
-          verified = true;
-        } else {
-          s.stop(`${yellow}✗${reset} Invalid token — try again`);
-          telegramToken = null;
-        }
-      } catch {
-        s.stop(`${yellow}✗${reset} Can't reach Telegram — try again`);
-        telegramToken = null;
-      }
-    }
-  }
-
-  // ─── Step 2b: Discord (optional) ──────────────────────
-
-  const wantDiscord = await p.confirm({
-    message: 'Connect a Discord bot?',
-    initialValue: false,
-  });
-
   let discordToken = null;
-  if (!p.isCancel(wantDiscord) && wantDiscord) {
-    p.note([
-      `1. Go to ${cyan}discord.com/developers/applications${reset}`,
-      `2. Create New Application → Bot → Reset Token → Copy`,
-      `3. Enable MESSAGE CONTENT intent in Bot settings`,
-      `4. Invite bot to your server with Messages + Read permissions`,
-    ].join('\n'), 'Discord setup');
-
-    let verified = false;
-    while (!verified) {
-      discordToken = await p.password({ message: 'Bot token:' });
-      if (p.isCancel(discordToken)) { discordToken = null; break; }
-
-      const s = p.spinner();
-      s.start('Checking...');
-      try {
-        const res = await fetch('https://discord.com/api/v10/users/@me', {
-          headers: { 'Authorization': `Bot ${discordToken}` },
-          signal: AbortSignal.timeout(10000),
-        });
-        const data = await res.json();
-        if (res.ok && data.username) {
-          s.stop(`${green}✓${reset} Bot: ${data.username}#${data.discriminator || '0'}`);
-          verified = true;
-        } else {
-          s.stop(`${yellow}✗${reset} Invalid token — try again`);
-          discordToken = null;
-        }
-      } catch {
-        s.stop(`${yellow}✗${reset} Can't reach Discord — try again`);
-        discordToken = null;
-      }
-    }
-  }
-
-  // ─── Step 3: Embeddings for Knowledge Graph ──────────
-  //
-  // Cognee needs an embedding model to build the knowledge graph.
-  // Best practice: use a cheap embedding model (OpenAI recommended for cost/quality).
-  // The user's main LLM key can often double as the embedding key.
-
-  const embeddingProvider = await p.select({
-    message: 'Embedding model (for knowledge graph):',
-    options: [
-      { value: 'openai', label: 'OpenAI (recommended)', hint: 'text-embedding-3-small — cheapest + best' },
-      { value: 'same', label: `Same as ${provider}`, hint: provider === 'openai' ? 'Uses your OpenAI key' : 'May need OpenAI-compatible endpoint' },
-      { value: 'ollama', label: 'Ollama (local, free)', hint: 'Needs Ollama running locally' },
-      { value: 'fastembed', label: 'Fastembed (local, free)', hint: 'CPU-only, no GPU needed' },
-      { value: 'skip', label: 'Skip (use basic vector memory)', hint: 'No knowledge graph — simpler but less powerful' },
-    ]
-  });
-  if (p.isCancel(embeddingProvider)) { p.cancel('Cancelled.'); process.exit(0); }
-
   let embeddingKey = null;
   let embeddingConfig = null;
 
-  if (embeddingProvider !== 'skip') {
-    // Embedding model defaults
-    const embDefaults = {
-      openai:    { provider: 'openai',    model: 'openai/text-embedding-3-small', dimensions: 1536 },
-      same:      { provider: provider,    model: 'auto', dimensions: 1536 },
-      ollama:    { provider: 'ollama',    model: 'nomic-embed-text', dimensions: 768, endpoint: 'http://localhost:11434/api/embeddings' },
-      fastembed: { provider: 'fastembed', model: 'sentence-transformers/all-MiniLM-L6-v2', dimensions: 384 },
-    };
+  if (isFullMode) {
+    // ─── Telegram (optional) ──────────────────────────────
 
-    embeddingConfig = embDefaults[embeddingProvider] || embDefaults.openai;
+    const wantTelegram = await p.confirm({
+      message: 'Connect a Telegram bot?',
+      initialValue: true,
+    });
 
-    // If they chose 'same', inherit from main provider
-    if (embeddingProvider === 'same') {
-      embeddingKey = apiKey; // reuse the same key
-      if (provider === 'openai') {
-        embeddingConfig = { provider: 'openai', model: 'openai/text-embedding-3-small', dimensions: 1536 };
-      } else if (provider === 'anthropic') {
-        // Anthropic has no embeddings — fall back to OpenAI or fastembed
-        p.note(`Anthropic doesn't offer embeddings. Using Fastembed (free, local).`);
-        embeddingConfig = embDefaults.fastembed;
-        embeddingKey = null;
+    if (!p.isCancel(wantTelegram) && wantTelegram) {
+      p.note([
+        `1. Open Telegram → search ${cyan}@BotFather${reset}`,
+        `2. Send ${cyan}/newbot${reset} → pick a name`,
+        `3. Copy the token`,
+      ].join('\n'), 'Quick setup');
+
+      let verified = false;
+      while (!verified) {
+        telegramToken = await p.password({ message: 'Bot token:' });
+        if (p.isCancel(telegramToken)) { telegramToken = null; break; }
+
+        const s = p.spinner();
+        s.start('Checking...');
+        try {
+          const res = await fetch(`https://api.telegram.org/bot${telegramToken}/getMe`, {
+            signal: AbortSignal.timeout(10000)
+          });
+          const data = await res.json();
+          if (data.ok) {
+            s.stop(`${green}✓${reset} Bot: @${data.result.username}`);
+            verified = true;
+          } else {
+            s.stop(`${yellow}✗${reset} Invalid token — try again`);
+            telegramToken = null;
+          }
+        } catch {
+          s.stop(`${yellow}✗${reset} Can't reach Telegram — try again`);
+          telegramToken = null;
+        }
       }
     }
 
-    // Need a separate API key?
-    if ((embeddingProvider === 'openai' && provider !== 'openai') ||
-        (embeddingProvider === 'same' && !embeddingKey && embeddingConfig.provider === 'openai')) {
-      embeddingKey = await p.password({
-        message: 'OpenAI key for embeddings (platform.openai.com):',
-        validate: v => !v ? 'Required for OpenAI embeddings' : undefined,
-      });
-      if (p.isCancel(embeddingKey)) { p.cancel('Cancelled.'); process.exit(0); }
-    } else if (embeddingProvider === 'openai' && provider === 'openai') {
-      embeddingKey = apiKey; // reuse
+    // ─── Discord (optional) ──────────────────────────────
+
+    const wantDiscord = await p.confirm({
+      message: 'Connect a Discord bot?',
+      initialValue: false,
+    });
+
+    if (!p.isCancel(wantDiscord) && wantDiscord) {
+      p.note([
+        `1. Go to ${cyan}discord.com/developers/applications${reset}`,
+        `2. Create New Application → Bot → Reset Token → Copy`,
+        `3. Enable MESSAGE CONTENT intent in Bot settings`,
+        `4. Invite bot to your server with Messages + Read permissions`,
+      ].join('\n'), 'Discord setup');
+
+      let verified = false;
+      while (!verified) {
+        discordToken = await p.password({ message: 'Bot token:' });
+        if (p.isCancel(discordToken)) { discordToken = null; break; }
+
+        const s = p.spinner();
+        s.start('Checking...');
+        try {
+          const res = await fetch('https://discord.com/api/v10/users/@me', {
+            headers: { 'Authorization': `Bot ${discordToken}` },
+            signal: AbortSignal.timeout(10000),
+          });
+          const data = await res.json();
+          if (res.ok && data.username) {
+            s.stop(`${green}✓${reset} Bot: ${data.username}#${data.discriminator || '0'}`);
+            verified = true;
+          } else {
+            s.stop(`${yellow}✗${reset} Invalid token — try again`);
+            discordToken = null;
+          }
+        } catch {
+          s.stop(`${yellow}✗${reset} Can't reach Discord — try again`);
+          discordToken = null;
+        }
+      }
     }
 
-    if (embeddingConfig) {
-      const s2 = p.spinner();
-      s2.start('Configuring embeddings...');
-      s2.stop(`${green}✓${reset} Embeddings: ${embeddingConfig.provider}/${embeddingConfig.model}`);
+    // ─── Embeddings for Knowledge Graph ───────────────────
+
+    const embeddingProvider = await p.select({
+      message: 'Embedding model (for knowledge graph):',
+      options: [
+        { value: 'openai', label: 'OpenAI (recommended)', hint: 'text-embedding-3-small — cheapest + best' },
+        { value: 'same', label: `Same as ${provider}`, hint: provider === 'openai' ? 'Uses your OpenAI key' : 'May need OpenAI-compatible endpoint' },
+        { value: 'ollama', label: 'Ollama (local, free)', hint: 'Needs Ollama running locally' },
+        { value: 'fastembed', label: 'Fastembed (local, free)', hint: 'CPU-only, no GPU needed' },
+        { value: 'skip', label: 'Skip (use basic vector memory)', hint: 'No knowledge graph — simpler but less powerful' },
+      ]
+    });
+    if (p.isCancel(embeddingProvider)) { p.cancel('Cancelled.'); process.exit(0); }
+
+    if (embeddingProvider !== 'skip') {
+      const embDefaults = {
+        openai:    { provider: 'openai',    model: 'openai/text-embedding-3-small', dimensions: 1536 },
+        same:      { provider: provider,    model: 'auto', dimensions: 1536 },
+        ollama:    { provider: 'ollama',    model: 'nomic-embed-text', dimensions: 768, endpoint: 'http://localhost:11434/api/embeddings' },
+        fastembed: { provider: 'fastembed', model: 'sentence-transformers/all-MiniLM-L6-v2', dimensions: 384 },
+      };
+
+      embeddingConfig = embDefaults[embeddingProvider] || embDefaults.openai;
+
+      if (embeddingProvider === 'same') {
+        embeddingKey = apiKey;
+        if (provider === 'openai') {
+          embeddingConfig = { provider: 'openai', model: 'openai/text-embedding-3-small', dimensions: 1536 };
+        } else if (provider === 'anthropic') {
+          p.note(`Anthropic doesn't offer embeddings. Using Fastembed (free, local).`);
+          embeddingConfig = embDefaults.fastembed;
+          embeddingKey = null;
+        }
+      }
+
+      if ((embeddingProvider === 'openai' && provider !== 'openai') ||
+          (embeddingProvider === 'same' && !embeddingKey && embeddingConfig.provider === 'openai')) {
+        embeddingKey = await p.password({
+          message: 'OpenAI key for embeddings (platform.openai.com):',
+          validate: v => !v ? 'Required for OpenAI embeddings' : undefined,
+        });
+        if (p.isCancel(embeddingKey)) { p.cancel('Cancelled.'); process.exit(0); }
+      } else if (embeddingProvider === 'openai' && provider === 'openai') {
+        embeddingKey = apiKey;
+      }
+
+      if (embeddingConfig) {
+        const s2 = p.spinner();
+        s2.start('Configuring embeddings...');
+        s2.stop(`${green}✓${reset} Embeddings: ${embeddingConfig.provider}/${embeddingConfig.model}`);
+      }
     }
+  } else {
+    // Quick mode: note what was skipped
+    p.note(`Skipped: Telegram, Discord, embeddings.\nRun ${cyan}qclaw onboard --full${reset} for all options.`, 'Quick mode');
   }
 
-  // ─── Step 4: Your Name ──────────────────────────────
+  // ─── Your Name ──────────────────────────────────────
 
   const name = await p.text({
     message: 'Your name?',
@@ -253,28 +255,30 @@ export async function runOnboard() {
     if (p.isCancel(dashPin)) { p.cancel('Cancelled.'); process.exit(0); }
   }
 
-  // Persistent tunnel (optional — keeps same URL across restarts)
-  const wantTunnel = await p.confirm({
-    message: 'Set up a persistent tunnel URL? (same link every time)',
-    initialValue: false
-  });
-  if (p.isCancel(wantTunnel)) { p.cancel('Cancelled.'); process.exit(0); }
-
+  // Persistent tunnel (optional — keeps same URL across restarts, full mode only)
   let tunnelToken = null;
-  if (wantTunnel) {
-    console.log('');
-    console.log(`  ${dim}To get a persistent tunnel URL:${reset}`);
-    console.log(`  ${dim}1.${reset} Go to ${cyan}https://one.dash.cloudflare.com${reset}`);
-    console.log(`  ${dim}2.${reset} Networks → Tunnels → Create a tunnel`);
-    console.log(`  ${dim}3.${reset} Name it "qclaw", pick your domain`);
-    console.log(`  ${dim}4.${reset} Set service to ${cyan}http://localhost:3000${reset}`);
-    console.log(`  ${dim}5.${reset} Copy the tunnel token from the install command`);
-    console.log('');
-    tunnelToken = await p.password({
-      message: 'Tunnel token (or Enter to skip):',
+  if (isFullMode) {
+    const wantTunnel = await p.confirm({
+      message: 'Set up a persistent tunnel URL? (same link every time)',
+      initialValue: false
     });
-    if (p.isCancel(tunnelToken)) { p.cancel('Cancelled.'); process.exit(0); }
-    if (!tunnelToken?.trim()) tunnelToken = null;
+    if (p.isCancel(wantTunnel)) { p.cancel('Cancelled.'); process.exit(0); }
+
+    if (wantTunnel) {
+      console.log('');
+      console.log(`  ${dim}To get a persistent tunnel URL:${reset}`);
+      console.log(`  ${dim}1.${reset} Go to ${cyan}https://one.dash.cloudflare.com${reset}`);
+      console.log(`  ${dim}2.${reset} Networks → Tunnels → Create a tunnel`);
+      console.log(`  ${dim}3.${reset} Name it "qclaw", pick your domain`);
+      console.log(`  ${dim}4.${reset} Set service to ${cyan}http://localhost:3000${reset}`);
+      console.log(`  ${dim}5.${reset} Copy the tunnel token from the install command`);
+      console.log('');
+      tunnelToken = await p.password({
+        message: 'Tunnel token (or Enter to skip):',
+      });
+      if (p.isCancel(tunnelToken)) { p.cancel('Cancelled.'); process.exit(0); }
+      if (!tunnelToken?.trim()) tunnelToken = null;
+    }
   }
 
   // ─── Save ─────────────────────────────────────────────
@@ -332,7 +336,7 @@ export async function runOnboard() {
   config.dashboard.authToken = dashToken;
   config.dashboard.tokenCreatedAt = Date.now();
   config.dashboard.enabled = true;
-  if (dashPin) config.dashboard.pin = dashPin;
+  if (dashPin) config.dashboard.pinHash = bcrypt.hashSync(dashPin, 10);
   if (tunnelToken) {
     config.dashboard.tunnel = 'cloudflare';
     config.dashboard.tunnelToken = tunnelToken;

@@ -344,24 +344,25 @@ else
         CF_VER=$(cloudflared --version 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
         ok "cloudflared $CF_VER"
     else
-        warn "cloudflared could not be installed automatically"
+        fail "cloudflared is required but could not be installed"
         echo ""
-        echo -e "  ${Y}┌─────────────────────────────────────────────────┐${RS}"
-        echo -e "  ${Y}│${RS} ${B}⚠  Dashboard won't be accessible remotely${RS}       ${Y}│${RS}"
-        echo -e "  ${Y}│${RS}                                                 ${Y}│${RS}"
-        echo -e "  ${Y}│${RS} Install manually:                               ${Y}│${RS}"
+        echo -e "  ${R}┌─────────────────────────────────────────────────┐${RS}"
+        echo -e "  ${R}│${RS} ${B}⚠  cloudflared is required for dashboard access${RS} ${R}│${RS}"
+        echo -e "  ${R}│${RS}                                                 ${R}│${RS}"
+        echo -e "  ${R}│${RS} Install manually:                               ${R}│${RS}"
         if $IS_TERMUX; then
-        echo -e "  ${Y}│${RS}   ${C}pkg install cloudflared${RS}                      ${Y}│${RS}"
+        echo -e "  ${R}│${RS}   ${C}pkg install cloudflared${RS}                      ${R}│${RS}"
         elif $IS_MAC; then
-        echo -e "  ${Y}│${RS}   ${C}brew install cloudflared${RS}                     ${Y}│${RS}"
+        echo -e "  ${R}│${RS}   ${C}brew install cloudflared${RS}                     ${R}│${RS}"
         else
-        echo -e "  ${Y}│${RS}   ${C}sudo apt install cloudflared${RS}                 ${Y}│${RS}"
-        echo -e "  ${Y}│${RS}   or: ${C}curl -sL https://pkg.cloudflare.com/install.sh | bash${RS} ${Y}│${RS}"
+        echo -e "  ${R}│${RS}   ${C}sudo apt install cloudflared${RS}                 ${R}│${RS}"
+        echo -e "  ${R}│${RS}   or: ${C}curl -sL https://pkg.cloudflare.com/install.sh | bash${RS} ${R}│${RS}"
         fi
-        echo -e "  ${Y}│${RS}                                                 ${Y}│${RS}"
-        echo -e "  ${Y}│${RS} Then re-run: ${C}bash scripts/install.sh${RS}           ${Y}│${RS}"
-        echo -e "  ${Y}└─────────────────────────────────────────────────┘${RS}"
+        echo -e "  ${R}│${RS}                                                 ${R}│${RS}"
+        echo -e "  ${R}│${RS} Then re-run: ${C}bash scripts/install.sh${RS}           ${R}│${RS}"
+        echo -e "  ${R}└─────────────────────────────────────────────────┘${RS}"
         echo ""
+        exit 1
     fi
 fi
 echo ""
@@ -595,7 +596,7 @@ echo ""
 
 echo -e "  ${B}Summary:${RS}"
 command -v node        &>/dev/null && echo -e "  ${G}✓${RS} Node $(node -v)"
-command -v cloudflared &>/dev/null && echo -e "  ${G}✓${RS} Cloudflare Tunnel" || echo -e "  ${R}✗${RS} Cloudflare Tunnel ${Y}(install manually — see above)${RS}"
+command -v cloudflared &>/dev/null && echo -e "  ${G}✓${RS} Cloudflare Tunnel"
 command -v qclaw       &>/dev/null && echo -e "  ${G}✓${RS} qclaw CLI" || echo -e "  ${Y}!${RS} qclaw CLI (use: node src/cli/index.js)"
 $IS_TERMUX && command -v pm2 &>/dev/null && echo -e "  ${G}✓${RS} pm2 (process manager)"
 curl -sf http://localhost:8000/health >/dev/null 2>&1 && echo -e "  ${G}✓${RS} Cognee (knowledge graph)" || echo -e "  ${D}·${RS} Cognee (optional — local graph active)"

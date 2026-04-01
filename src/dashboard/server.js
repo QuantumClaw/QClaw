@@ -9,9 +9,10 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import { log } from '../core/logger.js';
-import { readFileSync, existsSync, readdirSync, unlinkSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import bcrypt from 'bcryptjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -45,8 +46,19 @@ export class DashboardServer {
     }
     this.tokenExpiry = tokenAge;
 
-    // PIN protection (set during onboard or via config)
-    this.pin = this.config.dashboard?.pin || null;
+    // PIN protection — supports both legacy plaintext and bcrypt hash
+    this.pinHash = this.config.dashboard?.pinHash || null;
+    // Legacy plaintext PIN migration: if pin exists but pinHash doesn't, hash it
+    if (!this.pinHash && this.config.dashboard?.pin) {
+      this.pinHash = bcrypt.hashSync(String(this.config.dashboard.pin), 10);
+      this.config.dashboard.pinHash = this.pinHash;
+      delete this.config.dashboard.pin;
+      try {
+        const { saveConfig } = await import('../core/config.js');
+        saveConfig(this.config);
+        log.info('Migrated dashboard PIN to bcrypt hash');
+      } catch { /* non-fatal */ }
+    }
 
     // Auth lockout tracking
     this.authAttempts = new Map(); // ip -> { count, lockedUntil }
@@ -196,10 +208,26 @@ export class DashboardServer {
       } catch { /* queue dir doesn't exist yet */ }
     }, 15000); // check every 15s
 
+    // ─── State Persistence ──────────────────────────────────
+    // Restore state from previous session
+    this._stateFile = join(this.config._dir, 'state.json');
+    await this._restoreState();
+
+    // Auto-save state every 30 seconds
+    this._stateSaver = setInterval(() => this._saveState(), 30000);
+    this._stateSaver.unref();
+
+    // Save state on shutdown signals
+    const saveOnExit = () => { try { this._saveStateSync(); } catch { /* best effort */ } };
+    process.on('SIGTERM', saveOnExit);
+    process.on('SIGINT', saveOnExit);
+
     return this.dashUrl;
   }
 
   async stop() {
+    if (this._stateSaver) clearInterval(this._stateSaver);
+    try { this._saveStateSync(); } catch { /* best effort */ }
     if (this._wsHeartbeat) clearInterval(this._wsHeartbeat);
     if (this._deliveryPoller) clearInterval(this._deliveryPoller);
     if (this.tunnel) {
@@ -228,9 +256,10 @@ export class DashboardServer {
     rateLimitCleanup.unref();
 
     this.app.use((req, res, next) => {
-      // Skip auth for HTML pages, health check, and PIN verify endpoint
-      if (req.path === '/' || req.path === '/onboard' || req.path === '/favicon.ico' || 
-          req.path === '/api/health' || req.path === '/api/auth/verify-pin') return next();
+      // Skip auth for HTML pages, health check, and PIN verify endpoints
+      if (req.path === '/' || req.path === '/onboard' || req.path === '/favicon.ico' ||
+          req.path === '/api/health' || req.path === '/api/auth/verify-pin' ||
+          req.path === '/api/pin-verify' || req.path === '/api/auth/pin-required') return next();
 
       const ip = req.ip || req.socket.remoteAddress;
 
@@ -262,7 +291,11 @@ export class DashboardServer {
         const isLocal = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
         if (!isLocal && this.tokenCreatedAt && this.tokenExpiry) {
           if (Date.now() - this.tokenCreatedAt > this.tokenExpiry) {
-            return res.status(401).json({ error: 'Token expired. Run: qclaw dashboard' });
+            return res.status(401).json({
+              error: 'Token expired',
+              pinAvailable: !!this.pinHash,
+              message: this.pinHash ? 'Use PIN to re-authenticate' : 'Run: qclaw dashboard'
+            });
           }
         }
 
@@ -285,13 +318,13 @@ export class DashboardServer {
       next();
     });
 
-    // PIN verification endpoint (for dashboard UI to check PIN before showing content)
-    this.app.post('/api/auth/verify-pin', (req, res) => {
-      if (!this.pin) {
+    // PIN re-auth endpoint — verifies PIN and returns a fresh auth token
+    this.app.post('/api/pin-verify', async (req, res) => {
+      if (!this.pinHash) {
         return res.json({ ok: true, pinRequired: false });
       }
       const ip = req.ip || req.socket.remoteAddress;
-      
+
       // Check lockout
       const lockout = this.authAttempts.get(ip);
       if (lockout?.lockedUntil && Date.now() < lockout.lockedUntil) {
@@ -300,11 +333,31 @@ export class DashboardServer {
       }
 
       const { pin } = req.body;
-      if (String(pin) === String(this.pin)) {
-        this.authAttempts.delete(ip);
-        return res.json({ ok: true });
+      if (!pin || !/^\d{4,8}$/.test(String(pin))) {
+        return res.status(400).json({ error: 'PIN must be 4-8 digits' });
       }
-      
+
+      const match = bcrypt.compareSync(String(pin), this.pinHash);
+      if (match) {
+        // Reset lockout on successful PIN
+        this.authAttempts.delete(ip);
+
+        // Generate fresh auth token
+        const { randomBytes } = await import('crypto');
+        const newToken = randomBytes(16).toString('hex');
+        this.sessionToken = newToken;
+        this.tokenCreatedAt = Date.now();
+        process.env.DASHBOARD_AUTH_TOKEN = newToken;
+        this.config.dashboard.authToken = newToken;
+        this.config.dashboard.tokenCreatedAt = this.tokenCreatedAt;
+        try {
+          const { saveConfig } = await import('../core/config.js');
+          saveConfig(this.config);
+        } catch { /* non-fatal */ }
+
+        return res.json({ ok: true, token: newToken });
+      }
+
       // Track failed PIN attempt
       const attempts = this.authAttempts.get(ip) || { count: 0 };
       attempts.count++;
@@ -316,9 +369,19 @@ export class DashboardServer {
       return res.status(401).json({ error: 'Wrong PIN', attemptsLeft: this.AUTH_MAX_ATTEMPTS - attempts.count });
     });
 
-    // Check if PIN is required (no auth needed for this)
+    // Legacy endpoint alias
+    this.app.post('/api/auth/verify-pin', (req, res) => {
+      // Forward to the new endpoint
+      req.url = '/api/pin-verify';
+      this.app.handle(req, res);
+    });
+
+    // Check if PIN is required and if token is expired (no auth needed for this)
     this.app.get('/api/auth/pin-required', (req, res) => {
-      res.json({ pinRequired: !!this.pin });
+      const tokenExpired = this.tokenCreatedAt && this.tokenExpiry
+        ? (Date.now() - this.tokenCreatedAt > this.tokenExpiry)
+        : false;
+      res.json({ pinRequired: !!this.pinHash, tokenExpired });
     });
 
     // Health endpoint is always open (for Docker health checks, monitoring)
@@ -595,7 +658,8 @@ export class DashboardServer {
     this.app.get('/api/config', (req, res) => {
       const { _dir, _file, ...safe } = this.qclaw.config;
       if (safe.dashboard?.authToken) safe.dashboard.authToken = '***';
-      if (safe.dashboard?.pin) safe.dashboard.pin = '***';
+      if (safe.dashboard?.pinHash) safe.dashboard.pinHash = '***';
+      if (safe.dashboard?.pin) delete safe.dashboard.pin;
       res.json(safe);
     });
 
@@ -603,7 +667,7 @@ export class DashboardServer {
       try {
         const { key, value } = req.body;
         if (!key) return res.status(400).json({ error: 'key required' });
-        const blocked = ['_dir', '_file', 'dashboard.authToken', 'dashboard.pin'];
+        const blocked = ['_dir', '_file', 'dashboard.authToken', 'dashboard.pin', 'dashboard.pinHash'];
         if (blocked.includes(key)) return res.status(403).json({ error: 'Cannot modify this key via API' });
 
         const { saveConfig } = await import('../core/config.js');
@@ -1334,6 +1398,55 @@ export class DashboardServer {
       this.tunnel = null;
       this.tunnelUrl = null;
     }
+  }
+
+  // ─── State Persistence ──────────────────────────────────────
+
+  _saveStateSync() {
+    if (!this._stateFile) return;
+    try {
+      const state = {
+        savedAt: Date.now(),
+        tokenCreatedAt: this.tokenCreatedAt,
+        sessionToken: this.sessionToken,
+        tunnelUrl: this.tunnelUrl,
+        conversations: this._getActiveConversations(),
+      };
+      writeFileSync(this._stateFile, JSON.stringify(state, null, 2));
+    } catch { /* best effort */ }
+  }
+
+  async _saveState() {
+    this._saveStateSync();
+  }
+
+  async _restoreState() {
+    if (!this._stateFile || !existsSync(this._stateFile)) return;
+    try {
+      const raw = readFileSync(this._stateFile, 'utf-8');
+      const state = JSON.parse(raw);
+      if (state.conversations && this.qclaw.memory) {
+        log.info(`Restored ${state.conversations.length} conversation(s) from previous session`);
+      }
+      log.debug('State restored from previous session');
+    } catch (err) {
+      log.debug(`Could not restore state: ${err.message}`);
+    }
+  }
+
+  _getActiveConversations() {
+    try {
+      if (!this.qclaw.memory?.getThreads) return [];
+      const agent = this.qclaw.agents.primary();
+      if (!agent) return [];
+      const threads = this.qclaw.memory.getThreads(agent.name);
+      return threads.slice(0, 50).map(t => ({
+        id: t.id,
+        channel: t.channel,
+        messageCount: t.messageCount,
+        lastActivity: t.lastActivity,
+      }));
+    } catch { return []; }
   }
 
   async _listen(host, port) {

@@ -68,6 +68,7 @@ switch (command) {
 
   // ─── ONBOARD ──────────────────────────────────────────────────
   case 'onboard': {
+    // --full flag is read from process.argv in onboard.js
     const { runOnboard } = await import('./onboard.js');
     await runOnboard();
     break;
