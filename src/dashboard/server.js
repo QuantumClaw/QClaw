@@ -807,6 +807,83 @@ export class DashboardServer {
 
     // ─── Team Management ─────────────────────────────────────
 
+    // List available team presets (for the modal dropdown)
+    this.app.get('/api/team-presets', async (req, res) => {
+      try {
+        const { listPresets } = await import('../core/team-presets.js');
+        res.json(listPresets());
+      } catch (err) { res.json([]); }
+    });
+
+    // AI-suggested custom team — primary agent suggests agents based on description
+    this.app.post('/api/teams/suggest', async (req, res) => {
+      try {
+        const { description, name } = req.body;
+        if (!description) return res.status(400).json({ error: 'description required' });
+
+        const primary = this.qclaw.agents.primary();
+        if (!primary) return res.status(500).json({ error: 'No primary agent available' });
+
+        const prompt = `The user wants to create a team of AI agents for this purpose: "${description}"
+
+Suggest 3-5 agents for this team. For each agent, respond with EXACTLY this JSON format (no markdown, no explanation, just the JSON array):
+
+[
+  {"name": "short-slug", "role": "Human Role Title", "systemPrompt": "2-3 sentences about what this agent does."}
+]
+
+Keep names as lowercase slugs with dashes. Make roles practical and specific to the described purpose.`;
+
+        const result = await primary.process(prompt, { channel: 'system' });
+
+        // Parse the JSON from the response
+        const jsonMatch = result.content.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) {
+          return res.status(500).json({ error: 'Could not parse agent suggestions', raw: result.content });
+        }
+
+        const suggestedAgents = JSON.parse(jsonMatch[0]);
+        const teamId = (name || description).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30);
+
+        // Spawn the suggested agents
+        const { Agent } = await import('../agents/registry.js');
+        const { mkdirSync, writeFileSync } = await import('fs');
+        const { join } = await import('path');
+        const spawnedNames = [];
+
+        for (const agentDef of suggestedAgents) {
+          const safeName = agentDef.name.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+          if (!safeName || this.qclaw.agents.agents.has(safeName)) continue;
+
+          const agentDir = join(this.qclaw.config._dir, 'workspace', 'agents', safeName);
+          mkdirSync(agentDir, { recursive: true });
+          writeFileSync(join(agentDir, 'SOUL.md'), `# ${safeName}\n\nYou are **${safeName}** (${agentDef.role}).\n\n## Role\n\n${agentDef.systemPrompt || agentDef.role}\n\n## Rules\n\n- Be efficient with tokens\n- Report to the team lead\n`);
+          const agent = new Agent(safeName, agentDir, {
+            router: this.qclaw.router, memory: this.qclaw.memory,
+            audit: this.qclaw.audit, toolExecutor: this.qclaw.toolExecutor,
+            trustKernel: this.qclaw.trustKernel,
+          });
+          await agent.load();
+          agent.role = agentDef.role || agentDef.systemPrompt;
+          agent.spawnedAt = new Date().toISOString();
+          this.qclaw.agents.agents.set(safeName, agent);
+          spawnedNames.push(safeName);
+        }
+
+        // Create the team
+        const teamName = name || description.slice(0, 40);
+        this.qclaw.agents.createTeam(teamId, {
+          name: teamName,
+          description,
+          leadAgent: spawnedNames[0],
+          agentNames: spawnedNames,
+        });
+
+        this.qclaw.audit.log('system', 'team_created', teamId, { custom: true, agents: spawnedNames });
+        res.json({ ok: true, id: teamId, name: teamName, agents: spawnedNames, suggested: suggestedAgents });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
     this.app.get('/api/teams', (req, res) => {
       const teams = this.qclaw.agents.listTeams();
       // Enrich with agent details
