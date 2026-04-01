@@ -30,6 +30,14 @@ export const TEAM_PRESETS = {
       { name: 'reporter', role: 'Synthesise analysis into clear, structured reports and executive summaries', model_tier: 'standard', scopes: ['chat', 'search_knowledge'] },
     ]
   },
+  'Sales Team': {
+    description: 'Sales pipeline workflow — prospect, qualify, outreach',
+    agents: [
+      { name: 'lead-gen', role: 'Research and identify potential leads, find contact info, build prospect lists', model_tier: 'simple', scopes: ['chat', 'web_search', 'web_fetch'] },
+      { name: 'qualifier', role: 'Evaluate leads for fit, score them, prioritise based on ICP match and buying signals', model_tier: 'standard', scopes: ['chat', 'search_knowledge', 'web_search'] },
+      { name: 'outreach', role: 'Write personalised outreach messages, follow-ups, and sales emails based on prospect research', model_tier: 'standard', scopes: ['chat', 'search_knowledge'] },
+    ]
+  },
 };
 
 export function getPreset(name) {

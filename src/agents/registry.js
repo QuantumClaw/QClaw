@@ -14,6 +14,7 @@ export class AgentRegistry {
     this.config = config;
     this.services = services;
     this.agents = new Map();
+    this.teams = new Map(); // teamId -> { name, description, leadAgent, agentNames[], status, createdAt }
   }
 
   get count() {
@@ -80,7 +81,104 @@ export class AgentRegistry {
   }
 
   serialize() {
-    return Array.from(this.agents.values()).map(a => a.toJSON());
+    return {
+      agents: Array.from(this.agents.values()).map(a => a.toJSON()),
+      teams: Array.from(this.teams.entries()).map(([id, t]) => ({ id, ...t })),
+    };
+  }
+
+  // ─── Team Management ────────────────────────────────────
+
+  createTeam(id, { name, description, leadAgent, agentNames, status }) {
+    if (this.teams.has(id)) return { ok: false, error: `Team "${id}" already exists` };
+    this.teams.set(id, {
+      name: name || id,
+      description: description || '',
+      leadAgent: leadAgent || agentNames?.[0] || null,
+      agentNames: agentNames || [],
+      status: status || 'active',
+      createdAt: new Date().toISOString(),
+    });
+    // Tag agents with their team
+    for (const agentName of (agentNames || [])) {
+      const agent = this.agents.get(agentName);
+      if (agent) agent.teamId = id;
+    }
+    return { ok: true, id };
+  }
+
+  getTeam(id) {
+    return this.teams.get(id) || null;
+  }
+
+  listTeams() {
+    return Array.from(this.teams.entries()).map(([id, t]) => ({ id, ...t }));
+  }
+
+  deleteTeam(id) {
+    const team = this.teams.get(id);
+    if (!team) return { ok: false, error: `Team "${id}" not found` };
+    // Untag agents
+    for (const agentName of team.agentNames) {
+      const agent = this.agents.get(agentName);
+      if (agent) agent.teamId = null;
+    }
+    this.teams.delete(id);
+    return { ok: true };
+  }
+
+  pauseTeam(id) {
+    const team = this.teams.get(id);
+    if (!team) return { ok: false, error: `Team "${id}" not found` };
+    team.status = 'paused';
+    for (const agentName of team.agentNames) {
+      const agent = this.agents.get(agentName);
+      if (agent && agent.name !== this.defaultName) agent.pause();
+    }
+    return { ok: true };
+  }
+
+  resumeTeam(id) {
+    const team = this.teams.get(id);
+    if (!team) return { ok: false, error: `Team "${id}" not found` };
+    team.status = 'active';
+    for (const agentName of team.agentNames) {
+      const agent = this.agents.get(agentName);
+      if (agent) agent.resume();
+    }
+    return { ok: true };
+  }
+
+  addAgentToTeam(agentName, teamId) {
+    const team = this.teams.get(teamId);
+    const agent = this.agents.get(agentName);
+    if (!team) return { ok: false, error: `Team "${teamId}" not found` };
+    if (!agent) return { ok: false, error: `Agent "${agentName}" not found` };
+    // Remove from old team first
+    if (agent.teamId && agent.teamId !== teamId) {
+      const oldTeam = this.teams.get(agent.teamId);
+      if (oldTeam) oldTeam.agentNames = oldTeam.agentNames.filter(n => n !== agentName);
+    }
+    if (!team.agentNames.includes(agentName)) team.agentNames.push(agentName);
+    agent.teamId = teamId;
+    return { ok: true };
+  }
+
+  removeAgentFromTeam(agentName, teamId) {
+    const team = this.teams.get(teamId);
+    const agent = this.agents.get(agentName);
+    if (!team) return { ok: false, error: `Team "${teamId}" not found` };
+    team.agentNames = team.agentNames.filter(n => n !== agentName);
+    if (agent) agent.teamId = null;
+    return { ok: true };
+  }
+
+  setTeamLead(teamId, agentName) {
+    const team = this.teams.get(teamId);
+    if (!team) return { ok: false, error: `Team "${teamId}" not found` };
+    if (!team.agentNames.includes(agentName)) return { ok: false, error: `Agent "${agentName}" is not in this team` };
+    team.leadAgent = agentName;
+    return { ok: true };
   }
 
   async _createDefault() {
@@ -189,6 +287,7 @@ export class Agent {
     this.status = 'active';
     this.role = null;
     this.spawnedAt = null;
+    this.teamId = null;
   }
 
   pause() { this.status = 'paused'; }
@@ -200,6 +299,7 @@ export class Agent {
       status: this.status,
       role: this.role,
       spawnedAt: this.spawnedAt,
+      teamId: this.teamId,
       aidId: this.aid?.aid_id || null,
     };
   }

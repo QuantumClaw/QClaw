@@ -435,6 +435,7 @@ export class DashboardServer {
           status: agent.status || 'active',
           role: agent.role || null,
           spawnedAt: agent.spawnedAt || null,
+          teamId: agent.teamId || null,
           model: this.qclaw.config.models?.primary?.model || 'auto',
           provider: this.qclaw.config.models?.primary?.provider || 'unknown',
           skills: agent.skills?.length || 0,
@@ -794,6 +795,130 @@ export class DashboardServer {
       agent.resume();
       this.qclaw.audit.log('system', 'agent_resumed', agent.name);
       res.json({ ok: true, name: agent.name, status: 'active' });
+    });
+
+    // ─── Team Management ─────────────────────────────────────
+
+    this.app.get('/api/teams', (req, res) => {
+      const teams = this.qclaw.agents.listTeams();
+      // Enrich with agent details
+      res.json(teams.map(t => ({
+        ...t,
+        agents: t.agentNames.map(name => {
+          const a = this.qclaw.agents.get(name);
+          return a ? { name: a.name, role: a.role, status: a.status, teamId: a.teamId } : { name, status: 'unknown' };
+        }),
+      })));
+    });
+
+    this.app.post('/api/teams', async (req, res) => {
+      try {
+        const { id, name, description, agentNames, leadAgent, preset } = req.body;
+
+        // If preset specified, import and use it
+        if (preset) {
+          const { getPreset } = await import('../core/team-presets.js');
+          const tmpl = getPreset(preset);
+          if (!tmpl) return res.status(400).json({ error: `Unknown preset: "${preset}"` });
+
+          const teamId = (id || preset).toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+          const spawnedNames = [];
+
+          for (const agentDef of tmpl.agents) {
+            if (!this.qclaw.agents.agents.has(agentDef.name)) {
+              // Spawn the agent
+              const { Agent } = await import('../agents/registry.js');
+              const { mkdirSync, writeFileSync } = await import('fs');
+              const { join } = await import('path');
+              const agentDir = join(this.qclaw.config._dir, 'workspace', 'agents', agentDef.name);
+              mkdirSync(agentDir, { recursive: true });
+              writeFileSync(join(agentDir, 'SOUL.md'), `# ${agentDef.name}\n\nYou are **${agentDef.name}**, a specialised sub-agent.\n\n## Role\n\n${agentDef.role}\n\n## Rules\n\n- You are a ${agentDef.model_tier || 'simple'}-tier agent\n- Scoped access: ${(agentDef.scopes || ['chat']).join(', ')}\n- Report to the team lead\n`);
+              const agent = new Agent(agentDef.name, agentDir, {
+                router: this.qclaw.router, memory: this.qclaw.memory,
+                audit: this.qclaw.audit, toolExecutor: this.qclaw.toolExecutor,
+                trustKernel: this.qclaw.trustKernel,
+              });
+              await agent.load();
+              agent.role = agentDef.role;
+              agent.spawnedAt = new Date().toISOString();
+              this.qclaw.agents.agents.set(agentDef.name, agent);
+            }
+            spawnedNames.push(agentDef.name);
+          }
+
+          const result = this.qclaw.agents.createTeam(teamId, {
+            name: tmpl.name,
+            description: tmpl.description,
+            leadAgent: spawnedNames[0],
+            agentNames: spawnedNames,
+          });
+          if (!result.ok) return res.status(400).json({ error: result.error });
+          this.qclaw.audit.log('system', 'team_created', teamId, { preset, agents: spawnedNames });
+          return res.json({ ok: true, id: teamId, name: tmpl.name, agents: spawnedNames });
+        }
+
+        // Manual team creation
+        const teamId = (id || name || 'team').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+        const result = this.qclaw.agents.createTeam(teamId, { name, description, agentNames: agentNames || [], leadAgent });
+        if (!result.ok) return res.status(400).json({ error: result.error });
+        this.qclaw.audit.log('system', 'team_created', teamId);
+        res.json({ ok: true, id: teamId });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    this.app.delete('/api/teams/:id', (req, res) => {
+      const result = this.qclaw.agents.deleteTeam(req.params.id);
+      if (!result.ok) return res.status(400).json({ error: result.error });
+      this.qclaw.audit.log('system', 'team_deleted', req.params.id);
+      res.json({ ok: true });
+    });
+
+    this.app.post('/api/teams/:id/pause', (req, res) => {
+      const result = this.qclaw.agents.pauseTeam(req.params.id);
+      if (!result.ok) return res.status(400).json({ error: result.error });
+      res.json({ ok: true, status: 'paused' });
+    });
+
+    this.app.post('/api/teams/:id/resume', (req, res) => {
+      const result = this.qclaw.agents.resumeTeam(req.params.id);
+      if (!result.ok) return res.status(400).json({ error: result.error });
+      res.json({ ok: true, status: 'active' });
+    });
+
+    this.app.post('/api/teams/:id/agents', (req, res) => {
+      const { agentName } = req.body;
+      if (!agentName) return res.status(400).json({ error: 'agentName required' });
+      const result = this.qclaw.agents.addAgentToTeam(agentName, req.params.id);
+      if (!result.ok) return res.status(400).json({ error: result.error });
+      res.json({ ok: true });
+    });
+
+    this.app.delete('/api/teams/:id/agents/:name', (req, res) => {
+      const result = this.qclaw.agents.removeAgentFromTeam(req.params.name, req.params.id);
+      if (!result.ok) return res.status(400).json({ error: result.error });
+      res.json({ ok: true });
+    });
+
+    this.app.post('/api/teams/:id/lead', (req, res) => {
+      const { agentName } = req.body;
+      if (!agentName) return res.status(400).json({ error: 'agentName required' });
+      const result = this.qclaw.agents.setTeamLead(req.params.id, agentName);
+      if (!result.ok) return res.status(400).json({ error: result.error });
+      res.json({ ok: true });
+    });
+
+    this.app.post('/api/teams/:id/task', async (req, res) => {
+      try {
+        const { task } = req.body;
+        if (!task) return res.status(400).json({ error: 'task required' });
+        const team = this.qclaw.agents.getTeam(req.params.id);
+        if (!team) return res.status(404).json({ error: 'Team not found' });
+        const lead = this.qclaw.agents.get(team.leadAgent);
+        if (!lead) return res.status(400).json({ error: 'Team has no lead agent' });
+        if (lead.status === 'paused') return res.status(400).json({ error: 'Team lead is paused' });
+        const result = await lead.process(task, { channel: 'team-task', teamId: req.params.id });
+        res.json({ ok: true, response: result.content, agent: lead.name });
+      } catch (err) { res.status(500).json({ error: err.message }); }
     });
 
     this.app.get('/api/agents/:name/soul', async (req, res) => {
@@ -1441,7 +1566,7 @@ export class DashboardServer {
         sessionToken: this.sessionToken,
         tunnelUrl: this.tunnelUrl,
         conversations: this._getActiveConversations(),
-        agents: this.qclaw.agents?.serialize?.() || [],
+        ...(this.qclaw.agents?.serialize?.() || { agents: [], teams: [] }),
       };
       writeFileSync(this._stateFile, JSON.stringify(state, null, 2));
     } catch { /* best effort */ }
@@ -1457,13 +1582,24 @@ export class DashboardServer {
       const raw = readFileSync(this._stateFile, 'utf-8');
       const state = JSON.parse(raw);
       // Restore agent statuses from previous session
-      if (state.agents && this.qclaw.agents) {
-        for (const saved of state.agents) {
+      const savedAgents = Array.isArray(state.agents) ? state.agents : [];
+      if (savedAgents.length && this.qclaw.agents) {
+        for (const saved of savedAgents) {
           const agent = this.qclaw.agents.get(saved.name);
           if (agent && this.qclaw.agents.list().includes(saved.name)) {
             if (saved.status) agent.status = saved.status;
             if (saved.role) agent.role = saved.role;
             if (saved.spawnedAt) agent.spawnedAt = saved.spawnedAt;
+            if (saved.teamId) agent.teamId = saved.teamId;
+          }
+        }
+      }
+      // Restore teams
+      if (state.teams && Array.isArray(state.teams) && this.qclaw.agents) {
+        for (const t of state.teams) {
+          if (t.id && !this.qclaw.agents.teams.has(t.id)) {
+            const { id, ...data } = t;
+            this.qclaw.agents.teams.set(id, data);
           }
         }
       }

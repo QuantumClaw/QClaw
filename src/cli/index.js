@@ -1419,8 +1419,10 @@ Usage: qclaw <command>
   agent remove <name> Remove a spawned agent
   agent pause <name>  Pause an agent
   agent resume <name> Resume a paused agent
-  team list           Show available team presets
-  team create "Name"  Spawn a team preset
+  team list           Show active teams
+  team presets        Show built-in team templates
+  team create "Name"  Create a team from a preset
+  team delete <id>    Delete a team (keeps agents)
 
   \x1b[1mOther\x1b[0m
   update              Update to latest version
@@ -1719,7 +1721,7 @@ Dashboard: http://localhost:3000 (when agent is running)
     const G = '\x1b[38;5;82m', Y = '\x1b[38;5;220m', C = '\x1b[38;5;87m', D = '\x1b[38;5;245m', RS = '\x1b[0m', B = '\x1b[1m';
     const { listPresets, getPreset } = await import('../core/team-presets.js');
 
-    if (!subcommand || subcommand === 'list') {
+    if (subcommand === 'presets') {
       const presets = listPresets();
       console.log(`\n  ${B}Team Presets${RS}\n`);
       for (const p of presets) {
@@ -1727,45 +1729,87 @@ Dashboard: http://localhost:3000 (when agent is running)
         console.log(`    ${D}Agents: ${p.agents.join(', ')}${RS}\n`);
       }
 
+    } else if (!subcommand || subcommand === 'list') {
+      // List active teams from running server
+      const { config: tCfg } = await loadCore();
+      const port = tCfg.dashboard?.port || 3000;
+      const token = tCfg.dashboard?.authToken || '';
+      try {
+        const res = await fetch(`http://localhost:${port}/api/teams`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          signal: AbortSignal.timeout(3000),
+        });
+        const teams = await res.json();
+        if (teams.length === 0) {
+          console.log(`\n  ${D}No teams. Create one: ${C}qclaw team create "Content Team"${RS}\n`);
+          console.log(`  ${D}Available presets: ${C}qclaw team presets${RS}\n`);
+        } else {
+          console.log(`\n  ${B}Teams${RS} (${teams.length})\n`);
+          for (const t of teams) {
+            const st = t.status === 'paused' ? `${Y}paused${RS}` : `${G}active${RS}`;
+            console.log(`  ${B}${t.name}${RS}  ${st}  ${D}${t.description || ''}${RS}`);
+            for (const a of (t.agents || [])) {
+              const lead = a.name === t.leadAgent ? ` ${C}(lead)${RS}` : '';
+              const ast = a.status === 'paused' ? ` ${Y}paused${RS}` : '';
+              console.log(`    ${D}${a.name}${RS}${lead}${ast}  ${D}${a.role || ''}${RS}`);
+            }
+            console.log('');
+          }
+        }
+      } catch { console.log(`\n  ${Y}!${RS} Agent is not running. Start it first: ${C}qclaw start${RS}\n`); }
+
     } else if (subcommand === 'create') {
       const teamName = args.slice(2).join(' ').replace(/"/g, '');
       if (!teamName) { console.log('Usage: qclaw team create "Team Name"'); break; }
 
       const preset = getPreset(teamName);
-      if (!preset) {
-        console.log(`\n  ${Y}!${RS} Unknown team: "${teamName}"`);
-        console.log(`  Available: ${listPresets().map(p => `"${p.name}"`).join(', ')}\n`);
-        break;
-      }
-
       const { config: tCfg } = await loadCore();
       const port = tCfg.dashboard?.port || 3000;
       const token = tCfg.dashboard?.authToken || '';
 
-      console.log(`\n  ${B}Spawning: ${preset.name}${RS}  ${D}(${preset.agents.length} agents)${RS}\n`);
-
-      for (const agentDef of preset.agents) {
+      if (preset) {
+        // Use the team API which spawns + groups in one call
+        console.log(`\n  ${B}Creating: ${preset.name}${RS}  ${D}(${preset.agents.length} agents)${RS}\n`);
         try {
-          const res = await fetch(`http://localhost:${port}/api/agents/spawn`, {
+          const res = await fetch(`http://localhost:${port}/api/teams`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(agentDef),
-            signal: AbortSignal.timeout(10000),
+            body: JSON.stringify({ preset: teamName }),
+            signal: AbortSignal.timeout(30000),
           });
           const data = await res.json();
           if (res.ok) {
-            console.log(`  ${G}✓${RS} ${agentDef.name}  ${D}${agentDef.role.slice(0, 60)}${RS}`);
+            for (const name of (data.agents || [])) {
+              console.log(`  ${G}✓${RS} ${name}`);
+            }
+            console.log(`\n  ${G}✓${RS} Team "${data.name || teamName}" ready\n`);
           } else {
-            console.log(`  ${Y}!${RS} ${agentDef.name}: ${data.error}`);
+            console.log(`  ${Y}!${RS} ${data.error}\n`);
           }
-        } catch (err) {
-          console.log(`  ${Y}!${RS} ${agentDef.name}: ${err.message}`);
-        }
+        } catch (err) { console.log(`\n  ${Y}!${RS} ${err.message}\n`); }
+      } else {
+        console.log(`\n  ${Y}!${RS} Unknown preset: "${teamName}"`);
+        console.log(`  Available: ${listPresets().map(p => `"${p.name}"`).join(', ')}\n`);
       }
-      console.log(`\n  ${G}✓${RS} Team "${preset.name}" ready\n`);
+
+    } else if (subcommand === 'delete') {
+      const teamId = args[2];
+      if (!teamId) { console.log('Usage: qclaw team delete <id>'); break; }
+      const { config: tCfg } = await loadCore();
+      const port = tCfg.dashboard?.port || 3000;
+      const token = tCfg.dashboard?.authToken || '';
+      try {
+        const res = await fetch(`http://localhost:${port}/api/teams/${teamId}`, {
+          method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` },
+          signal: AbortSignal.timeout(5000),
+        });
+        const data = await res.json();
+        if (res.ok) console.log(`\n  ${G}✓${RS} Team "${teamId}" deleted\n`);
+        else console.log(`\n  ${Y}!${RS} ${data.error}\n`);
+      } catch { console.log(`\n  ${Y}!${RS} Agent is not running.\n`); }
 
     } else {
-      console.log('Usage: qclaw team <list|create> ["Team Name"]');
+      console.log('Usage: qclaw team <list|create|delete|presets> [name]');
     }
     break;
   }
