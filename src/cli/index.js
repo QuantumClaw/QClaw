@@ -1414,6 +1414,14 @@ Usage: qclaw <command>
   autolearn off       Disable proactive learning
   autolearn status    Show auto-learn settings
 
+  \x1b[1mAgents\x1b[0m
+  agent list          List all agents with status
+  agent remove <name> Remove a spawned agent
+  agent pause <name>  Pause an agent
+  agent resume <name> Resume a paused agent
+  team list           Show available team presets
+  team create "Name"  Spawn a team preset
+
   \x1b[1mOther\x1b[0m
   update              Update to latest version
   help                This message
@@ -1622,6 +1630,146 @@ Dashboard: http://localhost:3000 (when agent is running)
   }
 
   // ─── VERSION ──────────────────────────────────────────────────
+  // ─── AGENT MANAGEMENT ──────────────────────────────────────────
+  case 'agent': {
+    smallBanner();
+    const G = '\x1b[38;5;82m', Y = '\x1b[38;5;220m', C = '\x1b[38;5;87m', D = '\x1b[38;5;245m', RS = '\x1b[0m', B = '\x1b[1m';
+
+    if (!subcommand || subcommand === 'list') {
+      // Try hitting running server first
+      const { config: agCfg } = await loadCore();
+      const port = agCfg.dashboard?.port || 3000;
+      const token = agCfg.dashboard?.authToken || process.env.DASHBOARD_AUTH_TOKEN || '';
+      try {
+        const res = await fetch(`http://localhost:${port}/api/agents`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          signal: AbortSignal.timeout(3000),
+        });
+        const agents = await res.json();
+        console.log(`\n  ${B}Agents${RS} (${agents.length}/${agCfg.agents?.maxConcurrent || 6})\n`);
+        for (const a of agents) {
+          const status = a.status === 'paused' ? `${Y}paused${RS}` : `${G}active${RS}`;
+          const primary = a.isPrimary ? ` ${C}★ primary${RS}` : '';
+          const role = a.role ? `  ${D}${a.role}${RS}` : '';
+          const aid = a.aidId ? `  ${D}AID: ${a.aidId.slice(0, 12)}...${RS}` : '';
+          console.log(`  ${B}${a.name}${RS}  ${status}${primary}${role}${aid}`);
+        }
+        console.log('');
+      } catch {
+        console.log(`\n  ${Y}!${RS} Agent is not running. Start it first: ${C}qclaw start${RS}\n`);
+      }
+
+    } else if (subcommand === 'remove') {
+      const name = args[2];
+      if (!name) { console.log('Usage: qclaw agent remove <name>'); break; }
+      const { config: agCfg } = await loadCore();
+      const port = agCfg.dashboard?.port || 3000;
+      const token = agCfg.dashboard?.authToken || '';
+      try {
+        const res = await fetch(`http://localhost:${port}/api/agents/${name}`, {
+          method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` },
+          signal: AbortSignal.timeout(5000),
+        });
+        const data = await res.json();
+        if (res.ok) console.log(`\n  ${G}✓${RS} ${data.message}\n`);
+        else console.log(`\n  ${Y}!${RS} ${data.error}\n`);
+      } catch { console.log(`\n  ${Y}!${RS} Agent is not running.\n`); }
+
+    } else if (subcommand === 'pause') {
+      const name = args[2];
+      if (!name) { console.log('Usage: qclaw agent pause <name>'); break; }
+      const { config: agCfg } = await loadCore();
+      const port = agCfg.dashboard?.port || 3000;
+      const token = agCfg.dashboard?.authToken || '';
+      try {
+        const res = await fetch(`http://localhost:${port}/api/agents/${name}/pause`, {
+          method: 'POST', headers: { 'Authorization': `Bearer ${token}` },
+          signal: AbortSignal.timeout(5000),
+        });
+        const data = await res.json();
+        if (res.ok) console.log(`\n  ${G}✓${RS} Agent "${name}" paused\n`);
+        else console.log(`\n  ${Y}!${RS} ${data.error}\n`);
+      } catch { console.log(`\n  ${Y}!${RS} Agent is not running.\n`); }
+
+    } else if (subcommand === 'resume') {
+      const name = args[2];
+      if (!name) { console.log('Usage: qclaw agent resume <name>'); break; }
+      const { config: agCfg } = await loadCore();
+      const port = agCfg.dashboard?.port || 3000;
+      const token = agCfg.dashboard?.authToken || '';
+      try {
+        const res = await fetch(`http://localhost:${port}/api/agents/${name}/resume`, {
+          method: 'POST', headers: { 'Authorization': `Bearer ${token}` },
+          signal: AbortSignal.timeout(5000),
+        });
+        const data = await res.json();
+        if (res.ok) console.log(`\n  ${G}✓${RS} Agent "${name}" resumed\n`);
+        else console.log(`\n  ${Y}!${RS} ${data.error}\n`);
+      } catch { console.log(`\n  ${Y}!${RS} Agent is not running.\n`); }
+
+    } else {
+      console.log('Usage: qclaw agent <list|remove|pause|resume> [name]');
+    }
+    break;
+  }
+
+  // ─── TEAM PRESETS ─────────────────────────────────────────────
+  case 'team': {
+    smallBanner();
+    const G = '\x1b[38;5;82m', Y = '\x1b[38;5;220m', C = '\x1b[38;5;87m', D = '\x1b[38;5;245m', RS = '\x1b[0m', B = '\x1b[1m';
+    const { listPresets, getPreset } = await import('../core/team-presets.js');
+
+    if (!subcommand || subcommand === 'list') {
+      const presets = listPresets();
+      console.log(`\n  ${B}Team Presets${RS}\n`);
+      for (const p of presets) {
+        console.log(`  ${B}${p.name}${RS}  ${D}${p.description}${RS}`);
+        console.log(`    ${D}Agents: ${p.agents.join(', ')}${RS}\n`);
+      }
+
+    } else if (subcommand === 'create') {
+      const teamName = args.slice(2).join(' ').replace(/"/g, '');
+      if (!teamName) { console.log('Usage: qclaw team create "Team Name"'); break; }
+
+      const preset = getPreset(teamName);
+      if (!preset) {
+        console.log(`\n  ${Y}!${RS} Unknown team: "${teamName}"`);
+        console.log(`  Available: ${listPresets().map(p => `"${p.name}"`).join(', ')}\n`);
+        break;
+      }
+
+      const { config: tCfg } = await loadCore();
+      const port = tCfg.dashboard?.port || 3000;
+      const token = tCfg.dashboard?.authToken || '';
+
+      console.log(`\n  ${B}Spawning: ${preset.name}${RS}  ${D}(${preset.agents.length} agents)${RS}\n`);
+
+      for (const agentDef of preset.agents) {
+        try {
+          const res = await fetch(`http://localhost:${port}/api/agents/spawn`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(agentDef),
+            signal: AbortSignal.timeout(10000),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            console.log(`  ${G}✓${RS} ${agentDef.name}  ${D}${agentDef.role.slice(0, 60)}${RS}`);
+          } else {
+            console.log(`  ${Y}!${RS} ${agentDef.name}: ${data.error}`);
+          }
+        } catch (err) {
+          console.log(`  ${Y}!${RS} ${agentDef.name}: ${err.message}`);
+        }
+      }
+      console.log(`\n  ${G}✓${RS} Team "${preset.name}" ready\n`);
+
+    } else {
+      console.log('Usage: qclaw team <list|create> ["Team Name"]');
+    }
+    break;
+  }
+
   case 'version':
   case '-v':
   case '--version':

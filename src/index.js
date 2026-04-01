@@ -227,47 +227,88 @@ class QuantumClaw {
       }
 
       // Wire the spawn_agent built-in for agentic sub-agent creation
-      this.tools._builtins.set('spawn_agent', async (args) => {
-        const { name, role, model_tier, scopes } = args;
-        if (!name || !role) return 'Error: name and role are required';
+      const maxAgents = this.config.agents?.maxConcurrent || 6; // 5 sub-agents + 1 primary
+      this.tools._builtins.set('spawn_agent', {
+        description: 'Spawn a new sub-agent with a specialised role. The agent gets its own personality, memory context, and can be delegated tasks.',
+        inputSchema: { type: 'object', properties: {
+          name: { type: 'string', description: 'Agent name (lowercase, alphanumeric, dashes/underscores)' },
+          role: { type: 'string', description: 'The agent\'s specialised role (e.g. "content writer", "code reviewer")' },
+          model_tier: { type: 'string', enum: ['simple', 'standard', 'complex'], description: 'Model tier (default: simple)' },
+          scopes: { type: 'array', items: { type: 'string' }, description: 'Tool scopes (default: ["chat"])' },
+        }, required: ['name', 'role'] },
+        fn: async (args) => {
+          const { name, role, model_tier, scopes } = args;
+          if (!name || !role) return 'Error: name and role are required';
 
-        try {
-          const { Agent } = await import('./agents/registry.js');
-          const { existsSync, mkdirSync, writeFileSync } = await import('fs');
-          const { join } = await import('path');
-
-          const safeName = name.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-          const agentDir = join(this.config._dir, 'workspace', 'agents', safeName);
-          mkdirSync(agentDir, { recursive: true });
-
-          // Generate SOUL.md
-          const soulContent = `# ${safeName}\n\nYou are **${safeName}**, a specialised sub-agent.\n\n## Role\n\n${role}\n\n## Rules\n\n- You are a ${model_tier || 'simple'}-tier agent — be token-efficient\n- Scoped access: ${(scopes || ['chat']).join(', ')}\n- Report to the primary agent\n`;
-          writeFileSync(join(agentDir, 'SOUL.md'), soulContent);
-
-          // Generate child AID
-          let childAid = null;
-          if (this.credentials?.generateChildAID) {
-            try {
-              childAid = await this.credentials.generateChildAID(safeName, role, scopes || []);
-              writeFileSync(join(agentDir, 'aid.json'), JSON.stringify(childAid, null, 2));
-            } catch {}
+          if (this.agents.agents.size >= maxAgents) {
+            return `Error: Maximum ${maxAgents - 1} sub-agents reached. Remove an agent first.`;
           }
 
-          // Load into registry
-          const agent = new Agent(safeName, agentDir, {
-            router: this.router, memory: this.memory,
-            audit: this.audit, toolExecutor: this.toolExecutor,
-            trustKernel: this.trustKernel
-          });
-          await agent.load();
-          this.agents.agents.set(safeName, agent);
+          try {
+            const { Agent } = await import('./agents/registry.js');
+            const { mkdirSync, writeFileSync } = await import('fs');
+            const { join } = await import('path');
 
-          this.audit.log('system', 'agent_spawned', safeName, { role, scopes });
+            const safeName = name.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+            if (this.agents.agents.has(safeName)) return `Error: Agent "${safeName}" already exists.`;
 
-          const aidInfo = childAid ? ` AID: ${childAid.aid_id.slice(0, 12)}..., Tier ${childAid.trust_tier}.` : '';
-          return `Agent "${safeName}" spawned successfully.${aidInfo} Role: ${role}. Scopes: ${(scopes || ['chat']).join(', ')}.`;
-        } catch (err) {
-          return `Failed to spawn agent: ${err.message}`;
+            const agentDir = join(this.config._dir, 'workspace', 'agents', safeName);
+            mkdirSync(agentDir, { recursive: true });
+
+            const soulContent = `# ${safeName}\n\nYou are **${safeName}**, a specialised sub-agent.\n\n## Role\n\n${role}\n\n## Rules\n\n- You are a ${model_tier || 'simple'}-tier agent — be token-efficient\n- Scoped access: ${(scopes || ['chat']).join(', ')}\n- Report to the primary agent\n`;
+            writeFileSync(join(agentDir, 'SOUL.md'), soulContent);
+
+            let childAid = null;
+            if (this.credentials?.generateChildAID) {
+              try {
+                childAid = await this.credentials.generateChildAID(safeName, role, scopes || []);
+                writeFileSync(join(agentDir, 'aid.json'), JSON.stringify(childAid, null, 2));
+              } catch {}
+            }
+
+            const agent = new Agent(safeName, agentDir, {
+              router: this.router, memory: this.memory,
+              audit: this.audit, toolExecutor: this.toolExecutor,
+              trustKernel: this.trustKernel
+            });
+            await agent.load();
+            agent.role = role;
+            agent.spawnedAt = new Date().toISOString();
+            this.agents.agents.set(safeName, agent);
+
+            this.audit.log('system', 'agent_spawned', safeName, { role, scopes });
+
+            const aidInfo = childAid ? ` AID: ${childAid.aid_id.slice(0, 12)}..., Tier ${childAid.trust_tier}.` : '';
+            return `Agent "${safeName}" spawned successfully.${aidInfo} Role: ${role}. Scopes: ${(scopes || ['chat']).join(', ')}.`;
+          } catch (err) {
+            return `Failed to spawn agent: ${err.message}`;
+          }
+        }
+      });
+
+      // delegate_to — send a task to a spawned agent and get results back
+      this.tools._builtins.set('delegate_to', {
+        description: 'Send a task to a spawned sub-agent and get their response. The sub-agent processes the task using its own personality and skills.',
+        inputSchema: { type: 'object', properties: {
+          agent_name: { type: 'string', description: 'Name of the target agent to delegate to' },
+          task: { type: 'string', description: 'The task or message to send to the agent' },
+          context: { type: 'string', description: 'Optional additional context for the agent' },
+        }, required: ['agent_name', 'task'] },
+        fn: async ({ agent_name, task, context: extraContext }) => {
+          const target = this.agents.get(agent_name);
+          if (!target) return `Error: Agent "${agent_name}" not found. Available: ${this.agents.list().join(', ')}`;
+          if (target.name === this.agents.primary()?.name) return 'Error: Cannot delegate to the primary agent (would create a loop).';
+          if (target.status === 'paused') return `Error: Agent "${agent_name}" is paused. Resume it first.`;
+
+          const fullTask = extraContext ? `${task}\n\nContext: ${extraContext}` : task;
+
+          try {
+            this.audit.log('delegation', 'delegate_to', agent_name, { task: task.slice(0, 200) });
+            const result = await target.process(fullTask, { channel: 'delegation', delegatedBy: this.agents.primary()?.name });
+            return `[${agent_name}]: ${result.content}`;
+          } catch (err) {
+            return `Delegation to "${agent_name}" failed: ${err.message}`;
+          }
         }
       });
 

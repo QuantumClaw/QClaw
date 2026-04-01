@@ -432,6 +432,9 @@ export class DashboardServer {
         const totalMessages = threads.reduce((sum, t) => sum + t.messageCount, 0);
         agents.push({
           name: agent.name,
+          status: agent.status || 'active',
+          role: agent.role || null,
+          spawnedAt: agent.spawnedAt || null,
           model: this.qclaw.config.models?.primary?.model || 'auto',
           provider: this.qclaw.config.models?.primary?.provider || 'unknown',
           skills: agent.skills?.length || 0,
@@ -450,6 +453,12 @@ export class DashboardServer {
       try {
         const { name, role, model_tier, scopes } = req.body;
         if (!name || !role) return res.status(400).json({ error: 'name and role required' });
+
+        // Max agent limit
+        const maxAgents = this.qclaw.config.agents?.maxConcurrent || 6;
+        if (this.qclaw.agents.agents.size >= maxAgents) {
+          return res.status(400).json({ error: `Maximum ${maxAgents - 1} sub-agents reached. Remove an agent first.` });
+        }
 
         // Sanitise agent name
         const safeName = name.toLowerCase().replace(/[^a-z0-9_-]/g, '');
@@ -493,6 +502,8 @@ export class DashboardServer {
           toolExecutor: this.qclaw.toolExecutor
         });
         await agent.load();
+        agent.role = role;
+        agent.spawnedAt = new Date().toISOString();
         this.qclaw.agents.agents.set(safeName, agent);
 
         // 5. Audit
@@ -751,19 +762,38 @@ export class DashboardServer {
       } catch { res.json([]); }
     });
 
-    // ─── Agent Management (delete + SOUL editor) ────────────
+    // ─── Agent Management (delete, pause, resume + SOUL editor) ──
     this.app.delete('/api/agents/:name', async (req, res) => {
       try {
         const name = req.params.name;
-        const { join } = await import('path');
-        const { rmSync, existsSync } = await import('fs');
-        const agentDir = join(this.qclaw.config._dir, 'workspace', 'agents', name);
-        if (!existsSync(agentDir)) return res.status(404).json({ error: 'Agent not found' });
-        rmSync(agentDir, { recursive: true, force: true });
-        // Remove from running registry if loaded
-        if (this.qclaw.agents?._agents) this.qclaw.agents._agents.delete(name);
-        res.json({ ok: true, message: `Agent "${name}" deleted` });
+        const result = this.qclaw.agents.remove(name);
+        if (!result.ok) return res.status(400).json({ error: result.error });
+        this.qclaw.audit.log('system', 'agent_removed', name);
+        res.json({ ok: true, message: `Agent "${name}" removed` });
       } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    this.app.post('/api/agents/:name/pause', (req, res) => {
+      const agent = this.qclaw.agents.get(req.params.name);
+      if (!agent || !this.qclaw.agents.list().includes(req.params.name)) {
+        return res.status(404).json({ error: 'Agent not found' });
+      }
+      if (agent.name === this.qclaw.agents.primary()?.name) {
+        return res.status(400).json({ error: 'Cannot pause primary agent' });
+      }
+      agent.pause();
+      this.qclaw.audit.log('system', 'agent_paused', agent.name);
+      res.json({ ok: true, name: agent.name, status: 'paused' });
+    });
+
+    this.app.post('/api/agents/:name/resume', (req, res) => {
+      const agent = this.qclaw.agents.get(req.params.name);
+      if (!agent || !this.qclaw.agents.list().includes(req.params.name)) {
+        return res.status(404).json({ error: 'Agent not found' });
+      }
+      agent.resume();
+      this.qclaw.audit.log('system', 'agent_resumed', agent.name);
+      res.json({ ok: true, name: agent.name, status: 'active' });
     });
 
     this.app.get('/api/agents/:name/soul', async (req, res) => {
@@ -1411,6 +1441,7 @@ export class DashboardServer {
         sessionToken: this.sessionToken,
         tunnelUrl: this.tunnelUrl,
         conversations: this._getActiveConversations(),
+        agents: this.qclaw.agents?.serialize?.() || [],
       };
       writeFileSync(this._stateFile, JSON.stringify(state, null, 2));
     } catch { /* best effort */ }
@@ -1425,6 +1456,17 @@ export class DashboardServer {
     try {
       const raw = readFileSync(this._stateFile, 'utf-8');
       const state = JSON.parse(raw);
+      // Restore agent statuses from previous session
+      if (state.agents && this.qclaw.agents) {
+        for (const saved of state.agents) {
+          const agent = this.qclaw.agents.get(saved.name);
+          if (agent && this.qclaw.agents.list().includes(saved.name)) {
+            if (saved.status) agent.status = saved.status;
+            if (saved.role) agent.role = saved.role;
+            if (saved.spawnedAt) agent.spawnedAt = saved.spawnedAt;
+          }
+        }
+      }
       if (state.conversations && this.qclaw.memory) {
         log.info(`Restored ${state.conversations.length} conversation(s) from previous session`);
       }

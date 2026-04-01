@@ -5,7 +5,7 @@
  * Default agent is "echo" — the primary assistant.
  */
 
-import { readdirSync, existsSync, readFileSync } from 'fs';
+import { readdirSync, existsSync, readFileSync, renameSync } from 'fs';
 import { join } from 'path';
 import { log } from '../core/logger.js';
 
@@ -64,6 +64,23 @@ export class AgentRegistry {
 
   list() {
     return Array.from(this.agents.keys());
+  }
+
+  remove(name) {
+    if (name === this.defaultName) return { ok: false, error: 'Cannot remove primary agent' };
+    if (!this.agents.has(name)) return { ok: false, error: `Agent "${name}" not found` };
+    this.agents.delete(name);
+    // Rename directory so loadAll() skips it but data is preserved
+    try {
+      const agentDir = join(this.config._dir, 'workspace', 'agents', name);
+      const archiveDir = join(this.config._dir, 'workspace', 'agents', `_${name}`);
+      if (existsSync(agentDir)) renameSync(agentDir, archiveDir);
+    } catch { /* non-fatal — agent already removed from memory */ }
+    return { ok: true };
+  }
+
+  serialize() {
+    return Array.from(this.agents.values()).map(a => a.toJSON());
   }
 
   async _createDefault() {
@@ -169,6 +186,22 @@ export class Agent {
     this.soul = '';
     this.skills = [];
     this.aid = null;
+    this.status = 'active';
+    this.role = null;
+    this.spawnedAt = null;
+  }
+
+  pause() { this.status = 'paused'; }
+  resume() { this.status = 'active'; }
+
+  toJSON() {
+    return {
+      name: this.name,
+      status: this.status,
+      role: this.role,
+      spawnedAt: this.spawnedAt,
+      aidId: this.aid?.aid_id || null,
+    };
   }
 
   async load() {
@@ -202,6 +235,10 @@ export class Agent {
    * Process a message through this agent
    */
   async process(message, context = {}) {
+    if (this.status === 'paused') {
+      return { content: `Agent "${this.name}" is paused. Resume it first.`, tier: 'blocked', cost: 0, model: null };
+    }
+
     const { router, memory, trustKernel, audit } = this.services;
 
     // Extract text for classification (images don't affect routing)
