@@ -649,20 +649,21 @@ export class DashboardServer {
 
     // ─── Conversation Threads ───────────────────────────────
     this.app.get('/api/threads', (req, res) => {
-      const agent = this.qclaw.agents.primary();
-      if (!agent) return res.json([]);
-      const threads = this.qclaw.memory.getThreads(agent.name);
+      const agentName = req.query.agent || this.qclaw.agents.primary()?.name;
+      if (!agentName) return res.json([]);
+      const threads = this.qclaw.memory.getThreads(agentName);
       res.json(threads);
     });
 
     this.app.get('/api/threads/history', (req, res) => {
-      const agent = this.qclaw.agents.primary();
-      if (!agent) return res.json([]);
-      const { channel, userId } = req.query;
+      const agentName = req.query.agent || this.qclaw.agents.primary()?.name;
+      if (!agentName) return res.json([]);
+      const { channel, userId, before } = req.query;
       const limit = parseInt(req.query.limit) || 50;
-      const history = this.qclaw.memory.getHistory(agent.name, limit, {
+      const history = this.qclaw.memory.getHistory(agentName, limit, {
         channel: channel || undefined,
-        userId: userId || undefined
+        userId: userId || undefined,
+        before: before || undefined,
       });
       res.json(history);
     });
@@ -1708,6 +1709,10 @@ Keep names as lowercase slugs with dashes. Make roles practical and specific to 
 
   _saveStateSync() {
     if (!this._stateFile) return;
+    // Flush SQLite WAL to disk
+    try {
+      if (this.qclaw.memory?.db) this.qclaw.memory.db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch { /* non-fatal */ }
     try {
       const state = {
         savedAt: Date.now(),

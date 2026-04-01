@@ -177,7 +177,7 @@ export class MemoryManager {
    * Get recent conversation history for context
    */
   getHistory(agent, limit = 20, options = {}) {
-    const { channel, userId } = options;
+    const { channel, userId, before } = options;
 
     if (this.db) {
       let sql = `SELECT role, content, timestamp, model, tier, channel, user_id, username
@@ -186,6 +186,7 @@ export class MemoryManager {
 
       if (channel) { sql += ' AND channel = ?'; params.push(channel); }
       if (userId) { sql += ' AND user_id = ?'; params.push(userId); }
+      if (before) { sql += ' AND timestamp < ?'; params.push(before); }
 
       sql += ' ORDER BY id DESC LIMIT ?';
       params.push(limit);
@@ -197,6 +198,7 @@ export class MemoryManager {
       let msgs = this._jsonStore.conversations.filter(m => m.agent === agent);
       if (channel) msgs = msgs.filter(m => m.channel === channel);
       if (userId) msgs = msgs.filter(m => m.userId === userId);
+      if (before) msgs = msgs.filter(m => m.timestamp < before);
       return msgs.slice(-limit);
     }
 
