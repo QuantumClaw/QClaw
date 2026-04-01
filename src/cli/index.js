@@ -1868,7 +1868,10 @@ Dashboard: http://localhost:3000 (when agent is running)
   case 'version':
   case '-v':
   case '--version':
-    console.log('qclaw 1.1.4');
+    try {
+      const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json'), 'utf-8'));
+      console.log(`qclaw ${pkg.version}`);
+    } catch { console.log('qclaw (version unknown)'); }
     break;
 
   // ─── UNKNOWN ──────────────────────────────────────────────────

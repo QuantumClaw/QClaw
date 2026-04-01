@@ -12,6 +12,9 @@
  */
 
 import { spawn } from 'child_process';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { log } from '../core/logger.js';
 import { randomUUID } from 'crypto';
 
@@ -28,9 +31,20 @@ export class MCPClient {
     this._process = null;
     this._buffer = '';
     this._pending = new Map();  // id -> { resolve, reject, timeout }
+    this._version = null;
     this._tools = [];
     this._connected = false;
     this._sseController = null;
+  }
+
+  _getVersion() {
+    if (!this._version) {
+      try {
+        const __dir = dirname(fileURLToPath(import.meta.url));
+        this._version = JSON.parse(readFileSync(join(__dir, '..', '..', 'package.json'), 'utf-8')).version;
+      } catch { this._version = '0.0.0'; }
+    }
+    return this._version;
   }
 
   /**
@@ -48,7 +62,7 @@ export class MCPClient {
       const initResult = await this._request('initialize', {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        clientInfo: { name: 'quantumclaw', version: '1.1.4' }
+        clientInfo: { name: 'quantumclaw', version: this._getVersion() }
       });
 
       // Send initialized notification
