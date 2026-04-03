@@ -309,3 +309,33 @@ ssh qclaw "cd ~/QClaw && npm test"
 - Buzzsprout: audio_url must be publicly accessible
 - n8n runs in Docker: use n8n credentials not host .env
 - R2 upload must be server-side (credentials not exposed to browser)
+
+---
+
+## Session: 3 April 2026 — Content Studio Phase 2
+
+### n8n Workflow Updates (Qf39NEOEgz2W0uls) — now 22 nodes
+- Select Clip Segments node added (claude-haiku-4-5-20251001, analyses transcript, returns 5-8 clip segments as JSON)
+- Parse Clip Selections node added (extracts JSON array, merges with highlight timestamps)
+- Backlinks added to Blog Post prompt (Buzzsprout, LinkedIn, Substack)
+- Backlinks added to Substack prompt (Buzzsprout, WordPress, LinkedIn)
+- Backlinks added to LinkedIn prompt (Buzzsprout)
+- clip_selections saved to Supabase job record
+
+### Dashboard Updates
+- Episode Images section: Hero image (1200x628) + YouTube Thumbnail (1280x720) upload zones
+- Image resize via sharp, uploads to R2 at episodes/[jobId]/[imageType].jpg
+- Social Clips section: drop zone for MP4 clips, caption editor, platform selector, schedule picker, Schedule via GHL button
+- server.js: POST /api/content-studio/upload-image
+- server.js: POST /api/content-studio/schedule-clip
+
+### Supabase
+- social_clip_schedules table created
+- Columns added: clip_selections (jsonb), hero_image_url, thumbnail_url
+
+### Pending — Phase 3
+- YouTube OAuth (Emma Google account)
+- LinkedIn direct posting via API
+- GHL Social Planner integration for scheduled clips
+- Auto-clipper: FFmpeg worker for automated clip generation from transcript timestamps
+- Delete test Buzzsprout episodes before Emma uses it
