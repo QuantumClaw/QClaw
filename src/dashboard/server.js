@@ -1095,6 +1095,110 @@ export class DashboardServer {
       } catch (err) { res.status(500).json({ error: err.message }); }
     });
 
+    // ─── Trading: Simulate (proxy to Monte Carlo worker) ─────
+    this.app.post('/api/trading/simulate', async (req, res) => {
+      try {
+        const mcRes = await fetch('http://localhost:4001/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req.body)
+        });
+        const data = await mcRes.json();
+        if (!mcRes.ok) return res.status(mcRes.status).json(data);
+
+        // Save simulation to Supabase
+        const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkYWJ5Z21yb211cXR5c2l0b2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2NjI2OTQsImV4cCI6MjA3NTIzODY5NH0.6JJMkPXBufpLxlisH1ig32Xm8YM3p0jcXRlBzx5x8Dk';
+        await fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_simulations', {
+          method: 'POST',
+          headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            asset: data.asset, question: data.question, target: data.target,
+            probability: data.probability, confidence_lower: data.confidence_lower,
+            confidence_upper: data.confidence_upper, current_price: data.current_price,
+            macro_factors: data.macro_factors, macro_adjustment: data.macro_adjustment
+          })
+        }).catch(() => {});
+
+        res.json(data);
+      } catch (err) { res.status(502).json({ error: 'Monte Carlo worker unavailable: ' + err.message }); }
+    });
+
+    // ─── Trading: Execute Trade (called by n8n) ──────────────
+    this.app.post('/api/trading/execute', async (req, res) => {
+      try {
+        const { market_id, direction, amount } = req.body;
+        if (!market_id || !direction || !amount) {
+          return res.status(400).json({ error: 'market_id, direction, and amount required' });
+        }
+        const { exec } = await import('child_process');
+        const { promisify } = await import('util');
+        const execAsync = promisify(exec);
+        const cmd = `python3 /root/QClaw/src/trading/execute_trade.py --market ${market_id} --direction ${direction} --amount ${amount}`;
+        const { stdout, stderr } = await execAsync(cmd, { timeout: 30000 });
+        const result = JSON.parse(stdout);
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({ error: err.message, stderr: err.stderr || '' });
+      }
+    });
+
+    // ─── Trading: Positions ─────────────────────────────────
+    this.app.get('/api/trading/positions', async (req, res) => {
+      try {
+        const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkYWJ5Z21yb211cXR5c2l0b2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2NjI2OTQsImV4cCI6MjA3NTIzODY5NH0.6JJMkPXBufpLxlisH1ig32Xm8YM3p0jcXRlBzx5x8Dk';
+        const sbRes = await fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_positions?order=created_at.desc&limit=50', {
+          headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` }
+        });
+        res.json(await sbRes.json());
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // ─── Trading: Simulations ───────────────────────────────
+    this.app.get('/api/trading/simulations', async (req, res) => {
+      try {
+        const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkYWJ5Z21yb211cXR5c2l0b2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2NjI2OTQsImV4cCI6MjA3NTIzODY5NH0.6JJMkPXBufpLxlisH1ig32Xm8YM3p0jcXRlBzx5x8Dk';
+        const sbRes = await fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_simulations?order=created_at.desc&limit=10', {
+          headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` }
+        });
+        res.json(await sbRes.json());
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    // ─── Trading: Config ────────────────────────────────────
+    this.app.get('/api/trading/config', async (req, res) => {
+      try {
+        const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkYWJ5Z21yb211cXR5c2l0b2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2NjI2OTQsImV4cCI6MjA3NTIzODY5NH0.6JJMkPXBufpLxlisH1ig32Xm8YM3p0jcXRlBzx5x8Dk';
+        const sbRes = await fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_config?select=*&limit=1', {
+          headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` }
+        });
+        const rows = await sbRes.json();
+        res.json(rows[0] || { trading_enabled: false, max_position_usdc: 25, min_edge_threshold: 25, daily_loss_limit: 50 });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    this.app.post('/api/trading/config', async (req, res) => {
+      try {
+        const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkYWJ5Z21yb211cXR5c2l0b2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2NjI2OTQsImV4cCI6MjA3NTIzODY5NH0.6JJMkPXBufpLxlisH1ig32Xm8YM3p0jcXRlBzx5x8Dk';
+        const { trading_enabled, max_position_usdc, min_edge_threshold, daily_loss_limit } = req.body;
+        // Upsert config (single row)
+        const sbRes = await fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_config?id=eq.1', {
+          method: 'PATCH',
+          headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+          body: JSON.stringify({ trading_enabled, max_position_usdc, min_edge_threshold, daily_loss_limit })
+        });
+        const result = await sbRes.json();
+        if (!Array.isArray(result) || !result.length) {
+          // Insert if no row exists
+          await fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_config', {
+            method: 'POST',
+            headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: 1, trading_enabled, max_position_usdc, min_edge_threshold, daily_loss_limit })
+          });
+        }
+        res.json({ ok: true });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
     // ─── Voice Status ────────────────────────────────────────
     this.app.get('/api/voice/status', async (req, res) => {
       try {

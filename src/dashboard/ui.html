@@ -196,6 +196,7 @@
     <div class="nav-item" data-page="memory">🧠<span class="tip">Memory</span></div>
     <div class="nav-item" data-page="agency">🎬<span class="tip">Agency</span></div>
     <div class="nav-item" data-page="content-studio">🎙️<span class="tip">Content Studio</span></div>
+    <div class="nav-item" data-page="trading">📈<span class="tip">Trading Room</span></div>
     <div class="nav-sep"></div>
     <div class="nav-item" data-page="secrets">🔑<span class="tip">API Keys</span></div>
     <div class="nav-sep"></div>
@@ -680,6 +681,108 @@
       </div>
     </div>
 
+    <!-- ═══ TRADING ROOM ═══ -->
+    <div class="page" id="page-trading">
+      <div class="page-scroll">
+        <div class="section-title" style="font-size:1.1rem">Trading Room — Polymarket Alpha</div>
+        <div class="section-sub">Monte Carlo simulations, market scanning, and automated position management.</div>
+
+        <!-- Config bar -->
+        <div style="display:flex;gap:12px;margin-bottom:20px;align-items:center;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:.75rem;color:var(--text-dim)">Trading</span>
+            <button id="tr-trading-toggle" class="btn btn-sm" onclick="trToggleTrading()" style="min-width:60px">OFF</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:.75rem;color:var(--text-dim)">Max Position $</span>
+            <input class="input" id="tr-max-position" style="width:80px;font-size:.78rem" value="25" onchange="trSaveConfig()">
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:.75rem;color:var(--text-dim)">Min Edge %</span>
+            <input class="input" id="tr-min-edge" style="width:60px;font-size:.78rem" value="25" onchange="trSaveConfig()">
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:.75rem;color:var(--text-dim)">Daily Loss Limit $</span>
+            <input class="input" id="tr-loss-limit" style="width:80px;font-size:.78rem" value="50" onchange="trSaveConfig()">
+          </div>
+        </div>
+
+        <!-- Run Simulation -->
+        <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:24px">
+          <div style="font-weight:600;font-size:.85rem;margin-bottom:12px">Run Simulation</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+            <div>
+              <label style="font-size:.7rem;color:var(--text-dim);display:block;margin-bottom:3px">Asset</label>
+              <select id="tr-sim-asset" class="input" style="font-size:.78rem;width:100px">
+                <option value="gold">Gold</option>
+                <option value="btc">Bitcoin</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:.7rem;color:var(--text-dim);display:block;margin-bottom:3px">Target Price</label>
+              <input class="input" id="tr-sim-target" style="width:120px;font-size:.78rem" placeholder="e.g. 3000">
+            </div>
+            <div>
+              <label style="font-size:.7rem;color:var(--text-dim);display:block;margin-bottom:3px">Question</label>
+              <input class="input" id="tr-sim-question" style="width:240px;font-size:.78rem" placeholder="Will gold hit $3000?">
+            </div>
+            <div>
+              <label style="font-size:.7rem;color:var(--text-dim);display:block;margin-bottom:3px">Horizon (days)</label>
+              <input class="input" id="tr-sim-horizon" style="width:70px;font-size:.78rem" value="30">
+            </div>
+            <button class="btn btn-primary btn-sm" id="tr-sim-btn" onclick="trRunSimulation()">Simulate</button>
+          </div>
+          <div id="tr-sim-result" style="display:none;margin-top:16px;padding:14px;background:var(--bg-3);border-radius:8px">
+            <div style="display:flex;gap:20px;flex-wrap:wrap">
+              <div>
+                <div style="font-size:.65rem;color:var(--text-dim);text-transform:uppercase">Probability</div>
+                <div id="tr-sim-prob" style="font-size:1.6rem;font-weight:700;color:var(--accent-l)">—</div>
+              </div>
+              <div>
+                <div style="font-size:.65rem;color:var(--text-dim);text-transform:uppercase">95% CI</div>
+                <div id="tr-sim-ci" style="font-size:.9rem;font-weight:500;color:var(--text)">—</div>
+              </div>
+              <div>
+                <div style="font-size:.65rem;color:var(--text-dim);text-transform:uppercase">Current Price</div>
+                <div id="tr-sim-price" style="font-size:.9rem;font-weight:500;color:var(--text)">—</div>
+              </div>
+              <div>
+                <div style="font-size:.65rem;color:var(--text-dim);text-transform:uppercase">Simulations</div>
+                <div id="tr-sim-count" style="font-size:.9rem;font-weight:500;color:var(--text)">—</div>
+              </div>
+              <div>
+                <div style="font-size:.65rem;color:var(--text-dim);text-transform:uppercase">Macro Adj</div>
+                <div id="tr-sim-macro" style="font-size:.9rem;font-weight:500;color:var(--text)">—</div>
+              </div>
+            </div>
+            <div id="tr-sim-factors" style="margin-top:10px;font-size:.72rem;color:var(--text-dim)"></div>
+          </div>
+        </div>
+
+        <!-- Live Positions -->
+        <div style="margin-bottom:24px">
+          <div class="section-title" style="font-size:.9rem">Live Positions</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Market</th><th>Direction</th><th>Entry</th><th>Current</th><th>PnL</th><th>Status</th></tr></thead>
+              <tbody id="tr-positions-body"><tr><td colspan="6" style="color:var(--text-dim)">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Latest Simulations -->
+        <div>
+          <div class="section-title" style="font-size:.9rem">Latest Simulations</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Asset</th><th>Question</th><th>Probability</th><th>Market Odds</th><th>Edge</th><th>Time</th></tr></thead>
+              <tbody id="tr-sims-body"><tr><td colspan="6" style="color:var(--text-dim)">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- CANVAS PANE (in Chat) handled via JS -->
   </div>
 
@@ -777,7 +880,7 @@ async function api(path, opts) {
 
 /* ─── Navigation ──────────────────────────────────────── */
 const TITLES = { chat:'Chat', overview:'Overview', channels:'Channels', usage:'Usage & Costs', agents:'Agents', skills:'Skills', tools:'Tools', scheduled:'Scheduled Tasks', memory:'Memory', agency:'Ad Agency', 'content-studio':'Content Studio', secrets:'API Keys', config:'Config', logs:'Logs' };
-const PAGE_LOADERS = { overview:loadOverview, channels:loadChannels, usage:loadUsage, agents:loadAgents, skills:loadSkills, tools:()=>{loadTools();loadVoiceStatus()}, scheduled:loadScheduled, memory:loadMem, 'content-studio':initContentStudio, secrets:loadSec, config:loadConfig, logs:loadLogs };
+const PAGE_LOADERS = { overview:loadOverview, channels:loadChannels, usage:loadUsage, agents:loadAgents, skills:loadSkills, tools:()=>{loadTools();loadVoiceStatus()}, scheduled:loadScheduled, memory:loadMem, 'content-studio':initContentStudio, trading:initTrading, secrets:loadSec, config:loadConfig, logs:loadLogs };
 document.querySelectorAll('.nav-item[data-page]').forEach(el => {
   el.addEventListener('click', () => {
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -1721,6 +1824,134 @@ async function csViewJob(id) {
     csShowResults(job);
     $('cs-results').scrollIntoView({ behavior: 'smooth' });
   } catch (e) { toast('Failed to load job: ' + e.message, 'err'); }
+}
+
+/* ─── Trading Room ───────────────────────────────────── */
+let _trConfig = { trading_enabled: false, max_position_usdc: 25, min_edge_threshold: 25, daily_loss_limit: 50 };
+
+function initTrading() {
+  trLoadConfig();
+  trLoadPositions();
+  trLoadSimulations();
+}
+
+async function trLoadConfig() {
+  try {
+    const cfg = await (await fetch(API('/api/trading/config'))).json();
+    if (cfg && !cfg.error) {
+      _trConfig = cfg;
+      $('tr-max-position').value = cfg.max_position_usdc || 25;
+      $('tr-min-edge').value = cfg.min_edge_threshold || 25;
+      $('tr-loss-limit').value = cfg.daily_loss_limit || 50;
+      const btn = $('tr-trading-toggle');
+      if (cfg.trading_enabled) {
+        btn.textContent = 'ON'; btn.style.background = 'var(--green)'; btn.style.color = '#000';
+      } else {
+        btn.textContent = 'OFF'; btn.style.background = ''; btn.style.color = '';
+      }
+    }
+  } catch {}
+}
+
+async function trToggleTrading() {
+  _trConfig.trading_enabled = !_trConfig.trading_enabled;
+  await trSaveConfig();
+  trLoadConfig();
+}
+
+async function trSaveConfig() {
+  try {
+    const cfg = {
+      trading_enabled: _trConfig.trading_enabled,
+      max_position_usdc: parseFloat($('tr-max-position').value) || 25,
+      min_edge_threshold: parseFloat($('tr-min-edge').value) || 25,
+      daily_loss_limit: parseFloat($('tr-loss-limit').value) || 50,
+    };
+    await fetch(API('/api/trading/config'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+    _trConfig = cfg;
+    toast('Config saved', 'ok');
+  } catch (e) { toast('Failed to save config', 'err'); }
+}
+
+async function trRunSimulation() {
+  const btn = $('tr-sim-btn');
+  const asset = $('tr-sim-asset').value;
+  const target = parseFloat($('tr-sim-target').value);
+  if (!target) { toast('Target price required', 'err'); return; }
+
+  btn.disabled = true; btn.textContent = 'Running...';
+  try {
+    const res = await fetch(API('/api/trading/simulate'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ asset, target, question: $('tr-sim-question').value || undefined, horizon_days: parseInt($('tr-sim-horizon').value) || 30 })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    $('tr-sim-result').style.display = 'block';
+    $('tr-sim-prob').textContent = (data.probability * 100).toFixed(1) + '%';
+    $('tr-sim-prob').style.color = data.probability > 0.6 ? 'var(--green)' : data.probability < 0.3 ? 'var(--red)' : 'var(--accent-l)';
+    $('tr-sim-ci').textContent = (data.confidence_lower * 100).toFixed(1) + '% – ' + (data.confidence_upper * 100).toFixed(1) + '%';
+    $('tr-sim-price').textContent = '$' + data.current_price.toLocaleString();
+    $('tr-sim-count').textContent = data.simulations.toLocaleString();
+    $('tr-sim-macro').textContent = data.macro_adjustment ? (data.macro_adjustment > 0 ? '+' : '') + (data.macro_adjustment * 100).toFixed(1) + '%' : 'None';
+
+    const factors = data.macro_factors || {};
+    let fText = [];
+    if (factors.dxy) fText.push('DXY: ' + (factors.dxy.current || '—') + ' (' + (factors.dxy.change_pct > 0 ? '+' : '') + (factors.dxy.change_pct || 0).toFixed(2) + '%)');
+    if (factors.tnx) fText.push('10Y: ' + (factors.tnx.current || '—') + ' (' + (factors.tnx.change_pct > 0 ? '+' : '') + (factors.tnx.change_pct || 0).toFixed(2) + '%)');
+    $('tr-sim-factors').textContent = fText.length ? 'Macro: ' + fText.join(' | ') : '';
+
+    trLoadSimulations();
+  } catch (err) {
+    toast('Simulation failed: ' + err.message, 'err');
+  }
+  btn.disabled = false; btn.textContent = 'Simulate';
+}
+
+async function trLoadPositions() {
+  try {
+    const positions = await (await fetch(API('/api/trading/positions'))).json();
+    if (!Array.isArray(positions) || !positions.length) {
+      $('tr-positions-body').innerHTML = '<tr><td colspan="6" style="color:var(--text-dim)">No open positions</td></tr>';
+      return;
+    }
+    $('tr-positions-body').innerHTML = positions.map(p => {
+      const pnl = p.current_price && p.entry_price ? ((p.current_price - p.entry_price) / p.entry_price * 100).toFixed(1) : '—';
+      const pnlColor = parseFloat(pnl) > 0 ? 'var(--green)' : parseFloat(pnl) < 0 ? 'var(--red)' : 'var(--text-dim)';
+      const statusBadge = p.status === 'open' ? '<span class="badge badge-green">open</span>'
+        : p.status === 'closed' ? '<span class="badge">closed</span>'
+        : '<span class="badge badge-yellow">' + (p.status || '—') + '</span>';
+      return '<tr><td style="font-size:.78rem;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (p.question || '—') + '</td>'
+        + '<td><span class="badge ' + (p.direction === 'YES' ? 'badge-green' : 'badge-red') + '">' + (p.direction || '—') + '</span></td>'
+        + '<td style="font-size:.78rem">' + (p.entry_price ? '$' + p.entry_price.toFixed(2) : '—') + '</td>'
+        + '<td style="font-size:.78rem">' + (p.current_price ? '$' + p.current_price.toFixed(2) : '—') + '</td>'
+        + '<td style="font-size:.78rem;color:' + pnlColor + '">' + (pnl !== '—' ? pnl + '%' : '—') + '</td>'
+        + '<td>' + statusBadge + '</td></tr>';
+    }).join('');
+  } catch { $('tr-positions-body').innerHTML = '<tr><td colspan="6" style="color:var(--text-dim)">Failed to load</td></tr>'; }
+}
+
+async function trLoadSimulations() {
+  try {
+    const sims = await (await fetch(API('/api/trading/simulations'))).json();
+    if (!Array.isArray(sims) || !sims.length) {
+      $('tr-sims-body').innerHTML = '<tr><td colspan="6" style="color:var(--text-dim)">No simulations yet</td></tr>';
+      return;
+    }
+    $('tr-sims-body').innerHTML = sims.map(s => {
+      const edge = s.edge != null ? (s.edge > 0 ? '+' : '') + s.edge.toFixed(1) + '%' : '—';
+      const edgeColor = (s.edge || 0) > 25 ? 'var(--green)' : (s.edge || 0) > 10 ? 'var(--yellow)' : 'var(--text-dim)';
+      const time = s.created_at ? new Date(s.created_at).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
+      return '<tr><td style="font-size:.78rem;text-transform:uppercase">' + (s.asset || '—') + '</td>'
+        + '<td style="font-size:.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (s.question || '—') + '</td>'
+        + '<td style="font-size:.78rem;font-weight:600">' + ((s.probability || 0) * 100).toFixed(1) + '%</td>'
+        + '<td style="font-size:.78rem">' + (s.market_odds != null ? (s.market_odds * 100).toFixed(1) + '%' : '—') + '</td>'
+        + '<td style="font-size:.78rem;color:' + edgeColor + ';font-weight:600">' + edge + '</td>'
+        + '<td style="font-size:.72rem;color:var(--text-dim)">' + time + '</td></tr>';
+    }).join('');
+  } catch { $('tr-sims-body').innerHTML = '<tr><td colspan="6" style="color:var(--text-dim)">Failed to load</td></tr>'; }
 }
 
 /* ─── Init ────────────────────────────────────────────── */
