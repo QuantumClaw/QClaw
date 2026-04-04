@@ -398,3 +398,24 @@ ssh qclaw "cd ~/QClaw && npm test"
 - News sentiment overlay for macro adjustment
 - Oil as third asset when Polymarket markets appear
 - First live trade once edge >25% is detected
+
+## Session: 4 April 2026 — Trading Room (continued)
+
+### Dashboard additions
+- USDC Balance widget (shows Polymarket position value via data-api.polymarket.com/value)
+- Realised PnL widget (from trading_positions table)
+- Open Positions count widget
+- All auto-refresh every 60 seconds
+- Config values updated: max_position=, min_edge=30%, daily_loss=
+
+### Technical notes
+- Polymarket .94 balance sits in CTF exchange proxy contract, not funder wallet
+- py-clob-client get_balance() returns CLOB collateral balance (0 until trade placed)
+- data-api.polymarket.com/value returns position value only, not uninvested cash
+- Balance widget will populate once first position is opened
+
+### Status
+- Trading system fully operational, trading_enabled=false
+- Scanner running every 30 mins, Telegram scan summaries active
+- No edge detected yet — BTC k markets exist, gold markets absent from Polymarket
+- Ready for first trade when edge >30% is detected
