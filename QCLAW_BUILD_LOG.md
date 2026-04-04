@@ -419,3 +419,37 @@ ssh qclaw "cd ~/QClaw && npm test"
 - Scanner running every 30 mins, Telegram scan summaries active
 - No edge detected yet — BTC k markets exist, gold markets absent from Polymarket
 - Ready for first trade when edge >30% is detected
+
+---
+
+## Session: 4 April 2026 — Security Hardening Sprint
+
+### Audit Findings
+Full security audit completed. 2 critical, 4 high, 3 medium issues identified and addressed.
+
+### Completed
+- Webhook auth: Trade Executor now requires x-trading-secret header (secret in .env)
+- Telegram bot token: removed from all workflow JSON, stored in n8n docker .env as TELEGRAM_BOT_TOKEN
+- Supabase anon key: migrated from hardcoded headers to Supabase FSC credential in all workflows (Competitor Research, Ad Creation, Copy Agent, Content Studio, Trading)
+- Rate limiting: express-rate-limit on /api/trading/simulate (10/min), /api/trading/execute (5/min), /api/content-studio/upload (5/min), /api/content-studio/upload-image (10/min)
+- Root SSH disabled on qclaw: flowos user created, SSH key copied, PermitRootLogin no, ssh service restarted
+- .env permissions: chmod 600 ~/.quantumclaw/.env, chmod 700 ~/.quantumclaw/
+- 7 Pillars architecture framework: written to src/agents/skills/architecture-pillars.md
+- Security skill file: written to src/agents/skills/security.md
+
+### SSH Config Change
+- qclaw now connects as flowos (not root)
+- Use sudo for PM2, nginx, and system commands
+- Root login blocked: ssh root@138.68.138.214 returns Permission denied
+
+### Pending Security Items
+- Root SSH on n8n server (157.230.216.158) — same process, next session
+- Dashboard static token — implement proper session auth
+- Credentials rotation schedule — quarterly
+- Older pre-March workflows not fully audited
+
+### 7 Pillars Framework
+Now enforced in:
+- Claude project instructions (all future conversations)
+- Memory (cross-chat enforcement)
+- ~/QClaw/src/agents/skills/architecture-pillars.md (Charlie + Claude Code)
