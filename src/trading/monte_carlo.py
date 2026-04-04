@@ -41,8 +41,9 @@ def fetch_macro():
         for name, ticker in MACRO_TICKERS.items():
             data = yf.download(ticker, period="5d", progress=False, auto_adjust=True)
             if len(data) >= 2:
-                current = float(data["Close"].iloc[-1])
-                prev = float(data["Close"].iloc[-2])
+                close = data["Close"].values.flatten()
+                current = float(close[-1])
+                prev = float(close[-2])
                 change_pct = (current - prev) / prev * 100
                 factors[name] = {"current": round(current, 4), "change_pct": round(change_pct, 4)}
             else:
