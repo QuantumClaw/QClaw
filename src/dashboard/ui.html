@@ -687,6 +687,22 @@
         <div class="section-title" style="font-size:1.1rem">Trading Room — Polymarket Alpha</div>
         <div class="section-sub">Monte Carlo simulations, market scanning, and automated position management.</div>
 
+        <!-- Balance & PnL -->
+        <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
+          <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:14px 20px;flex:1;min-width:140px">
+            <div style="font-size:.65rem;color:var(--text-dim);text-transform:uppercase;margin-bottom:4px">💰 USDC Balance</div>
+            <div id="tr-balance" style="font-size:1.3rem;font-weight:700;color:var(--text)">—</div>
+          </div>
+          <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:14px 20px;flex:1;min-width:140px">
+            <div style="font-size:.65rem;color:var(--text-dim);text-transform:uppercase;margin-bottom:4px">📈 Realised PnL</div>
+            <div id="tr-pnl" style="font-size:1.3rem;font-weight:700;color:var(--text-dim)">—</div>
+          </div>
+          <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:14px 20px;flex:1;min-width:140px">
+            <div style="font-size:.65rem;color:var(--text-dim);text-transform:uppercase;margin-bottom:4px">📊 Open Positions</div>
+            <div id="tr-open-count" style="font-size:1.3rem;font-weight:700;color:var(--text)">—</div>
+          </div>
+        </div>
+
         <!-- Config bar -->
         <div style="display:flex;gap:12px;margin-bottom:20px;align-items:center;flex-wrap:wrap">
           <div style="display:flex;align-items:center;gap:8px">
@@ -1832,10 +1848,23 @@ let _trRefreshTimer = null;
 
 function initTrading() {
   trLoadConfig();
+  trLoadBalance();
   trLoadPositions();
   trLoadSimulations();
   if (_trRefreshTimer) clearInterval(_trRefreshTimer);
-  _trRefreshTimer = setInterval(() => { trLoadPositions(); trLoadSimulations(); }, 60000);
+  _trRefreshTimer = setInterval(() => { trLoadBalance(); trLoadPositions(); trLoadSimulations(); }, 60000);
+}
+
+async function trLoadBalance() {
+  try {
+    const data = await (await fetch(API('/api/trading/balance'))).json();
+    if (data.error) return;
+    $('tr-balance').textContent = '$' + (data.usdc_balance ?? 0).toFixed(2);
+    const pnl = data.realised_pnl ?? 0;
+    $('tr-pnl').textContent = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2);
+    $('tr-pnl').style.color = pnl > 0 ? 'var(--green)' : pnl < 0 ? 'var(--red)' : 'var(--text-dim)';
+    $('tr-open-count').textContent = data.open_positions ?? 0;
+  } catch {}
 }
 
 async function trLoadConfig() {

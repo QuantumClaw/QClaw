@@ -1095,6 +1095,52 @@ export class DashboardServer {
       } catch (err) { res.status(500).json({ error: err.message }); }
     });
 
+    // ─── Trading: Balance & PnL ───────────────────────────────
+    this.app.get('/api/trading/balance', async (req, res) => {
+      try {
+        const envPath = join(process.env.HOME || '/root', '.quantumclaw', '.env');
+        let walletAddress = '';
+        try {
+          const envContent = (await import('fs')).readFileSync(envPath, 'utf-8');
+          for (const line of envContent.split('\n')) {
+            const match = line.match(/^POLYMARKET_FUNDER_ADDRESS=(.+)$/);
+            if (match) walletAddress = match[1].trim();
+          }
+        } catch {}
+
+        let usdcBalance = 0;
+        if (walletAddress) {
+          const paddedAddr = walletAddress.slice(2).padStart(64, '0');
+          const rpcRes = await fetch('https://polygon-rpc.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0', method: 'eth_call',
+              params: [{ to: '0x3c499c542cef5e3811e1192ce70d8cC03d5c3359', data: '0x70a08231000000000000000000000000' + paddedAddr }, 'latest'],
+              id: 1
+            })
+          });
+          const rpcData = await rpcRes.json();
+          if (rpcData.result) usdcBalance = parseInt(rpcData.result, 16) / 1e6;
+        }
+
+        const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkYWJ5Z21yb211cXR5c2l0b2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2NjI2OTQsImV4cCI6MjA3NTIzODY5NH0.6JJMkPXBufpLxlisH1ig32Xm8YM3p0jcXRlBzx5x8Dk';
+        const headers = { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
+
+        const [closedRes, openRes] = await Promise.all([
+          fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_positions?status=eq.closed&select=pnl', { headers }),
+          fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_positions?status=eq.open&select=id', { headers })
+        ]);
+        const closedRows = await closedRes.json();
+        const openRows = await openRes.json();
+
+        const realisedPnl = Array.isArray(closedRows) ? closedRows.reduce((sum, r) => sum + (parseFloat(r.pnl) || 0), 0) : 0;
+        const openPositions = Array.isArray(openRows) ? openRows.length : 0;
+
+        res.json({ usdc_balance: Math.round(usdcBalance * 100) / 100, realised_pnl: Math.round(realisedPnl * 100) / 100, open_positions: openPositions });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
     // ─── Trading: Simulate (proxy to Monte Carlo worker) ─────
     this.app.post('/api/trading/simulate', async (req, res) => {
       try {
