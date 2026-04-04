@@ -1146,7 +1146,7 @@ export class DashboardServer {
     this.app.get('/api/trading/positions', async (req, res) => {
       try {
         const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkYWJ5Z21yb211cXR5c2l0b2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2NjI2OTQsImV4cCI6MjA3NTIzODY5NH0.6JJMkPXBufpLxlisH1ig32Xm8YM3p0jcXRlBzx5x8Dk';
-        const sbRes = await fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_positions?order=created_at.desc&limit=50', {
+        const sbRes = await fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_positions?status=eq.open&order=created_at.desc&limit=50', {
           headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` }
         });
         res.json(await sbRes.json());
@@ -1157,7 +1157,7 @@ export class DashboardServer {
     this.app.get('/api/trading/simulations', async (req, res) => {
       try {
         const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkYWJ5Z21yb211cXR5c2l0b2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2NjI2OTQsImV4cCI6MjA3NTIzODY5NH0.6JJMkPXBufpLxlisH1ig32Xm8YM3p0jcXRlBzx5x8Dk';
-        const sbRes = await fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_simulations?order=created_at.desc&limit=10', {
+        const sbRes = await fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_simulations?select=asset,probability,current_price,macro_factors,created_at&order=created_at.desc&limit=10', {
           headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` }
         });
         res.json(await sbRes.json());
@@ -1168,7 +1168,7 @@ export class DashboardServer {
     this.app.get('/api/trading/config', async (req, res) => {
       try {
         const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkYWJ5Z21yb211cXR5c2l0b2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2NjI2OTQsImV4cCI6MjA3NTIzODY5NH0.6JJMkPXBufpLxlisH1ig32Xm8YM3p0jcXRlBzx5x8Dk';
-        const sbRes = await fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_config?select=*&limit=1', {
+        const sbRes = await fetch('https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_config?id=eq.1&select=*', {
           headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` }
         });
         const rows = await sbRes.json();
