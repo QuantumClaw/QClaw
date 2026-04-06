@@ -453,3 +453,35 @@ Now enforced in:
 - Claude project instructions (all future conversations)
 - Memory (cross-chat enforcement)
 - ~/QClaw/src/agents/skills/architecture-pillars.md (Charlie + Claude Code)
+
+## Session: 6 April 2026 — Scanner Redesign + Charlie Tools
+
+### Trading Room — Scanner Redesign
+- Dynamic price-based targets replace static $5k gold / $150k BTC
+- Gold short: current +1% / 14d, Gold medium: current +2.5% / 30d
+- BTC short: current +5% / 14d, BTC medium: current +10% / 30d
+- fetch() errors fixed — replaced with HTTP Request nodes
+- Smart schedule: weekdays every 2h, weekends every 4h
+- Silent notifications: Telegram only fires on edge >30% + $50k volume
+- Weekend-aware: skips gold sims on Sat/Sun
+- created_at column added to trading_positions (backfilled from opened_at)
+
+### Charlie — Tools Now Working
+- trading-api.md: 4 tools (get_simulations, get_positions, get_config, create_simulate)
+- n8n-api.md: 2 tools (get_workflows, get_executions)
+- All 6 tools registered and confirmed working via executeSkillTool
+- charlie-cto.md updated with proactive tool usage rules
+- Total: 11 skills loaded
+
+### Security / Infrastructure
+- TELEGRAM_BOT_TOKEN + SUPABASE_ANON_KEY added to n8n Docker .env
+- Position Monitor: order=opened_at.desc fixed, Supabase FSC credential
+- CI/CD deploy updated to use flowos user + sudo paths
+- flowos user NOPASSWD sudo confirmed working
+
+### Pending
+- n8n server (157.230.216.158) root SSH still enabled — next session
+- Dashboard static token — implement proper session auth
+- Charlie content-studio.md skill file
+- YouTube OAuth for Content Studio
+- Instagram Reels workflow Google Sheets 403 — separate chat
