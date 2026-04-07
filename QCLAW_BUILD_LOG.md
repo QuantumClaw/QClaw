@@ -522,3 +522,39 @@ Full end-to-end pipeline tested and confirmed working across all 30 nodes.
 - Emma YouTube channel: UCvUdyddTC_Njz52NNotKQWw
 - Blotato API key: BLOTATO_API_KEY in ~/.quantumclaw/.env
 - Content Studio workflow: Qf39NEOEgz2W0uls
+
+---
+
+## Session: Apr 7, 2026 — Weekly Analyst Fix + Oil Trading Room
+
+### Weekly Analyst (vjj2uBIPc07FpIxx) — FIXED
+- Supabase nodes: switched from hardcoded anon key to Supabase FSC
+  credential (Nd2uuX5t9KEwbQPv) with apikey header
+- Fetch Week Trades URL: fixed expression syntax (= prefix, single braces)
+- Claude Analysis: switched to Anthropic API 2 credential (eXhIwRbh7FBgb6O3)
+- Confirmed working: runs clean, handles empty trade set correctly
+
+### Charlie Skill Files — ADDED
+- src/agents/skills/content-studio.md: pipeline overview, webhook trigger,
+  job status queries, content rules, safety rules
+- src/agents/skills/trading.md: system architecture, config, API endpoints,
+  wallet info, Supabase tables, safety rules, weekly analyst
+- Committed a53f4e9, pushed to main
+
+### Trading Room — Oil Futures Added
+- Monte Carlo worker: added WTI (CL=F) and Brent (BZ=F) tickers
+- Market Scanner (3YahxqOguET3pifj): 
+  - Smart Schedule: hourly Mondays (weekend news volatility), 2h Tue-Fri, 4h weekends
+  - Added Get WTI Price + Get Brent Price nodes
+  - Chained merges: Gold+BTC → +WTI → +Brent (avoids n8n 4-input merge bug)
+  - Calculate Targets: WTI/Brent short +3% / medium +8%
+  - Analyse Edge: oil market matching, weekends skipped, Monday edge
+    threshold lowered to 20% (vs 30% normal)
+  - Notify Edge: all four asset prices in Telegram summary
+- Test run confirmed: Gold 701, BTC 9134, WTI 11.66, Brent 08.11
+  — 100 markets scanned, pipeline runs end-to-end
+
+### Pending
+- n8n server root SSH disable (157.230.216.158)
+- Dashboard static token → session auth
+- YouTube auto-publish option for Emma
