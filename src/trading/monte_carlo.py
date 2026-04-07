@@ -13,6 +13,8 @@ app = Flask(__name__)
 TICKERS = {
     "gold": "GC=F",
     "btc": "BTC-USD",
+    "wti": "CL=F",
+    "brent": "BZ=F",
 }
 MACRO_TICKERS = {
     "dxy": "DX-Y.NYB",
