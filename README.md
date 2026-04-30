@@ -2,7 +2,7 @@
   <h1>⚛ QuantumClaw</h1>
   <p><strong>Self-hosted AI agent runtime — your personal assistant that lives on your hardware.</strong></p>
   <p>
-  <a href="package.json"><img src="https://img.shields.io/badge/version-1.5.1-purple.svg" alt="Version 1.5.1"></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/version-1.6.3-purple.svg" alt="Version 1.6.3"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   <a href="https://clawhub.ai"><img src="https://img.shields.io/badge/skills-3,286+-green.svg" alt="ClawHub Skills"></a>
   <a href="#-5-messaging-channels"><img src="https://img.shields.io/badge/channels-5-orange.svg" alt="5 Channels"></a>

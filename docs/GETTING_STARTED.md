@@ -9,7 +9,15 @@ Get QuantumClaw running in under 5 minutes.
 
 ## Install
 
-### Linux (Recommended)
+**Quickest way:**
+
+```bash
+npm i -g quantumclaw && qclaw onboard
+```
+
+That's it. The sections below are for installing from source.
+
+### Linux (From Source)
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
@@ -19,7 +27,7 @@ git clone https://github.com/QuantumClaw/QClaw.git
 cd QClaw && bash scripts/install.sh
 ```
 
-### macOS
+### macOS (From Source)
 
 ```bash
 brew install node
@@ -27,7 +35,7 @@ git clone https://github.com/QuantumClaw/QClaw.git
 cd QClaw && bash scripts/install.sh
 ```
 
-### Windows (WSL2)
+### Windows / WSL2 (From Source)
 
 QuantumClaw runs on Linux. On Windows, that means WSL2.
 
@@ -56,7 +64,7 @@ cd QClaw && bash scripts/install.sh
 
 **Important:** Always install in your Linux home folder (`~/QClaw`), never in `/mnt/c/Users/...`. The Windows filesystem through WSL is 5-10x slower.
 
-### Android (Termux)
+### Android / Termux (From Source)
 
 Install [Termux from F-Droid](https://f-droid.org/packages/com.termux/) (not Google Play, that version is outdated and broken).
 
@@ -107,7 +115,7 @@ chmod +x ~/.termux/boot/start-qclaw.sh
 npx qclaw config set memory.cognee.url http://your-server:8000
 ```
 
-### Raspberry Pi
+### Raspberry Pi (From Source)
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
@@ -133,7 +141,7 @@ docker compose up -d
 docker compose run qclaw npx qclaw onboard
 ```
 
-### VPS (Hetzner, DigitalOcean, etc.)
+### VPS / Hetzner / DigitalOcean (From Source)
 
 ```bash
 ssh root@your-server
@@ -151,11 +159,11 @@ Any box with 512MB RAM and Node.js works.
 
 The wizard walks you through everything:
 
-1. **Your name** — so the agent knows who it's talking to
-2. **Agent purpose** — what you want it to do
-3. **AI provider** — pick one, add the API key, it verifies instantly
-4. **Channels** — connect Telegram, Discord, or just use the web dashboard
-5. **Done** — keys encrypted, Trust Kernel created, audit trail running
+1. **Setup mode** — quick (3 questions) or full (includes Telegram, Discord, embeddings, tunnel)
+2. **AI provider + API key** — pick one, enter the key, verified instantly
+3. **Your name** — so the agent knows who it's talking to
+4. **Dashboard PIN** — protects remote access (optional but recommended)
+5. **Done** — keys encrypted with AES-256-GCM, Trust Kernel created, ready to start
 
 ## Starting Your Agent
 

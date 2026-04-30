@@ -20,10 +20,23 @@ import bcrypt from 'bcryptjs';
 
 const { green, yellow, cyan, reset, dim, bold, white } = theme;
 
-const isFullMode = process.argv.includes('--full');
+let isFullMode = process.argv.includes('--full');
 
 export async function runOnboard() {
   banner();
+
+  // ─── Setup Mode ────────────────────────────────────────
+  if (!isFullMode) {
+    const mode = await p.select({
+      message: 'Setup mode:',
+      options: [
+        { value: 'quick', label: 'Quick (3 questions)', hint: 'AI provider, name, PIN' },
+        { value: 'full', label: 'Full setup', hint: 'Also: Telegram, Discord, embeddings, tunnel' },
+      ]
+    });
+    if (p.isCancel(mode)) { p.cancel('Cancelled.'); process.exit(0); }
+    if (mode === 'full') isFullMode = true;
+  }
 
   // ─── Step 1: AI Provider + Key ────────────────────────
 
@@ -222,9 +235,6 @@ export async function runOnboard() {
         s2.stop(`${green}✓${reset} Embeddings: ${embeddingConfig.provider}/${embeddingConfig.model}`);
       }
     }
-  } else {
-    // Quick mode: note what was skipped
-    p.note(`Skipped: Telegram, Discord, embeddings.\nRun ${cyan}qclaw onboard --full${reset} for all options.`, 'Quick mode');
   }
 
   // ─── Your Name ──────────────────────────────────────
@@ -362,23 +372,27 @@ export async function runOnboard() {
     const cogneeUrl = config.memory?.cognee?.url || 'http://localhost:8000';
     const res = await fetch(cogneeUrl + '/health', { signal: AbortSignal.timeout(2000) });
     if (res.ok) {
+      const { randomBytes: cogRb } = await import('crypto');
+      const cogneePass = cogRb(16).toString('base64url');
+
       await fetch(cogneeUrl + '/api/v1/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'agent@quantumclaw.local', password: 'QuantumClaw2026!' }),
+        body: JSON.stringify({ email: 'agent@quantumclaw.local', password: cogneePass }),
         signal: AbortSignal.timeout(5000)
       }).catch(() => {});
 
       const loginRes = await fetch(cogneeUrl + '/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'username=agent@quantumclaw.local&password=QuantumClaw2026!',
+        body: `username=agent@quantumclaw.local&password=${encodeURIComponent(cogneePass)}`,
         signal: AbortSignal.timeout(5000)
       });
       if (loginRes.ok) {
         const data = await loginRes.json();
         if (data.access_token) secrets.set('cognee_token', data.access_token);
       }
+      secrets.set('cognee_password', cogneePass);
     }
   } catch { /* Cognee not running — fine, degrades to SQLite */ }
 

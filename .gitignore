@@ -24,6 +24,9 @@ workspace/delivery-queue/
 # AGEX credentials (private key is in encrypted secrets store)
 workspace/agex/
 
+# Per-install workspace config (user-tunable, not for the upstream repo)
+workspace/config.yml
+
 # Logs
 *.log
 

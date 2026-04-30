@@ -102,10 +102,11 @@ input.err{border-color:var(--r);box-shadow:0 0 0 3px rgba(255,45,85,0.08)}
   ░░░░░░░░░░      ░░██░
        ░░░░░░░░░░░░░█
          ░░░░░░░░░░░</pre>
-<div class="brand"><b><span class="q">QUANTUM</span><span class="c">CLAW</span></b><span class="ver">v1.6.0</span></div>
+<div class="brand"><b><span class="q">QUANTUM</span><span class="c">CLAW</span></b><span class="ver">v1.6.3</span></div>
 <div class="tag">Your AI agent. Your data. Your device.</div>
 </div>
 <div class="prog" id="prog"></div>
+<div class="tag" style="margin-bottom:12px">Quick setup · <a href="#" style="color:var(--b2);text-decoration:none" onclick="event.preventDefault();alert('Run: qclaw onboard --full in your terminal for Discord, embeddings, tunnels, and more.')">want full setup?</a></div>
 <div class="step on" id="s1">
   <div class="sn">Step 1 of 3</div><div class="st">Pick your AI</div>
   <div class="sd">Which AI should power your agent? Pick one — you can change it later.</div>
@@ -233,7 +234,7 @@ function done(){
     +'<div class="cm"><span class="c">$</span> qclaw dashboard<span class="d">web UI</span></div>'
     +'<div class="cm"><span class="c">$</span> qclaw diagnose<span class="d">troubleshoot</span></div></div>'
     +'<div class="btns" style="flex-direction:column;gap:8px"><button class="btn btn-p" onclick="expCfg()">Export config.json</button><button class="btn btn-b" style="flex:1" onclick="location.reload()">Start over</button></div>'
-    +'<div class="footer">QuantumClaw v1.6.0 · MIT · github.com/QuantumClaw/QClaw</div>';
+    +'<div class="footer">QuantumClaw v1.6.3 · MIT · github.com/QuantumClaw/QClaw</div>';
 }
 function expCfg(){
   var p=P[D.prov];var cfg={agent:{name:'QClaw',owner:D.name||'User',timezone:Intl.DateTimeFormat().resolvedOptions().timeZone},models:{primary:{provider:p.id,model:p.m},fast:null,routing:{enabled:true}},memory:{cognee:{url:'http://localhost:8000',autoReconnect:true},sqlite:{path:'~/.quantumclaw/memory.db'}},channels:D.tg?{telegram:{enabled:true,dmPolicy:'pairing',allowedUsers:[]}}:{},security:{encryption:'aes-256-gcm'},dashboard:{enabled:true,port:3000},heartbeat:{eventDriven:true,maxDailyCost:0.50}};
