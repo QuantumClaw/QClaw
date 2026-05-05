@@ -4351,11 +4351,13 @@ broken in production. The work below is the actual final state.
   parallel-branch. Live-verified Morning Light end-to-end recovery
   at 18:52:50 UTC.
 
-**Sub-project C — Kayla iframe migration**
-- `tysonven/n8n-dashboard` repo branch `feat/heartbeat-migration`,
-  PR #1 open. Vercel preview deploy ready; awaiting Tyson's Vercel
-  env-var step (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) before
-  merge. Frontend `dashboard.html` unchanged — backend swap only.
+**Sub-project C — Kayla iframe migration** ✅ DONE
+- `tysonven/n8n-dashboard` PR #1 merged ~21:30 Athens
+  (~18:30 UTC) earlier today. Vercel auto-deployed to production at
+  `n8n-dashboard-one.vercel.app`. Production render verified before
+  the Sub-project B regression surfaced. Frontend `dashboard.html`
+  unchanged — backend swapped from n8n executions API to
+  `workflow_heartbeats` PostgREST.
 
 ### Final inventory
 
@@ -4436,15 +4438,10 @@ that produce the output.
 
 ### Open items for next session
 
-- **Sub-project C merge.** PR #1 on `tysonven/n8n-dashboard` awaits
-  Vercel env-var setup (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY)
-  then merge to main. Production dashboard at
-  `n8n-dashboard-one.vercel.app` will start showing real success
-  rates once heartbeat rows accumulate.
-- **Morning Light `saveDataSuccessExecution: 'none'` flip.** Now safe
-  to perform — heartbeat instrumentation gives Charlie's bootstrap
-  probe and the iframe a non-API source for Morning Light health.
-  Held as a separate decision for next session per Tyson.
+- **Morning Light `saveDataSuccessExecution: 'none'` flip — READY,
+  pending decision.** Heartbeat instrumentation gives Charlie's
+  bootstrap probe and the iframe a non-API source for Morning Light
+  health. Held as a separate decision for next session per Tyson.
 - **Heartbeats archive job + Morning Light 14-day retention** (work-
   list item 26). Defer until ~2 weeks of real-volume data is
   observable.
@@ -4454,12 +4451,28 @@ that produce the output.
   success path skips on empty input. Defer until dashboard data
   surfaces specific cases worth handling.
 
-### Phase 4 Slice 0 status: CLOSED
+### Phase 4 Slice 0 status: COMPLETE
 
 Sub-project A done. Sub-project B done (with regression fixed and
-documented). Sub-project C code done, awaiting Vercel env-var setup +
-merge. Tooling promoted, validators in place, build log captures the
-incident + lesson. Ready for Phase 4 Slice 1 (Charlie 2.0 bootstrap
-probe + canonical doc loading) once Sub-project C merges and the
-Morning Light flip decision is made.
+documented). **Sub-project C done — PR #1 merged + production deployed
++ render verified.** Tooling promoted, validators in place, build log
+captures the incident + lesson.
+
+**Production dashboard self-recovery expectation:** with the Sub-project
+B regression fixed (Morning Light end-to-end live recovery confirmed
+at 2026-05-05 18:52:50 UTC), each subsequent WL fire produces a
+`success` heartbeat row. The dashboard at
+`n8n-dashboard-one.vercel.app` reads `workflow_heartbeats` directly
+and computes the 24h success rate client-side, so the rate climbs from
+0% as `success` rows accumulate over the next ~24 hours of normal
+Morning Light traffic. No further intervention needed — the system
+heals itself as data flows in.
+
+**Phase 4 Slice 1 unblocked.** Bootstrap probe + canonical doc loading
+can begin next session. Both prior dependencies (work-list items 18
+alerting consolidation + 19 executions-history API reliability) are
+resolved through this Slice 0 work — Charlie 2.0 reads
+`workflow_heartbeats`, not the n8n executions API.
+
+End of session 2026-05-05.
 
