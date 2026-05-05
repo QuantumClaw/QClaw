@@ -37,7 +37,7 @@ This file is the sixth canonical doc Charlie reads at session start, after `CEO_
 | Flow OS Blog | 1 | documented |
 | Flow OS Infographics | 1 | documented |
 | FSC Content Studio | 1 | documented |
-| Various utilities and standalone | 10 | pending |
+| Various utilities and standalone | 10 | documented |
 
 Total: 46 active workflows.
 
@@ -743,6 +743,173 @@ Cluster-level findings:
 - **Known issues:** **Large file upload bypass** — per `FLOW_OS_STATE.md` Section 4 known issue: "Content Studio dashboard fails on large file uploads. Workaround: Claude Code direct upload. Resolution pending." Episodes >some-threshold can't be uploaded through the dashboard's standard webhook path — Tyson uploads directly via Claude Code instead. **YouTube auto-publish carparked** per state doc: "YouTube auto-publish: parked. Awaiting Emma to test pipeline end-to-end." Workflow has the YouTube nodes wired but they may be in test/preview mode. **Confusing commit-message history:** commits `e4ad82c` "feat(content-studio): add Cap Hashtags node…" and `bdc0e6f` "fix(content-studio): force JPEG output…" (both 2026-04-29) used `content-studio` prefix but actually modified the **Flow OS Infographics V2** workflow (`kJ2EdkOeEAwVbMwU`), NOT this Content Studio Pipeline. Worth surfacing as historical record correction. No heartbeat/errorWorkflow standard pattern. **API execution count discrepancy** (work-list item 19).
 - **Last verified:** 2026-05-05
 - **Notes:** `createdAt: 2026-03-31T13:58 UTC`, `updatedAt: 2026-04-28T18:14 UTC` — last touched ~1 week ago. 38 nodes total — most complex workflow in the index. Talks to: Anthropic (`api.anthropic.com`), AssemblyAI (`api.assemblyai.com`), Buzzsprout (`www.buzzsprout.com`), WordPress (FSC site), Blotato, YouTube (Google APIs), Telegram (`api.telegram.org`), Supabase (`fdabygmromuqtysitodp.supabase.co` — main QClaw Supabase, NOT the LinkedIn cluster's secondary), qclaw clipper-worker (`138.68.138.214:4002`). LLM stack: Anthropic — matches ecosystem default. **Skill file:** `content-studio.md` exists per Phase 2 audit but is a 440-byte stub; should be rebuilt from `FLOW_OS_SPECIALISTS.md` Content Studio Operator entry per Phase 4 Slice 2 reconciliation work-list item 6. **Architectural note:** Content Studio Operator's relationship with Clipper is documented in `FLOW_OS_SPECIALISTS.md` — Clipper is an internal sub-component of Content Studio Operator scope, not a standalone specialist. This workflow's `Generate Clips` httpRequest to qclaw confirms that architecture.
+
+---
+
+## Various utilities and standalone cluster
+
+10 workflows. Heterogeneous cluster of single-purpose webhooks, calibration jobs, payment-update link generators, intake forms, infrastructure routers, and one dormant newsletter automation. No shared trigger, no shared owner, no shared data path — grouped by elimination after the 11 themed clusters.
+
+**Cluster-level findings:**
+
+- **Heartbeat coverage: 0/10.** Universal absence — joins the cluster-wide heartbeat sweep dispatch (work-list item 3).
+- **Cross-workflow Execute references: 0/10.** All 10 stand alone; none called via `executeWorkflow` from elsewhere in the index. Confirms each workflow's failure blast radius is limited to its own webhook/trigger surface.
+- **API execution count: universal 0/100-row API window for all 10 workflows.** This cluster is the strongest single-cluster confirmation of work-list item 19 (n8n executions-history API unreliability) — even Charlie - Task Handler and Qclaw router (which we know have been triggered manually) report 0. UI cross-check or alternative observability source mandatory before Phase 4 Slice 1.
+- **2 LinkedIn-adjacent workflows surfaced** (Engagement Weighting Re-calibration, Lead Score Re-calibration) — both write to the LinkedIn secondary Supabase (`zshmlgtvhdneekbfcyjc.supabase.co`) and serve LinkedIn engagement scoring. Belong functionally with the LinkedIn cluster but live here per discovery audit grouping. Joins cluster-sweep recategorisation work-list item 9.
+- **2 confirmed NY-timezone schedules** added to the cluster-wide tally (Engagement Weighting cron `0 0 8 * * 1` Monday 08:00 NY; Lead Score Re-calibration cron `0 0 7 1 * *` 1st-of-month 07:00 NY; GHL Changelog Emails interval-based Monday 09:00 NY every 2 weeks). Bringing the timezone-correction sweep tally to 16 workflows under work-list item 7.
+- **4th confirmed dormant trigger** (GHL Changelog Emails) — joins the dormancy pattern with Trading Weekly Analyst, Bot Router, Token Expiry Monitor. Bundle with heartbeat sweep dispatch (work-list item 3).
+- **Charlie infrastructure findings** — Charlie - Task Handler webhook + Qclaw router webhook are both built but functionally unused since adoption (no executions, no cross-references, no documented call path). Feeds Phase 4 Slice 4 (tool surface) + Slice 5 (Claude Code dispatcher) design decisions.
+
+### AIA002 - Emma AI Advisor Token Generator
+
+- **ID:** `1NPzjBVM7-T0wf3vju6p1`
+- **Belongs to:** FSC (Emma AI Advisor product revenue path)
+- **Specialist owner:** None — direct revenue-path infrastructure. Tyson responsible.
+- **Trigger:** `webhook` POST `/webhook/emma-ai-purchase` (no responseNode — fire-and-forget on Stripe purchase event).
+- **Purpose:** Token issuance + credit provisioning for Emma AI Advisor product purchases. On purchase webhook fire: `Generate Token` (code) creates the access token, `Create Credits in Supabase` (httpRequest to `fdabygmromuqtysitodp.supabase.co` — main QClaw Supabase) seeds the user's credit balance, `Update GHL Contact` (httpRequest to FSC GHL via `services.leadconnectorhq.com`) marks the contact as Emma AI Advisor purchaser. Failure means: paying customer does not get product access — direct revenue-impact failure mode.
+- **Heartbeat:** N
+- **Error workflow:** none.
+- **Recent activity:** 0 executions in 100-row API window. Per Tyson 2026-05-05: Emma AI Advisor product is still on sale and active. 0 executions consistent with low-volume sales (1 purchase to date per memory). Most likely API unreliability + low organic volume. Workflow remains required active.
+- **Bucket:** M (revenue-path; failure = paying customer does not receive product; even one failed purchase is a customer-trust + refund event)
+- **Known issues:** **No signed-request validation** — webhook accepts unauthenticated POST traffic. Any actor that knows the `/webhook/emma-ai-purchase` path can forge a purchase event and provision themselves credits. Joins work-list item 23 (signed-request hardening). **V1 predecessor cleanup:** "AIA002" implies a v001 — discovery audit's inactive workflow list candidate to verify in cluster-sweep V1/V2/V3 cleanup (work-list item 9). No heartbeat/errorWorkflow despite revenue-path criticality.
+- **Last verified:** 2026-05-05
+- **Notes:** `createdAt: 2026-03-18T16:41 UTC`, `updatedAt: 2026-03-31T10:27 UTC` — built mid-March, last touched end-March (stable). 4 nodes total. Talks to: Supabase (main QClaw `fdabygmromuqtysitodp`), FSC GHL via `services.leadconnectorhq.com`. **Stripe payer:** Emma AI Advisor purchasers (lifetime: 1 purchase to date per memory). **No skill file**.
+
+### Charlie - Task Handler
+
+- **ID:** `dHoqL8Ph8kmFHwyx`
+- **Belongs to:** Flow OS (Charlie infrastructure)
+- **Specialist owner:** None — Charlie 1.0 era infrastructure. Tyson directly.
+- **Trigger:** `webhook` POST `/webhook/charlie-tasks` (responseMode: `responseNode`).
+- **Purpose:** Built as Charlie 1.0 task-handling webhook — receives task command, runs `Handle Command` (code), responds via `Respond`. **Functionally unused** — no documented production call path; was likely an early prototype for Charlie issuing task commands to n8n. **Feeds Phase 4 Slice 4+5 design** as one of two never-adopted Charlie infrastructure webhooks (the other being Qclaw router below).
+- **Heartbeat:** N
+- **Error workflow:** none.
+- **Recent activity:** 0 executions in 100-row API window. Workflow active but no documented invocation pattern. Likely true-zero — never adopted into production Charlie flow.
+- **Bucket:** S (active but unused; deactivate-candidate after Phase 4 Slice 5 design confirms no role in target architecture)
+- **Known issues:** Likely-dead-code active workflow — leaves an open webhook surface with no consumer. Phase 4 Slice 5 (Claude Code dispatcher) design will determine whether to repurpose or deactivate. Telegram + Supabase + Anthropic (claude) nodes referenced in service-detection but no httpRequest hostnames recorded — likely placeholder code in `Handle Command` not actually wired up.
+- **Last verified:** 2026-05-05
+- **Notes:** `createdAt: 2026-04-08T20:08 UTC`, `updatedAt: 2026-04-20T18:09 UTC` — built early-April, last touched mid-April. 3 nodes total (minimal). External services detected (claude, supabase, telegram) but no actual hostnames in HTTP nodes — credentials referenced but not invoked. **Skill file:** none. **Phase 4 dependency:** Slice 5 (Claude Code dispatcher) target architecture decides this workflow's fate.
+
+### Engagement Weighting Re-calibration (Weekly)
+
+- **ID:** `NxMfoQtQ2WxeAfhH`
+- **Belongs to:** Flow OS (LinkedIn engagement scoring infrastructure — functionally part of LinkedIn cluster despite discovery-audit categorisation here)
+- **Specialist owner:** None — LinkedIn-adjacent infrastructure. Cross-reference: LinkedIn cluster + secondary Supabase project (`zshmlgtvhdneekbfcyjc.supabase.co`) per `LOCATIONS.md`.
+- **Trigger:** `scheduleTrigger` "Weekly Weighting Trigger" cron `0 0 8 * * 1` — fires Monday 08:00 NY (= 13:00 UTC EDT). Joins cluster-sweep work-list item 7.
+- **Purpose:** Weekly re-calibration of LinkedIn engagement weight scoring. `Fetch Engagement Activities` (httpRequest to LinkedIn secondary Supabase) pulls past week's engagement data, `Analyse Engagement Patterns` (code) computes weight adjustments, `Save Engagement Weights` (httpRequest to LinkedIn secondary Supabase) persists. Pure data-pipeline calibration — no external API calls beyond Supabase.
+- **Heartbeat:** N
+- **Error workflow:** none.
+- **Recent activity:** 0 executions in 100-row API window. Most likely API unreliability — workflow should be firing weekly. UI cross-check needed.
+- **Bucket:** S (calibration job; failure means stale engagement weights for one week, recoverable on next run)
+- **Known issues:** **Categorisation drift** — workflow is functionally LinkedIn cluster (writes to LinkedIn secondary Supabase, scores LinkedIn engagement) but lives in "Various utilities" per discovery audit. Joins cluster-sweep recategorisation (work-list item 9). NY timezone (work-list item 7). **API execution count discrepancy** (work-list item 19). No heartbeat/errorWorkflow.
+- **Last verified:** 2026-05-05
+- **Notes:** `createdAt: 2026-03-13T21:03 UTC`, `updatedAt: 2026-03-26T08:47 UTC` — built mid-March, last touched late-March (stable). 4 nodes total (minimal pipeline). Talks to: LinkedIn secondary Supabase (`zshmlgtvhdneekbfcyjc.supabase.co`). **No skill file**.
+
+### FFC webhook from Emma to FOS
+
+- **ID:** `Dv0D5PzXmlAt6edA`
+- **Belongs to:** FSC → Flow OS (cross-account contact bridge)
+- **Specialist owner:** None — production cross-account integration infrastructure. Tyson directly.
+- **Trigger:** `webhook` POST `/webhook/bf033d33-4771-40b4-813d-50e2a2bebb9c` (UUID-pathed webhook — auto-generated identifier).
+- **Purpose:** **Freedom and Flow Challenge (FFC) cross-account contact bridge.** Per Tyson 2026-05-05: FFC = Freedom and Flow Challenge — the free challenge run via Emma's FSC GHL sub-account for setting up automated business. The webhook fires when a contact engages on the FSC side of the challenge; `HTTP to Flow OS` (httpRequest to `services.leadconnectorhq.com` — Flow OS GHL sub-account) bridges that contact into the Flow OS GHL contact store so the Flow OS marketing/onboarding funnel can pick them up. Active production infrastructure — NOT abandoned scaffold despite the UUID-pathed webhook URL (the path was likely auto-generated when Emma's side configured the webhook destination on her end).
+- **Heartbeat:** N
+- **Error workflow:** none.
+- **Recent activity:** 0 executions in 100-row API window. Most likely API unreliability + variable challenge-engagement traffic. UI cross-check needed.
+- **Bucket:** M (cross-account contact bridge for Freedom and Flow Challenge; failure means contacts engaging on FSC side never appear in Flow OS GHL — silent funnel breakage)
+- **Known issues:** **No signed-request validation** — webhook accepts unauthenticated POST traffic on a UUID path. While the UUID provides obscurity, any actor that obtains the URL (e.g. via accidental log exposure or browser inspection on Emma's side) can forge contact-bridge events. Joins work-list item 23 (signed-request hardening). **Naming convention drift:** workflow named "FFC webhook from Emma to FOS" — the abbreviation "FFC" is undocumented in the index until this entry. Recommend rename in cluster-sweep V1/V2/V3 cleanup (work-list item 9): "FSC Freedom and Flow Challenge — Emma to Flow OS Contact Bridge". No heartbeat/errorWorkflow despite cross-account criticality.
+- **Last verified:** 2026-05-05
+- **Notes:** `createdAt: 2025-07-14T09:29 UTC`, `updatedAt: 2026-01-02T12:00 UTC` — built mid-2025 for the original FFC challenge run; last touched 2026-01-02 (stable, matching FFC product longevity). 2 nodes total (webhook + httpRequest forwarder — minimal bridge pattern). Talks to: Flow OS GHL via `services.leadconnectorhq.com`. **Cross-account note:** this is the only workflow in the index that explicitly bridges the FSC GHL → Flow OS GHL boundary — joins LinkedIn cluster + Content Studio Pipeline as cross-business-unit infrastructure. **No skill file**.
+
+### Flow OS: Payment Update Link Generator
+
+- **ID:** `9d68YDe9m_gxddeSWeu07`
+- **Belongs to:** Flow OS (billing infrastructure)
+- **Specialist owner:** None — billing utility. Tyson directly.
+- **Trigger:** `webhook` POST `/webhook/flowos-non-payment` (no responseNode).
+- **Purpose:** Generates Stripe customer-portal session links for Flow OS clients who hit non-payment status. On webhook: `Search Stripe Customer` (httpRequest to `api.stripe.com`) finds the customer record, `Create Portal Session` (httpRequest to `api.stripe.com`) generates the portal URL, `Edit Fields` (set) shapes the response, `Update GHL Contact` (httpRequest to Flow OS GHL via `services.leadconnectorhq.com`) writes the portal link to the contact field so the chasing email/automation can include it.
+- **Heartbeat:** N
+- **Error workflow:** none.
+- **Recent activity:** 0 executions in 100-row API window. Most likely API unreliability + low non-payment volume (Flow OS is a small client base). UI cross-check needed.
+- **Bucket:** M (billing infrastructure; failure means non-paying client cannot self-serve update payment method — manual support intervention required)
+- **Known issues:** No signed-request validation on webhook (lower stakes than AIA002/FFC since this only generates a portal link for an already-existing customer; an attacker forging this would only cause spam GHL contact updates). NY-default timezone — n/a, no schedule. **API execution count discrepancy** (work-list item 19). No heartbeat/errorWorkflow.
+- **Last verified:** 2026-05-05
+- **Notes:** `createdAt: 2026-04-15T10:55 UTC`, `updatedAt: 2026-04-15T12:21 UTC` — built same-day mid-April, never re-touched (stable). 5 nodes total. Talks to: Stripe (`api.stripe.com`), Flow OS GHL via `services.leadconnectorhq.com`. **Mirror of FSC variant** below — same 5-node structure, different GHL destination + webhook path. **No skill file**.
+
+### FSC: Payment Update Link Generator
+
+- **ID:** `nbZ9wgADougBuUGQ`
+- **Belongs to:** FSC (billing infrastructure)
+- **Specialist owner:** None — billing utility. Tyson directly.
+- **Trigger:** `webhook` POST `/webhook/fsc-non-payment` (no responseNode).
+- **Purpose:** Mirror of the Flow OS variant above, scoped to FSC. On webhook: `Search Stripe Customer` (httpRequest to `api.stripe.com`) finds the FSC customer, `Create Portal Session` (httpRequest to `api.stripe.com`) generates the portal URL, `Edit Fields` (set) shapes the response, `Update GHL Contact` (httpRequest to FSC GHL via `services.leadconnectorhq.com`) writes the portal link to the FSC GHL contact field. Same Stripe account, different GHL destination.
+- **Heartbeat:** N
+- **Error workflow:** none.
+- **Recent activity:** 0 executions in 100-row API window. Most likely API unreliability + low non-payment volume. UI cross-check needed.
+- **Bucket:** M (billing infrastructure; same failure mode as Flow OS variant)
+- **Known issues:** No signed-request validation (same lower-stakes assessment as Flow OS variant). **Cluster-internal duplication:** Flow OS + FSC variants are 95% identical — candidate for consolidation into a single workflow with a brand-routing switch node, reducing maintenance surface. Tracked as build-log note for future refactor sweep. **API execution count discrepancy** (work-list item 19). No heartbeat/errorWorkflow.
+- **Last verified:** 2026-05-05
+- **Notes:** `createdAt: 2026-04-15T12:53 UTC`, `updatedAt: 2026-04-15T15:41 UTC` — built same-day mid-April (~2 hours after Flow OS variant), never re-touched. 5 nodes total. Talks to: Stripe (`api.stripe.com`), FSC GHL via `services.leadconnectorhq.com`. **No skill file**.
+
+### GHL Changelog Emails
+
+- **ID:** `3XGcnolBQ7AXMubO`
+- **Belongs to:** Flow OS (client-newsletter infrastructure)
+- **Specialist owner:** None — newsletter utility. Tyson directly.
+- **Trigger:** `scheduleTrigger` "Schedule Trigger" with **interval-based** schedule `weeksInterval: 2, triggerAtDay: [1] (Monday), triggerAtHour: 9` — fires every 2 weeks Monday 09:00 NY (= 13:00 UTC EDT). No `settings.timezone` override. Joins cluster-sweep work-list item 7.
+- **Purpose:** Bi-weekly client+prospect newsletter pulling GHL changelog updates and AI-summarising them for two audiences. `RSS Read` pulls GHL's public changelog feed, `Filter Past 14 Days` (code) keeps only new entries, `Check Has Updates` (IF) gates empty-feed runs, `Format for GPT` + `Combine Updates` (code) shape the prompt input, `Relevance Filter (AI)` (openAi) decides if the changelog batch is client-worthy, `Parse Relevance Response` (code) extracts the verdict, `Has Relevant Updates?` (IF) gates send vs no-op. On send: parallel `Generate Client Email (AI)` + `Generate Prospect Email (AI)` (openAi) write audience-tailored copy, `Parse Client Email` + `Parse Prospect Email` (code) extract subject + body, `Fetch Client Contacts (Page 1)` + `Fetch All Prospect Contacts` (httpRequest to `services.leadconnectorhq.com`) build send lists, `Prepare Client Send List` + `Prepare Prospect Send List` shape recipients, `Send Email to Client` + `Send Email to Prospect` (httpRequest to GHL email send endpoint) deliver. `No Relevant Updates — Stop` (noOp) handles silent runs. `Wait for Both Sends` (merge) consolidates.
+- **Heartbeat:** N
+- **Error workflow:** none.
+- **Recent activity:** 0 executions in 100-row API window — **but expected 1-2 fires given bi-weekly cadence over the past 30 days**. **4th confirmed dormant trigger** (joining Trading Weekly Analyst, Bot Router, Token Expiry Monitor). Per Tyson 2026-05-05: this workflow is operationally desired — provides Flow OS clients/leads with a GHL changelog newsletter as a value-add. Recovery target: deactivate/reactivate to re-register the cron.
+- **Bucket:** M (operationally-desired client newsletter feature; dormant; recovery via heartbeat sweep dispatch — work-list item 3)
+- **Known issues:** **Confirmed dormant scheduleTrigger** — bundles with heartbeat sweep recovery dispatch as 4th confirmed dormant trigger (work-list item 3). NY timezone (work-list item 7). **OpenAI LLM stack** — diverges from Anthropic ecosystem default (matches Flow OS Blog Post + LinkedIn cluster). No heartbeat/errorWorkflow.
+- **Last verified:** 2026-05-05
+- **Notes:** `createdAt: 2025-06-30T13:38 UTC`, `updatedAt: 2026-03-27T14:36 UTC` — built mid-2025, last touched late-March 2026. 21 nodes total. Talks to: GHL changelog RSS feed, OpenAI, Flow OS GHL via `services.leadconnectorhq.com` (contact fetch + email send). **No skill file**. **Phase 4 dependency:** heartbeat sweep dispatch (work-list item 3) recovery action required before next bi-weekly run is observed.
+
+### intake-kylie-content-system
+
+- **ID:** `qOwJhClx5BnOeycf`
+- **Belongs to:** FSC (despite being initially miscategorised as Flow OS Client integration)
+- **Specialist owner:** None — integration workflow. Tyson directly responsible. Cross-reference: `FLOW_OS_STATE.md` Section 1 (Kylie F. = Tyson DFY content setup, $1,400 AUD one-off paid 2026-04-28) + Section 2 (cross-dimensional client — also FSC As Seen In $297 + potential Crete investor).
+- **Trigger:** `webhook` POST `/webhook/intake-kylie` with `allowedOrigins: https://intake.flowstatescollective.com` (CORS-restricted to FSC intake subdomain) (responseMode: `responseNode`).
+- **Purpose:** Form-submission intake handler for Kylie F.'s Tyson DFY content setup engagement. Form lives at `intake.flowstatescollective.com` (FSC-hosted landing page; FSC builds custom landing pages because GHL's native forms are unsuitable per Tyson). On submission: `Honeypot Empty?` IF rejects spam bots, `Rate Limit` gates abuse, `Format` shapes the submission, `GHL Send Notify Email` triggers FSC GHL email notification, `GHL Search Submitter` queries FSC GHL for existing contact match, conditional `Add Note Existing` or `Create Contact` + `Add Note New` based on match result. Failure path: `Telegram Alert` notifies Tyson (chatId `1375806243`). Per Tyson 2026-05-04: GHL writes go to FSC GHL sub-account, not Flow OS GHL — this is why the workflow belongs in FSC scope despite being Tyson DFY contracted work. **Failure impact:** if this workflow silently fails when Kylie submits the intake form, her DFY engagement onboarding stalls — Tyson doesn't get the Telegram alert, contact isn't created/noted in FSC GHL, Kylie waits and Tyson doesn't know.
+- **Heartbeat:** N
+- **Error workflow:** none.
+- **Recent activity:** 0 executions in last 30 days. Per Tyson 2026-05-04: Kylie has not yet submitted the intake form; Tyson followed up with her morning of 2026-05-04. 0 executions is expected current state — workflow is deployed and awaiting first submission.
+- **Bucket:** S (one-off intake form for one-off engagement; low volume by design)
+- **Known issues:** Telegram alert chatId hardcoded to `1375806243` — bot identity (`flowstatesads_bot` vs `@tyson_quantumbot`) depends on the Telegram credential wired to the httpRequest node. Worth confirming during the bot consolidation dispatch (work-list item 8). Originally miscategorised as Flow OS Client integration during discovery audit; recategorised to FSC infrastructure after Tyson confirmed GHL destination 2026-05-04. Workflow design suggests a reusable template — could be adapted for future DFY intake forms with minor tweaks.
+- **Last verified:** 2026-05-04
+- **Notes:** `createdAt: 2026-04-27T12:07 UTC`, `updatedAt: 2026-04-27T12:12 UTC` — built and last touched same day, 1 day before Kylie's DFY engagement started. Talks to: FSC GHL via `services.leadconnectorhq.com`, Telegram (Tyson alert). **Stripe payer:** Kylie F. ($1,400 AUD one-off). FSC builds custom landing pages because GHL's native forms are unsuitable per Tyson — pattern likely extends to other FSC engagements over time.
+
+### Lead Score Re-calibration (Monthly)
+
+- **ID:** `iTwOGgizGWhBDWCM`
+- **Belongs to:** Flow OS (LinkedIn lead scoring infrastructure — functionally part of LinkedIn cluster despite discovery-audit categorisation here)
+- **Specialist owner:** None — LinkedIn-adjacent infrastructure. Cross-reference: LinkedIn cluster + secondary Supabase project (`zshmlgtvhdneekbfcyjc.supabase.co`) per `LOCATIONS.md`.
+- **Trigger:** `scheduleTrigger` "Monthly Calibration Trigger" cron `0 0 7 1 * *` — fires 1st-of-month 07:00 NY (= 12:00 UTC EDT). Joins cluster-sweep work-list item 7.
+- **Purpose:** Monthly re-calibration of LinkedIn lead-acceptance scoring model. `Fetch Last 30 Days Prospects` (httpRequest to `webhook.flowos.tech`) pulls the prior month's prospect data, `Analyse Acceptance Patterns` (code) computes acceptance-rate signals, `Enough Data to Calibrate?` (IF) gates: if sufficient data, `AI Calibration Generator` (openAi) writes new scoring weights, `Parse Calibration Result` (code) extracts the JSON, `Save Calibration to Database` (httpRequest to LinkedIn secondary Supabase) persists, `Log Calibration Applied` (httpRequest) records audit. If insufficient data, `Log Insufficient Data` records the no-op.
+- **Heartbeat:** N
+- **Error workflow:** none.
+- **Recent activity:** 0 executions in 100-row API window. Most likely API unreliability — workflow should fire 1st-of-month (likely 1 fire in current 30-day window). UI cross-check needed.
+- **Bucket:** S (calibration job; failure means stale lead scoring weights for one month, recoverable on next run)
+- **Known issues:** **Categorisation drift** — same as Engagement Weighting above. LinkedIn-functionally but lives in "Various utilities". Joins cluster-sweep recategorisation (work-list item 9). NY timezone (work-list item 7). **OpenAI LLM stack** — matches LinkedIn cluster ecosystem. **API execution count discrepancy** (work-list item 19). No heartbeat/errorWorkflow.
+- **Last verified:** 2026-05-05
+- **Notes:** `createdAt: 2026-03-13T21:01 UTC`, `updatedAt: 2026-03-26T08:47 UTC` — built mid-March, last touched late-March (stable). 9 nodes total. Talks to: `webhook.flowos.tech` (n8n self-call to fetch prospects), OpenAI, LinkedIn secondary Supabase (`zshmlgtvhdneekbfcyjc.supabase.co`). **Self-referential note:** the `Fetch Last 30 Days Prospects` httpRequest hits `webhook.flowos.tech` — a self-call back into n8n's webhook surface. Suggests an internal API endpoint exposed via another n8n workflow's webhook (uncategorised cross-workflow dependency — flag for cluster-sweep). **No skill file**.
+
+### Qclaw router
+
+- **ID:** `ih2lNwkJvWfQMtzaI5zNX`
+- **Belongs to:** Flow OS (Charlie infrastructure)
+- **Specialist owner:** None — Charlie-era routing primitive. Tyson directly.
+- **Trigger:** `webhook` POST `/webhook/qclaw-router` (responseMode: `responseNode`).
+- **Purpose:** Built as a switch-based router for QClaw → n8n requests — `Switch` node decides between two `Respond to Webhook` paths. **Functionally unused** — only 4 nodes total, no documented production call path, no httpRequest external services. Sister workflow to Charlie - Task Handler in the never-adopted Charlie infrastructure category. **Feeds Phase 4 Slice 4+5 design** as the second of two unused Charlie webhooks.
+- **Heartbeat:** N
+- **Error workflow:** none.
+- **Recent activity:** 0 executions in 100-row API window. Likely true-zero — never adopted into production routing flow.
+- **Bucket:** S (active but unused; deactivate-candidate after Phase 4 Slice 5 design confirms no role in target architecture)
+- **Known issues:** Likely-dead-code active workflow — open webhook with no consumer. Phase 4 Slice 5 (Claude Code dispatcher) decides fate alongside Charlie - Task Handler. Switch node has no documented routing logic visible at the trigger level — would need full body inspection to recover intent. **API execution count discrepancy** (work-list item 19).
+- **Last verified:** 2026-05-05
+- **Notes:** `createdAt: 2026-03-26T09:01 UTC`, `updatedAt: 2026-03-26T09:44 UTC` — built and last touched same day late-March (stable scaffolding, never extended). 4 nodes total (most minimal workflow in the index). No external services detected. **No skill file**. **Phase 4 dependency:** Slice 5 (Claude Code dispatcher) target architecture decides this workflow's fate alongside Charlie - Task Handler.
+
 
 ## Maintenance log
 

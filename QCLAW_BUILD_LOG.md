@@ -3214,3 +3214,51 @@ Notable findings during cluster review:
 **Work-list item 7 updated in same commit** — folded the per-workflow `settings.timezone` observation into item 7's canonical text. Affected workflow count remains 14+; correction option set expands from 3 to 4. Original creation-point line in QCLAW_BUILD_LOG.md updated; prior eod-summary references in this file remain as historical snapshots.
 
 Pre-slice progress: N8N_WORKFLOW_INDEX.md clusters 9 + 10 + 11 of 12 complete. **1 cluster remains: Various utilities and standalone (10 workflows including reclassified intake-kylie-content-system).**
+
+## [2026-05-05] Charlie Overhaul — N8N_WORKFLOW_INDEX.md add Various utilities cluster (cluster 12 of 12) — doc pass complete
+
+**Doc pass complete: 46 workflows across 12 clusters.** The Various utilities and standalone cluster (10 workflows) closes out N8N_WORKFLOW_INDEX.md's per-cluster documentation phase. Format conventions from the prior 11 clusters applied cleanly. Categories table flipped (`Various utilities and standalone | 10 | pending → documented`).
+
+**Final bucket distribution for cluster 12:** 7 × M, 3 × S, **0 × A** (zero archive candidates after Tyson review). Initial draft proposed FFC webhook as Bucket A (abandoned scaffold); Tyson clarified 2026-05-05 that FFC = Freedom and Flow Challenge — active production cross-account contact bridge from Emma's FSC sub-account to Flow OS — and recategorised to M.
+
+**Three corrections applied during Tyson Mode 2 review (2026-05-05):**
+
+1. **AIA002 - Emma AI Advisor Token Generator: S → M.** Direct revenue path. Per Tyson 2026-05-05: Emma AI Advisor product is still on sale and active; 1 lifetime purchase to date per memory. 0 executions in API window consistent with low organic volume + work-list item 19 unreliability. Even one failed purchase = customer-trust + refund event.
+
+2. **FFC webhook from Emma to FOS: A → M.** Reframed from "abandoned scaffold archive candidate" to active production infrastructure. FFC = Freedom and Flow Challenge (free challenge for setting up automated business). The webhook bridges contacts from Emma's FSC GHL sub-account to Flow OS GHL sub-account so Flow OS marketing/onboarding funnel can pick them up. Only workflow in the index that explicitly bridges FSC GHL → Flow OS GHL boundary. Rename queued for V1/V2/V3 cleanup sweep (work-list item 9): "FSC Freedom and Flow Challenge — Emma to Flow OS Contact Bridge".
+
+3. **GHL Changelog Emails: S → M.** Operationally desired client/lead newsletter feature for Flow OS — value-add informing them of GHL changelog updates. Currently dormant (0 executions despite expected 1-2 fires given bi-weekly cadence). **4th confirmed dormant trigger** joining Trading Weekly Analyst, Bot Router, Token Expiry Monitor. Bundles with heartbeat sweep dispatch recovery action (work-list item 3).
+
+**Notable cluster-12 findings:**
+
+- **Universal API unreliability** — all 10/10 workflows in cluster 12 report 0 executions in the 100-row API window. Even Charlie - Task Handler and Qclaw router (which we know have been triggered manually) show 0. Strongest single-cluster confirmation of work-list item 19 (n8n executions-history API unreliability) across the doc pass. **Item 19 Phase-4-Slice-1 blocker status reaffirmed.** UI cross-check or alternative observability source mandatory before Slice 1 launch.
+
+- **0/10 cross-workflow Execute references** — none of the cluster-12 workflows are called via `executeWorkflow` from elsewhere in the index. Full cross-workflow scan ran across all 75 active+inactive workflows. Confirms each cluster-12 workflow's failure blast radius is limited to its own webhook/trigger surface.
+
+- **Charlie infrastructure findings (Phase 4 Slice 4+5 input)** — Charlie - Task Handler webhook + Qclaw router webhook are both built but functionally unused since adoption (no executions, no cross-references, no documented call path). Feed Phase 4 Slice 4 (tool surface) + Slice 5 (Claude Code dispatcher) design decisions — target architecture decides whether to repurpose or deactivate.
+
+- **2 LinkedIn-adjacent workflows surfaced** — Engagement Weighting Re-calibration + Lead Score Re-calibration both write to the LinkedIn secondary Supabase (`zshmlgtvhdneekbfcyjc.supabase.co`) and serve LinkedIn engagement scoring. Belong functionally in the LinkedIn cluster but live here per discovery audit grouping. Joins cluster-sweep recategorisation (work-list item 9).
+
+- **3 NY-timezone schedules** added to the cluster-wide tally (Engagement Weighting Monday 08:00 NY; Lead Score Re-calibration 1st-of-month 07:00 NY; GHL Changelog Emails Monday 09:00 NY every 2 weeks). **Total under work-list item 7 now 16 workflows.**
+
+- **Cluster-internal duplication noted** — Flow OS + FSC Payment Update Link Generators are 95% identical 5-node webhooks differing only by GHL destination + path. Refactor candidate (consolidate into single workflow with brand-routing switch node) tracked as future-sweep build-log note (no work-list item — minor maintenance debt, not blocking).
+
+- **OpenAI LLM stack continues to diverge from Anthropic ecosystem default** — GHL Changelog Emails + Lead Score Re-calibration both use OpenAI, matching Flow OS Blog Post + LinkedIn cluster pattern.
+
+**Work list addition:**
+
+23. **Webhook signed-request validation hardening — AIA002 + FFC webhook.** Both webhooks accept untrusted unauthenticated POST traffic. AIA002 (`/webhook/emma-ai-purchase`) is revenue-path: forged events provision unauthorised credits to attackers. FFC webhook (`/webhook/bf033d33-…`) is data-integrity path: forged events inject arbitrary contacts into Flow OS GHL. UUID-pathed obscurity is not authentication. Hardening options: HMAC signature header verification (preferred — symmetric secret shared with caller), IP allowlist (operationally fragile), or upstream API gateway with auth. Bundle with work-list item 18 (May 17 deferred items: webhook auth, nginx rate limit, FSC populate-vs-detach) — same security-pass scope.
+
+---
+
+**Doc pass closeout summary:**
+
+- **46 active workflows documented** across 12 clusters (Trading 5, Crete 4, Flow OS GHL Marketing 4, Ad Agency 4, LinkedIn 7, Instagram 2, Flow OS Client integrations 2, Cross-cutting + Token Refresh 3, Flow OS Blog 1, Flow OS Infographics 1, FSC Content Studio 1, Various utilities 10) + 1 reclassified (intake-kylie from cluster 7 → cluster 12) + 1 archived (`N3VF1VKlekDdhxGU` abandoned scaffold from Cross-cutting cluster).
+
+- **0 archive candidates from cluster 12** — all 10 workflows retained as active production infrastructure or pending Phase 4 Slice 4+5 design decision (Charlie - Task Handler, Qclaw router).
+
+- **Phase 4 Slice 1 dependencies remaining:** work-list item 18 (alerting platform consolidation Path A) + work-list item 19 (executions-history API reliability investigation) must both resolve before Slice 1 Bootstrap + canonical doc loading begins.
+
+- **Post-doc-pass cluster-sweep work queued** (separate dispatches from doc pass): timezone correction across 16 workflows (item 7); dormancy re-verification post-API-investigation (4 confirmed dormant: Trading Weekly Analyst, Bot Router, Token Expiry Monitor, GHL Changelog Emails); Crete Content Generator UTC retro-correction; LinkedIn-adjacent recategorisation (Engagement Weighting + Lead Score Re-calibration); V1/V2/V3 cleanup + workflow renames (item 9); webhook signed-request hardening (item 23, new); heartbeat + errorWorkflow sweep (item 3).
+
+Pre-slice progress: **N8N_WORKFLOW_INDEX.md doc pass complete. 12 of 12 clusters documented.** Next: cluster-sweep correction passes + Phase 4 Slice 1 dependency resolution (items 18, 19).
