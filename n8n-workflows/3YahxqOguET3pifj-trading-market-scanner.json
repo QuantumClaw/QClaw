@@ -1,0 +1,604 @@
+{
+  "id": "3YahxqOguET3pifj",
+  "name": "Trading - Market Scanner",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */1 * * 1"
+            },
+            {
+              "field": "cronExpression",
+              "expression": "0 */2 * * 2-5"
+            },
+            {
+              "field": "cronExpression",
+              "expression": "0 */4 * * 0,6"
+            }
+          ]
+        }
+      },
+      "id": "scanner-schedule",
+      "name": "Smart Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        256,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://gamma-api.polymarket.com/markets",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "closed",
+              "value": "false"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            },
+            {
+              "name": "offset",
+              "value": "0"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-polymarket",
+      "name": "Fetch Polymarket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://gamma-api.polymarket.com/markets",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "closed",
+              "value": "false"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            },
+            {
+              "name": "offset",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-page2",
+      "name": "Fetch Page 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://gamma-api.polymarket.com/markets",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "closed",
+              "value": "false"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            },
+            {
+              "name": "offset",
+              "value": "200"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-page3",
+      "name": "Fetch Page 3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://gamma-api.polymarket.com/markets",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "closed",
+              "value": "false"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            },
+            {
+              "name": "offset",
+              "value": "300"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-page4",
+      "name": "Fetch Page 4",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 4,
+        "options": {}
+      },
+      "id": "merge-pages",
+      "name": "Merge Pages",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        880,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst isWeekend = [0,6].includes(new Date().getDay());\n\nconst markets = $input.all().map(i => i.json);\n\nconst assetKeywords = {\n  btc: ['bitcoin', 'btc'],\n  eth: ['ethereum', 'eth price', 'ether ', 'eth hit', 'eth reach', 'eth above', 'eth to ', 'eth at ', 'eth cross', 'ethereum hit', 'ethereum reach', 'ethereum above'],\n  gold: ['gold price', 'gold hit', 'price of gold', 'xau', 'gold above', 'gold reach', 'gold to ', 'gold at ', 'gold cross', 'gold exceed', 'gold surpass', 'gold breaks', 'gold past'],\n  silver: ['silver price', 'silver hit', 'price of silver', 'xag', 'silver above', 'silver reach', 'silver to ', 'silver at ', 'silver cross', 'silver exceed', 'silver surpass'],\n  wti: ['wti', 'crude oil price', 'west texas', 'crude oil', 'oil price', 'oil above', 'oil reach', 'oil hit'],\n  brent: ['brent', 'brent crude', 'brent oil']\n};\n\n// Sports / non-commodity false positives\nconst sportsExclude = /stanley cup|nba|nfl|nhl|warriors|knights|oilers|lakers|nuggets|cavaliers|celtics|76ers|super bowl|world cup|premier league|championship|playoffs|olympics|finals|win the|grand prix|gold medal|gold cards|golden globe|golden bachelor|olympic gold/i;\n\n// Sanity floor \u2014 prevents matching years/IDs as prices\nconst minPrice = { btc: 10000, eth: 500, gold: 1000, silver: 10, wti: 30, brent: 30 };\n\nconst triggerRegex = /(?:above|over|reach(?:es|ed)?|hit(?:s|ting)?|cross(?:es|ed)?|exceed(?:s|ed)?|surpass(?:es|ed)?|past|to|at)\\s+\\$?([\\d,]+\\.?\\d*[kmb]?)/gi;\n\nfunction parseNumeric(s) {\n  const suffix = s.slice(-1).toLowerCase();\n  const clean = s.replace(/[,kmb]/gi, '');\n  const num = parseFloat(clean);\n  if (!isFinite(num)) return null;\n  if (suffix === 'k') return num * 1000;\n  if (suffix === 'm') return num * 1000000;\n  if (suffix === 'b') return num * 1000000000;\n  return num;\n}\n\nconst results = [];\nconst seen = new Set();\n\nfor (const m of markets) {\n  const text = (m.question || '').toLowerCase();\n  const desc = (m.description || '').toLowerCase();\n  const fullText = text + ' ' + desc;\n  const endDate = m.endDate || m.end_date_iso;\n  const marketId = m.id || m.conditionId;\n\n  if (seen.has(marketId)) continue;\n  seen.add(marketId);\n\n  if (sportsExclude.test(m.question || '')) continue;\n\n  let asset = null;\n  for (const [a, keywords] of Object.entries(assetKeywords)) {\n    if (keywords.some(k => fullText.includes(k))) {\n      asset = a;\n      break;\n    }\n  }\n  if (!asset) continue;\n  if (isWeekend && asset !== 'btc' && asset !== 'eth') continue;\n\n  // Primary: $-prefixed prices\n  const dollarMatches = (text.match(/\\$[\\d,]+\\.?\\d*[kmb]?/gi) || []).map(p => p.replace('$',''));\n  // Fallback: bare numbers following trigger words (commodity questions)\n  const triggerMatches = [...text.matchAll(triggerRegex)].map(mm => mm[1]);\n\n  const allMatches = [...dollarMatches, ...triggerMatches];\n  const prices = allMatches.map(parseNumeric).filter(p => p !== null && p > 0);\n\n  const floor = minPrice[asset] || 1;\n  const valid = prices.filter(p => p >= floor);\n  if (valid.length === 0) continue;\n\n  const horizonDays = endDate\n    ? Math.ceil((new Date(endDate) - new Date()) / 86400000)\n    : 30;\n  if (horizonDays <= 0 || horizonDays > 365) continue;\n\n  let yesPrice = null;\n  try {\n    const p = typeof m.outcomePrices === 'string'\n      ? JSON.parse(m.outcomePrices)\n      : m.outcomePrices;\n    if (p && p[0] !== undefined) yesPrice = parseFloat(p[0]);\n  } catch (e) {}\n  if (yesPrice === null || yesPrice < 0.02 || yesPrice > 0.98) continue;\n\n  const targetPrice = Math.max(...valid);\n\n  results.push({\n    market_id: marketId,\n    question: m.question,\n    asset,\n    target: targetPrice,\n    yes_price: yesPrice,\n    horizon_days: horizonDays,\n    end_date: endDate,\n    volume: parseFloat(m.volume || 0),\n    needs_simulation: true,\n    source: m.source || 'polymarket'\n  });\n}\n\nresults.sort((a, b) => b.volume - a.volume);\n\nreturn results.map(r => ({ json: r }));\n"
+      },
+      "id": "analyse-edge",
+      "name": "Analyse Edge",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1376,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SIM_HOST }}/simulate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ asset: $json.asset, target: $json.target, question: $json.question, horizon_days: $json.horizon_days }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 500
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "run-market-sims",
+      "name": "Run Market Simulations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst HIGH_EDGE_THRESHOLD = 0.07;\nconst NO_EDGE_THRESHOLD = -0.10;\nconst MIN_ALERT_VOLUME = 5000;\n\nconst items = $input.all();\nconst highEdge = [];\nconst noEdge = [];\nconst neutral = [];\nconst sims = [];\nlet simErrors = 0;\n\nfor (let i = 0; i < items.length; i++) {\n  const sim = items[i].json;\n  let original;\n  try {\n    original = $('Analyse Edge').itemMatching(i).json;\n  } catch (e) {\n    simErrors++;\n    continue;\n  }\n\n  const simProb = sim.probability !== undefined ? sim.probability : sim.sim_probability;\n  if (simProb === undefined || simProb === null) {\n    simErrors++;\n    continue;\n  }\n\n  const edge = simProb - original.yes_price;\n  const merged = {\n    market_id: original.market_id,\n    question: original.question,\n    asset: original.asset,\n    target: original.target,\n    yes_price: original.yes_price,\n    sim_probability: simProb,\n    edge: edge * 100,\n    horizon_days: original.horizon_days,\n    end_date: original.end_date,\n    volume: original.volume,\n    source: original.source,\n    daily_mu: sim.daily_mu,\n    current_price: sim.current_price\n  };\n\n  if (edge >= HIGH_EDGE_THRESHOLD && original.volume >= MIN_ALERT_VOLUME) {\n    highEdge.push(merged);\n  } else if (edge <= NO_EDGE_THRESHOLD && original.volume >= MIN_ALERT_VOLUME) {\n    noEdge.push(merged);\n  } else {\n    neutral.push(merged);\n  }\n\n  // Supabase trading_simulations row \u2014 column-aligned shape\n  sims.push({\n    asset: original.asset,\n    simulation_count: sim.simulations || 10000,\n    probability: simProb,\n    current_price: sim.current_price !== undefined ? sim.current_price : null,\n    edge: edge,\n    implied_odds: original.yes_price,\n    macro_factors: sim.macro_factors || null,\n    confidence_lower: sim.confidence_lower !== undefined ? sim.confidence_lower : null,\n    confidence_upper: sim.confidence_upper !== undefined ? sim.confidence_upper : null,\n    raw_output: {\n      polymarket_market_id: original.market_id,\n      question: original.question,\n      target: original.target,\n      horizon_days: original.horizon_days,\n      end_date: original.end_date,\n      volume: original.volume,\n      source: original.source,\n      daily_mu: sim.daily_mu,\n      daily_sigma: sim.daily_sigma,\n      macro_adjustment: sim.macro_adjustment\n    }\n  });\n}\n\nlet fetchedCount = 0;\ntry { fetchedCount = $('Merge Pages').all().length; } catch (e) {}\nlet passedFilter = 0;\ntry { passedFilter = $('Analyse Edge').all().length; } catch (e) {}\n\nreturn [{\n  json: {\n    highEdge,\n    noEdge,\n    neutral,\n    stats: {\n      run_at: new Date().toISOString(),\n      fetched: fetchedCount,\n      passed_filter: passedFilter,\n      markets_simulated: items.length,\n      sim_errors: simErrors,\n      high_edge_count: highEdge.length,\n      no_edge_count: noEdge.length,\n      neutral_count: neutral.length\n    },\n    sims\n  }\n}];\n"
+      },
+      "id": "build-run-summary",
+      "name": "Build Run Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "edge-check",
+              "leftValue": "={{ $json.highEdge.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "no-edge-check",
+              "leftValue": "={{ $json.noEdge.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "has-edge",
+      "name": "Has Edge?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2272,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  chat_id: $env.TELEGRAM_TRADING_CHAT_ID,\n  text: ($json.highEdge.length > 0\n    ? '\ud83c\udfaf Edge Found!\\n\\n' + $json.highEdge.map(h =>\n        '[' + (h.source || 'polymarket') + '] ' + h.asset.toUpperCase() + ': ' + h.question + '\\n' +\n        'Target: $' + h.target.toLocaleString() + ' | Horizon: ' + h.horizon_days + ' days (ends ' + (h.end_date || 'N/A') + ')\\n' +\n        'Sim: ' + (h.sim_probability*100).toFixed(1) + '% | Market: ' + (h.yes_price*100).toFixed(1) + '% | Edge: ' + h.edge.toFixed(1) + '%\\n' +\n        'Volume: $' + (h.volume/1000).toFixed(0) + 'K'\n      ).join('\\n\\n')\n    : '\ud83d\udcca Market Intelligence \u2014 No YES edge found but notable OVERPRICED markets detected:\\n\\n' + ($json.noEdge || []).map(r =>\n        '[' + (r.source || 'polymarket') + '] ' + r.asset.toUpperCase() + ': market YES=' + (r.yes_price*100).toFixed(1) + '% | our sim=' + (r.sim_probability*100).toFixed(1) + '% | potential NO edge\\nQuestion: ' + r.question\n      ).join('\\n\\n')\n  ) + ($json.highEdge.length > 0 && $json.noEdge.length > 0\n    ? '\\n\\n---\\n\\n\ud83d\udcca Notable OVERPRICED markets:\\n\\n' + $json.noEdge.map(r =>\n        '[' + (r.source || 'polymarket') + '] ' + r.asset.toUpperCase() + ': market YES=' + (r.yes_price*100).toFixed(1) + '% | our sim=' + (r.sim_probability*100).toFixed(1) + '% | potential NO edge\\nQuestion: ' + r.question\n      ).join('\\n\\n')\n    : '')\n}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "notify-edge",
+      "name": "Notify Edge",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2496,
+        384
+      ],
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fdabygmromuqtysitodp.supabase.co/rest/v1/trading_simulations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.sims) }}",
+        "options": {}
+      },
+      "id": "save-sims",
+      "name": "Save Simulations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2272,
+        624
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {},
+      "id": "noop-end",
+      "name": "NoOp End",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2496,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'Trading - Market Scanner'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        456,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "eea1732f-3886-4081-b528-2a94f42539d5"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Trading - Market Scanner'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2272,
+        800
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "e3cf9a8d-7e80-4d47-b66b-cb552f17a7a4"
+    }
+  ],
+  "connections": {
+    "Smart Schedule": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Polymarket": {
+      "main": [
+        [
+          {
+            "node": "Merge Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Page 2": {
+      "main": [
+        [
+          {
+            "node": "Merge Pages",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Page 3": {
+      "main": [
+        [
+          {
+            "node": "Merge Pages",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Fetch Page 4": {
+      "main": [
+        [
+          {
+            "node": "Merge Pages",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge Pages": {
+      "main": [
+        [
+          {
+            "node": "Analyse Edge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyse Edge": {
+      "main": [
+        [
+          {
+            "node": "Run Market Simulations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Market Simulations": {
+      "main": [
+        [
+          {
+            "node": "Build Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Run Summary": {
+      "main": [
+        [
+          {
+            "node": "Has Edge?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Simulations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Edge?": {
+      "main": [
+        [
+          {
+            "node": "Notify Edge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "NoOp End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Edge": {
+      "main": [
+        []
+      ]
+    },
+    "Save Simulations": {
+      "main": [
+        []
+      ]
+    },
+    "NoOp End": {
+      "main": [
+        []
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        [
+          {
+            "node": "Fetch Polymarket",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Page 2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Page 3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Page 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true,
+    "errorWorkflow": "7kpNnMtnuDWXgWcX"
+  }
+}

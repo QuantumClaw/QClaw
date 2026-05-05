@@ -17,7 +17,36 @@ Do **not** fire one heartbeat per item in a batch. The point is "did the workflo
 
 ## Standard node config
 
-Add an HTTP Request node named **"Heartbeat (start)"** wired off the trigger, and **"Heartbeat (success)"** / **"Heartbeat (error)"** wired off the terminal nodes.
+You have two equivalent transports for calling `record_heartbeat()` from a workflow.
+**Prefer the Postgres node** when the workflow already has the `Supabase Postgres DB`
+credential (`qGUxEHfEZkZGdAcZ`) attached or available — it's one fewer secret in
+flight, lower latency, and simpler. Use the HTTP Request node only when the workflow
+has no Postgres credential and adding one is heavier than wiring an HTTP call.
+
+### Option 1 (preferred): Postgres node
+
+| Field | Value |
+|---|---|
+| Operation | `Execute Query` |
+| Credential | `Supabase Postgres DB` (`qGUxEHfEZkZGdAcZ`) |
+| Query | see snippets below |
+| Continue On Fail | **`true`** — heartbeat failure must NEVER fail the workflow |
+| Retry On Fail | true, 2 tries, 2000 ms wait |
+
+**SQL templating gotcha (re-learned twice in Batch 0/1):** the `query` field in
+n8n's Postgres node is in *fixed* mode (it does NOT start with `=`), so:
+
+- `{{ $workflow.id }}` and other expressions ARE interpolated — good.
+- A literal `=` adjacent to `{{...}}` becomes a literal `=` in the SQL string.
+  *Do not write* `'={{ $workflow.id }}'`. Write `'{{ $workflow.id }}'`.
+- If you generate this SQL via Python `str.format()` or f-strings, `{{` / `}}`
+  collapse to single braces. Build the string by plain concatenation only, or
+  the workflow_id will land as `{ $workflow.id }` literally and the rows will
+  be invisible to your queries.
+
+### Option 2: HTTP Request node
+
+Use only when there is no Postgres credential available to the workflow.
 
 | Field | Value |
 |---|---|
@@ -35,7 +64,58 @@ Add an HTTP Request node named **"Heartbeat (start)"** wired off the trigger, an
 >
 > **Why a separate env var, not the existing `SUPABASE_ANON_KEY`:** the anon key cannot insert. Per the existing FSC-credential memo, do not strip the inline `apikey` header thinking the FSC credential covers it — the FSC `httpHeaderAuth` is a no-op; this header is what actually authenticates.
 
-### Body — start heartbeat (off the trigger)
+### Postgres node SQL — start heartbeat (off the trigger)
+
+```sql
+select public.record_heartbeat(
+  '{{ $workflow.id }}'::text,
+  'started'::text,
+  '<workflow name>'::text,
+  '{{ $execution.id }}'::text
+);
+```
+
+Hardcode the workflow name as a string literal in each workflow's SQL — passing
+`{{ $workflow.name }}` is fine but not necessary, and avoids comma-escape issues
+if the name contains a comma.
+
+### Postgres node SQL — success heartbeat (off terminal node)
+
+```sql
+select public.record_heartbeat(
+  '{{ $workflow.id }}'::text,
+  'success'::text,
+  '<workflow name>'::text,
+  '{{ $execution.id }}'::text,
+  '{{ JSON.stringify({rows: $json.length}) }}'::jsonb
+);
+```
+
+The `jsonb` argument is optional. If you don't need metadata, drop the last line
+(and the trailing comma) and call `record_heartbeat` with 4 args.
+
+### Postgres node SQL — error heartbeat (off error branch / Error Trigger)
+
+```sql
+select public.record_heartbeat(
+  '{{ $workflow.id }}'::text,
+  'error'::text,
+  '<workflow name>'::text,
+  '{{ $execution.id }}'::text,
+  '{{ JSON.stringify({node: $json.error?.node?.name || "unknown", message: $json.error?.message || "no message"}) }}'::jsonb
+);
+```
+
+### HTTP Request body — start / success / error
+
+If you must use the HTTP Request transport (Option 2), the request is:
+
+- **Method:** `POST`
+- **URL:** `https://fdabygmromuqtysitodp.supabase.co/rest/v1/rpc/record_heartbeat`
+- **Headers:** `apikey: ={{$env.SUPABASE_SERVICE_ROLE_KEY}}`, `Authorization: =Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}`, `Content-Type: application/json`
+- **On Error:** `Continue (using error output)`
+
+Body — start:
 
 ```json
 {
@@ -46,7 +126,7 @@ Add an HTTP Request node named **"Heartbeat (start)"** wired off the trigger, an
 }
 ```
 
-### Body — success heartbeat (off terminal node)
+Body — success (with optional metadata):
 
 ```json
 {
@@ -58,9 +138,7 @@ Add an HTTP Request node named **"Heartbeat (start)"** wired off the trigger, an
 }
 ```
 
-`p_metadata` is optional and free-form. Use it for anything dashboards need to surface — row counts, queued items, last-error-node, etc. Omit if not needed.
-
-### Body — error heartbeat (off error branch / Error Trigger)
+Body — error:
 
 ```json
 {
@@ -74,6 +152,11 @@ Add an HTTP Request node named **"Heartbeat (start)"** wired off the trigger, an
   }
 }
 ```
+
+> The HTTP transport requires `SUPABASE_SERVICE_ROLE_KEY` in n8n's env. If only
+> `SUPABASE_ANON_KEY` exists, the call returns 401 — anon's EXECUTE was revoked
+> on `record_heartbeat()` deliberately (see migration
+> `2026_05_05_record_heartbeat_grant_authenticated.sql`).
 
 ## Wiring rules
 

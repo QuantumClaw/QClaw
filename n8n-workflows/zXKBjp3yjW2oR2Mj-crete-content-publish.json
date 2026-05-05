@@ -1,0 +1,1104 @@
+{
+  "id": "zXKBjp3yjW2oR2Mj",
+  "name": "Crete - Content Publish",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crete-content-publish",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "47d88f72-a27d-4277-ba0c-c9af0632b426",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        304
+      ],
+      "webhookId": "crete-content-publish"
+    },
+    {
+      "parameters": {
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/crete_content_queue?id=eq.{{ $json.body.content_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "03fa15d6-9459-4c19-91dd-252e315d566b",
+      "name": "Get Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        464,
+        304
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst item = Array.isArray(data) ? data[0] : data;\nif (!item || !item.id) {\n  throw new Error('Content not found for id');\n}\nreturn [{ json: item }];\n"
+      },
+      "id": "4b9ad5c6-c765-41a1-82ab-4ecfad8dccfc",
+      "name": "Extract Item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.platform }}",
+                    "rightValue": "facebook",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "4e0a1a02-3384-4f5e-94ba-afff52d31f80"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Facebook"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.platform }}",
+                    "rightValue": "instagram",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "e2c7f198-4e76-48c5-88cd-c62859b20c60"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Instagram"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.platform }}",
+                    "rightValue": "linkedin",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "1adbdfd3-8c4e-41a9-97cd-559b30fb5092"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "LinkedIn"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "b1c2d3e4-f5a6-7890-abcd-ef1234567001",
+      "name": "Platform Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        912,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{$env.META_PAGE_ID}}/feed",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message\": {{ JSON.stringify($json.body) }},\n  \"access_token\": \"{{$env.META_PAGE_ACCESS_TOKEN}}\"\n}",
+        "options": {}
+      },
+      "id": "b1c2d3e4-f5a6-7890-abcd-ef1234567002",
+      "name": "Facebook Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1152,
+        112
+      ],
+      "onError": "continueErrorOutput",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field-id",
+              "name": "id",
+              "type": "string",
+              "value": "={{ $('Extract Item').item.json.id }}"
+            },
+            {
+              "id": "field-title",
+              "name": "title",
+              "type": "string",
+              "value": "={{ $('Extract Item').item.json.title }}"
+            },
+            {
+              "id": "field-platform",
+              "name": "platform",
+              "type": "string",
+              "value": "={{ $('Extract Item').item.json.platform }}"
+            },
+            {
+              "id": "field-result",
+              "name": "publish_result",
+              "type": "string",
+              "value": "={{ JSON.stringify($json) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b1c2d3e4-f5a6-7890-abcd-ef1234567003",
+      "name": "FB Restore Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1360,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field-id",
+              "name": "id",
+              "type": "string",
+              "value": "={{ $('Extract Item').item.json.id }}"
+            },
+            {
+              "id": "field-title",
+              "name": "title",
+              "type": "string",
+              "value": "={{ $('Extract Item').item.json.title }}"
+            },
+            {
+              "id": "field-platform",
+              "name": "platform",
+              "type": "string",
+              "value": "={{ $('Extract Item').item.json.platform }}"
+            },
+            {
+              "id": "field-result",
+              "name": "publish_result",
+              "type": "string",
+              "value": "={{ JSON.stringify($json) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b1c2d3e4-f5a6-7890-abcd-ef1234567007",
+      "name": "IG Restore Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1808,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst platform = item.platform || 'unknown';\nconst reason = platform === 'linkedin' ? 'LinkedIn TODO - uses Blotato' : `Unsupported platform: ${platform}`;\nreturn [{ json: { ...item, publish_result: { skipped: true, reason } } }];\n"
+      },
+      "id": "b1c2d3e4-f5a6-7890-abcd-ef1234567009",
+      "name": "Other Platform Skip",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/crete_content_queue?id=eq.{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'published', published_at: new Date().toISOString(), publish_attempts: ($('Extract Item').item.json.publish_attempts || 0) + 1, last_attempt_at: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "72594655-9378-488f-8eb7-40f0edf8aa2c",
+      "name": "Update Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2032,
+        304
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": 1375806243,\n  \"text\": \"\u2705 Published: {{ $('Extract Item').item.json.title }} to {{ $('Extract Item').item.json.platform }}\",\n  \"parse_mode\": \"Markdown\"\n}",
+        "options": {}
+      },
+      "id": "6550713c-3983-43bc-b876-fd1b0d573a56",
+      "name": "Telegram Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": true, \"content_id\": \"{{ $('Extract Item').item.json.id }}\", \"status\": \"published\" }",
+        "options": {}
+      },
+      "id": "1fb3076b-01c2-4ba3-90a0-883910a65cc2",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2464,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "platform": "linkedin",
+        "accountId": {
+          "__rl": true,
+          "value": "11109",
+          "mode": "list",
+          "cachedResultName": "Tyson Venables",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/11109"
+        },
+        "postContentText": "={{ $('Extract Item').item.json.body }}",
+        "options": {}
+      },
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        560
+      ],
+      "id": "d1e2f3a4-b5c6-7890-abcd-200000000001",
+      "name": "LinkedIn Post (Blotato)",
+      "credentials": {
+        "blotatoApi": {
+          "id": "Bs2TEAOA9mVKfcR3",
+          "name": "Blotato account"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field-id",
+              "name": "id",
+              "type": "string",
+              "value": "={{ $('Extract Item').item.json.id }}"
+            },
+            {
+              "id": "field-title",
+              "name": "title",
+              "type": "string",
+              "value": "={{ $('Extract Item').item.json.title }}"
+            },
+            {
+              "id": "field-platform",
+              "name": "platform",
+              "type": "string",
+              "value": "={{ $('Extract Item').item.json.platform }}"
+            },
+            {
+              "id": "field-result",
+              "name": "publish_result",
+              "type": "string",
+              "value": "={{ JSON.stringify($json) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d1e2f3a4-b5c6-7890-abcd-200000000002",
+      "name": "LI Restore Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1376,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "accountId": {
+          "__rl": true,
+          "value": "43178",
+          "mode": "list",
+          "cachedResultName": "creteprojects",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/43178"
+        },
+        "postContentText": "={{ $('Extract Item').item.json.body }}",
+        "postContentMediaUrls": "={{ $('Extract Item').item.json.media_url }}",
+        "options": {}
+      },
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        304
+      ],
+      "id": "d1e2f3a4-b5c6-7890-abcd-200000000002",
+      "name": "Instagram Post (Blotato)",
+      "credentials": {
+        "blotatoApi": {
+          "id": "Bs2TEAOA9mVKfcR3",
+          "name": "Blotato account"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate media_url is present for platforms that require it.\nconst item = $input.first().json;\nconst platform = (item.platform || '').toLowerCase();\nif (platform === 'instagram' && !item.media_url) {\n  return [{ json: { ...item, _validation_failed: true, _failure_reason: 'missing_media_for_instagram' } }];\n}\nreturn [{ json: { ...item, _validation_failed: false } }];"
+      },
+      "id": "b0000000-0000-0000-0000-000000000020",
+      "name": "Validate Media",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json._validation_failed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "b0000000-0000-0000-0000-000000000021",
+      "name": "Validation Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/crete_content_queue?id=eq.{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', publish_attempts: ($json.publish_attempts || 0) + 1, last_error: $json._failure_reason, last_attempt_at: new Date().toISOString() }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "b0000000-0000-0000-0000-000000000022",
+      "name": "Mark Failed (Validation)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: 1375806243, text: '\\u{1F6D1} Crete publish blocked \u2014 ' + ($(\\'Extract Item\\').item.json.title || $json.id) + ' | reason: ' + ($(\\'Extract Item\\').item.json._failure_reason || 'validation') + ' | id: ' + $(\\'Extract Item\\').item.json.id }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "b0000000-0000-0000-0000-000000000023",
+      "name": "Telegram Validation Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1380,
+        200
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, reason: $('Validate Media').item.json._failure_reason || 'validation_failed', content_id: $('Extract Item').item.json.id }) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "b0000000-0000-0000-0000-000000000024",
+      "name": "Respond Validation Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1580,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build PATCH body for incrementing publish_attempts and capturing error.\nconst item = $('Extract Item').item.json;\nconst err = $input.first().json;\nconst attempts = (item.publish_attempts || 0) + 1;\nconst errMsg = (err.error?.message || (typeof err === 'string' ? err : JSON.stringify(err))).slice(0, 1000);\nreturn [{ json: {\n  id: item.id,\n  publish_attempts: attempts,\n  last_error: errMsg,\n  last_attempt_at: new Date().toISOString(),\n  status: attempts >= 3 ? 'failed' : 'approved',\n  _will_retry: attempts < 3\n} }];"
+      },
+      "id": "b0000000-0000-0000-0000-000000000025",
+      "name": "Increment Attempts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/crete_content_queue?id=eq.{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ publish_attempts: $json.publish_attempts, last_error: $json.last_error, last_attempt_at: $json.last_attempt_at, status: $json.status }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "b0000000-0000-0000-0000-000000000026",
+      "name": "Patch Attempts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1380,
+        480
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: 1375806243, text: ($json._will_retry ? '\\u26A0\\uFE0F Crete publish failed (will retry): ' : '\\u{1F6D1} Crete publish PERMANENTLY failed (3 attempts): ') + ($(\\'Extract Item\\').item.json.title || $json.id) + ' | ' + ($json.last_error || '').slice(0, 200) }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "b0000000-0000-0000-0000-000000000027",
+      "name": "Telegram Publish Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1580,
+        480
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, attempt: $json.publish_attempts, will_retry: $json._will_retry, content_id: $json.id, error: ($json.last_error || '').slice(0, 200) }) }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "b0000000-0000-0000-0000-000000000028",
+      "name": "Respond Publish Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1780,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'Crete - Content Publish'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        440,
+        304
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "3f8f56e7-baa1-481d-b18f-026a130ce01f"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Crete - Content Publish'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2160,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "9116ed1b-53f6-4a5a-9963-e378385e7372"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'error'::text, 'Crete - Content Publish'::text, '{{ $execution.id }}'::text, '{{ JSON.stringify({node:\"Validation\"}) }}'::jsonb);",
+        "options": {}
+      },
+      "name": "Heartbeat: Error (Validation)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1630,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "2c3f0713-eb30-4ccc-8436-37faa1ec11d5"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'error'::text, 'Crete - Content Publish'::text, '{{ $execution.id }}'::text, '{{ JSON.stringify({node:\"Publish\"}) }}'::jsonb);",
+        "options": {}
+      },
+      "name": "Heartbeat: Error (Publish)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1830,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "115d67f6-5a38-455d-b82e-1dd28a6616d6"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Content": {
+      "main": [
+        [
+          {
+            "node": "Extract Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Item": {
+      "main": [
+        [
+          {
+            "node": "Validate Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Platform Switch": {
+      "main": [
+        [
+          {
+            "node": "Facebook Post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Instagram Post (Blotato)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LinkedIn Post (Blotato)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Other Platform Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facebook Post": {
+      "main": [
+        [
+          {
+            "node": "FB Restore Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Increment Attempts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FB Restore Fields": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IG Restore Fields": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Other Platform Skip": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status": {
+      "main": [
+        [
+          {
+            "node": "Telegram Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Notify": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn Post (Blotato)": {
+      "main": [
+        [
+          {
+            "node": "LI Restore Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Increment Attempts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LI Restore Fields": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instagram Post (Blotato)": {
+      "main": [
+        [
+          {
+            "node": "IG Restore Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Increment Attempts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Media": {
+      "main": [
+        [
+          {
+            "node": "Validation Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation Failed?": {
+      "main": [
+        [
+          {
+            "node": "Mark Failed (Validation)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Platform Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Failed (Validation)": {
+      "main": [
+        [
+          {
+            "node": "Telegram Validation Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Validation Failed": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Error (Validation)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Attempts": {
+      "main": [
+        [
+          {
+            "node": "Patch Attempts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch Attempts": {
+      "main": [
+        [
+          {
+            "node": "Telegram Publish Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Publish Failed": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Error (Publish)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        [
+          {
+            "node": "Get Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Success": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Error (Validation)": {
+      "main": [
+        [
+          {
+            "node": "Respond Validation Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Error (Publish)": {
+      "main": [
+        [
+          {
+            "node": "Respond Publish Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true,
+    "errorWorkflow": "7kpNnMtnuDWXgWcX"
+  }
+}

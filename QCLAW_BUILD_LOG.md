@@ -3489,3 +3489,138 @@ alerter works. Noise self-resolves as each batch lands.
     MB DB savings. Defer until Sub-project C lands and real volume
     can be measured.
 
+---
+
+## 2026-05-05 — Phase 4 Slice 0 Sub-project B Batch 1: Trading + Crete heartbeats
+
+Replaced Telegram-`Heartbeat` nodes with Postgres-RPC heartbeats per
+HEARTBEAT_PATTERN.md across the Trading Market Scanner cluster + the 3
+Crete workflows. Per Sequence Y Option B: per-fire Telegram pings are
+gone; observability moves to `workflow_heartbeats`; the inverse-alerter
+from Batch 0 handles "alert when silent." Latent Crete `continueOnFail
+= null` bug fixed in the same pass.
+
+**4 workflows updated via PUT /api/v1/workflows/{id}:**
+
+| Workflow ID | Slug | Heartbeat nodes added | Notes |
+|---|---|---|---|
+| `3YahxqOguET3pifj` | trading-market-scanner | Start, Success | Replaced existing `Notify Heartbeat` Telegram (which was already `continueOnFail=true`). Telegram ping per run is gone — observability via heartbeat row + inverse-alerter. |
+| `tnvXFYvODL1PrhJa` | crete-content-generator | Start, Success | The existing `Heartbeat` node was *orphaned dead code* (no inbound, no outbound) — removed. Success heartbeat wired after `Telegram Notify`. |
+| `zXKBjp3yjW2oR2Mj` | crete-content-publish | Start, Success, Error (Validation), Error (Publish) | 4 heartbeats — webhook trigger, success path, two distinct error paths. Existing `Heartbeat` Telegram (mid-graph, between `Telegram Notify` and `Respond`) replaced via surgical `replace_node()` so `Respond` is not orphaned. Fixed latent `continueOnFail=null` bug. |
+| `9kTWhh9PlxMpyMlp` | crete-scheduled-publisher | Start, Success | 6 nodes total (was 5). Fixed latent `continueOnFail=null` bug. |
+
+All heartbeat nodes use the Postgres node + existing `Supabase Postgres
+DB` credential (`qGUxEHfEZkZGdAcZ`), `continueOnFail: true`,
+`retryOnFail: true` 2× / 2 s. SQL calls `record_heartbeat()` directly
+with `(workflow_id, status, workflow_name, execution_id [, metadata])`.
+Idempotency: same `(workflow_id, execution_id)` pair on start + terminal
+upserts in place to one row per execution.
+
+**Two same-class bugs hit and fixed mid-flight:**
+
+1. **First Batch 1 PUT shipped `'{ $workflow.id }'`** (single braces). I
+   built the SQL via `str.format()` to substitute the workflow name;
+   that collapsed n8n's `{{ ... }}` expression markers to single braces
+   (Python `{{` is the escape sequence for a literal `{`). The
+   workflows would have written rows with `workflow_id="{ $workflow.id }"`
+   literally — same class as Batch 0's `=`-prefix bug, just a
+   different layer collapsing the syntax. Caught by post-PUT inspection
+   before any natural fire under the buggy code.
+2. **Fix:** abandon `str.format()` and f-strings entirely for n8n SQL
+   templates. Build by plain string concatenation. Same fix-direction
+   as Batch 0 (don't put another layer between us and n8n's expression
+   parser).
+
+**Process notes:**
+
+- **Surgical graph rewriting.** crete-pub's old `Heartbeat` was *between*
+  `Telegram Notify` and `Respond`. A naive `remove(Heartbeat)` followed
+  by `insert_after(Telegram Notify, new_node)` orphans `Respond`.
+  Wrote a `replace_node(wf, old_name, new_node)` helper that captures
+  both incoming + outgoing edges of `old_name`, removes it, then splices
+  `new_node` in at the same graph position with both sets of edges
+  inherited. Pattern is reusable for Batches 2-5.
+- **Pre-flight rule held.** `git fetch origin && git status` was 0/0
+  ahead/behind before the commit; clean push.
+- **File-naming convention.** New canonical JSONs use the hybrid
+  `<id>-<slug>.json` pattern flat under `n8n-workflows/` per Tyson's
+  Sub-project-B decision. The existing slug-only files (`crete-content-
+  generator.json` etc.) are now stale snapshots; rather than delete
+  them in this batch, leaving for now and will refresh / rationalise
+  in a single sweep after Batch 5 lands.
+
+## Architectural notes for Phase 4 review
+
+Three same-class incidents this overhaul, all "n8n expression syntax
+got mangled by a layer above":
+
+1. **Supabase default-privilege regression** (Batch 0). `revoke all
+   from public` on a `SECURITY DEFINER` function does not undo
+   per-role grants from `alter default privileges`. Anon ended up with
+   EXECUTE despite the migration's intent. **Class:** Supabase's
+   default privilege machinery sits *under* our migration's `revoke`,
+   so we lost a security guarantee silently. **Phase 4 implication:**
+   any new `SECURITY DEFINER` function migration needs a `pg_proc`
+   /`information_schema.routine_privileges` post-condition assertion
+   in the migration itself. Don't trust `revoke from public` alone.
+2. **n8n `=`-prefix in fixed-mode SQL field** (Batch 0). I wrote
+   `'={{ $workflow.id }}'`, intending the `=` as an expression-mode
+   marker. n8n's `=` prefix is a *whole-field* mode flag, not a
+   per-segment marker. Inside a fixed-mode field, `=` is just `=`.
+   Result: rows with `workflow_id='=O5ir2Mp0e2AXkUXZ'`. **Class:**
+   n8n's expression syntax has two modes (whole-field vs embedded
+   `{{...}}`); the `=` token has different meanings in each.
+3. **Python `{{` brace escape collapsing n8n syntax** (Batch 1).
+   `str.format()` and f-strings both treat `{{` as a literal-`{`
+   escape. When templating SQL, n8n's `{{ $workflow.id }}` collapses
+   to `{ $workflow.id }` and stops being interpolated. **Class:**
+   Two layers of templating (Python str.format → n8n expression
+   parser) with overlapping syntax (`{{` means different things to
+   each).
+
+**Common thread:** every layer in the path from Claude → Python →
+n8n JSON → n8n runtime has its own escape/expression syntax, and
+collisions happen silently. Phase 4 design lever: a single
+canonical "n8n SQL template" generator that hides the gotchas
+behind a typed API, e.g. `pg_heartbeat_sql(status, wf_name,
+metadata=None)` that always emits correct n8n syntax with no string
+interpolation. Then every batch's heartbeat node generation uses
+that one helper, and the gotchas can't recur.
+
+These are reviewer notes, not blockers for Batches 2-5. Captured for
+when Charlie 2.0's bootstrap probe / dashboard layer needs to
+generate or read n8n syntax.
+
+**Files changed:**
+
+- `n8n-workflows/3YahxqOguET3pifj-trading-market-scanner.json`
+- `n8n-workflows/tnvXFYvODL1PrhJa-crete-content-generator.json`
+- `n8n-workflows/zXKBjp3yjW2oR2Mj-crete-content-publish.json`
+- `n8n-workflows/9kTWhh9PlxMpyMlp-crete-scheduled-publisher.json`
+- `HEARTBEAT_PATTERN.md` — adds Postgres-node variant (now preferred)
+  and the brace-collapse / `=`-prefix gotchas as inline guardrails.
+
+**Verification:**
+
+- 4 PUTs returned 200 with `active=true`. Post-PUT GET confirms the
+  new SQL strings have correct `'{{ $workflow.id }}'` interpolation
+  syntax (no leading `=`, double braces preserved).
+- Natural fires expected: `crete-sched` 17:00 UTC; `crete-pub`
+  triggered by `crete-sched`; `scanner` 18:00 UTC (Tue cron is every
+  2h on the hour); `crete-gen` daily at 08:00 UTC tomorrow.
+- Per Tyson's "defer testing for mutating workflows" rule:
+  verification on natural fires only. `crete-gen` verification
+  defers to next session.
+
+**Out of scope (deferred to later batches):**
+
+- Batches 2-5 (GHL Marketing 5 / Mission-critical 5 / Misc 4 /
+  Dormants 4).
+- Slug-only file rationalisation across the whole `n8n-workflows/`
+  dir (one sweep after Batch 5).
+- Telegram-per-fire pings now removed for the Trading + Crete
+  cluster — Tyson loses real-time "scanner just ran" Telegram
+  visibility. Compensated by inverse-alerter (silence-detection),
+  but if Tyson misses the per-fire confirmation, easy to re-add a
+  branch off `Heartbeat: Success` to a Telegram node.
+
