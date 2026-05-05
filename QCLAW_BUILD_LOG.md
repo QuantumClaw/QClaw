@@ -2978,7 +2978,7 @@ Notable findings during cluster review:
 
 Work list additions (cumulative tracking):
 
-7. Schedule timezone cluster-sweep correction (post-cluster-11, 11 clusters)
+7. **Schedule timezone cluster-sweep correction (post-cluster-12) — 14+ workflows confirmed affected, with per-workflow override option observed.** n8n evaluates cron in America/New_York not UTC despite node names declaring UTC; affects at least 14 workflows across 5 clusters (Crete + Flow OS GHL Marketing + Tyson personal brand LinkedIn + Tyson personal brand Instagram + Flow OS Infographics). **Per-workflow timezone override observed 2026-05-05** — `Flow Os Blog Post` workflow (`TOvwXSwlXasDgsXL`) has `settings.timezone: "Europe/Athens"` which overrides n8n's global default. Cluster-sweep correction pass must consider per-workflow `settings.timezone` overrides as a fourth option alongside (a) rename nodes for accuracy, (b) compensate cron expressions, (c) change n8n global timezone config (cleanest); (d) standardise on per-workflow `settings.timezone` overrides where a workflow needs non-default scheduling. Decision pending sweep.
 
 - Process rule for skill file maintenance — proposed addition to CLAUDE_CODE_OPERATING_RULES.md: any system change touching functionality documented in a skill file must update the skill file in the same commit
 
@@ -3188,3 +3188,29 @@ Work list addition:
 22. **Postgres credential audit — `qGUxEHfEZkZGdAcZ` "Supabase Postgres DB" target verification.** Both Cross-cutting cluster refreshers use this credential. Cluster 7's Morning Light entry described its main-workflow Postgres node as "n8n internal" per Tyson 2026-05-04, but the refresher workflows use a credential named "Supabase Postgres DB". Need to confirm whether this credential ID resolves to external Supabase (matching the credential name) or n8n's internal Postgres (matching cluster 7's note). `LOCATIONS.md` clarification dependent on this audit — current entry says "n8n internal Postgres database" is a hidden architectural dependency, but if `qGUxEHfEZkZGdAcZ` is also used by the refreshers and points to external Supabase, the LOCATIONS entry needs nuance. Small probe: open the credential in n8n UI, confirm the connection string host. Bundle with the V1/V2/V3 cleanup dispatch.
 
 Pre-slice progress: N8N_WORKFLOW_INDEX.md cluster 8 of 11 complete. 3 clusters remain.
+
+## [2026-05-05] Charlie Overhaul — N8N_WORKFLOW_INDEX.md add Blog + Infographics + Content Studio clusters (clusters 9-11 of 12)
+
+Three single-workflow clusters in one commit, each with its own `##` cluster section. Total cluster count clarified: **12, not 11** — the original prose "11 categories identified in the discovery audit" in the Categories index has been off-by-one since cluster 1; fixed in this commit to "12 categories". The categories table itself has had 12 rows from the start. Cluster numbering recalibration: Various utilities and standalone is now cluster 12 of 12 (was tracked as "of 11" in prior commits' messages — historical record preserved).
+
+Format conventions from prior 8 clusters applied cleanly. Categories table updated for all 3 rows (Flow OS Blog, Flow OS Infographics, FSC Content Studio: pending → documented).
+
+Notable findings during cluster review:
+
+- **Per-workflow timezone setting observed for the first time** in `Flow Os Blog Post` (`TOvwXSwlXasDgsXL`). `settings.timezone: "Europe/Athens"` overrides n8n's global NY default. First counter-example to the cluster-wide NY-timezone observation. Work-list item 7 updated in same commit to reflect the new fourth correction option.
+
+- **API unreliability hits all 3** — discovery audit reported 2/16/2 execs/7d for Blog/Infographics/Content Studio respectively. Today's probe reports 0/0/0. Continues the work-list item 19 pattern across all 8 commits' worth of probes. Item 19 Phase-4-Slice-1 blocker status remains.
+
+- **Misleading commit-message history surfaced.** Commits `e4ad82c` "feat(content-studio): add Cap Hashtags node…" and `bdc0e6f` "fix(content-studio): force JPEG output…" (both 2026-04-29) used `content-studio` prefix but the actual modified workflow was the **Flow OS Infographics V2** (`kJ2EdkOeEAwVbMwU`), NOT Content Studio Pipeline. Worth flagging as historical record — when the build log or skill files are reconciled, treat those two commits as touching Infographics, not Content Studio.
+
+- **Content Studio is the only cluster with a named specialist owner** (Content Studio Operator per `FLOW_OS_SPECIALISTS.md`). 8 of 12 clusters have None — Tyson directly. As Charlie 2.0 specialist scaffolding ships in Phase 4 Slice 6, more clusters will get specialist owners.
+
+- **LLM stack diversity continues** — Blog + Infographics use OpenAI; Content Studio uses Anthropic. Pattern matches LinkedIn cluster's OpenAI usage and the Flow OS marketing/Trading/Crete/GHL Marketing Anthropic ecosystem.
+
+- **Naming inconsistency** "Flow Os" (lowercase 'o') in two workflow names — joins V1/V2/V3 cleanup sweep (work-list item 9).
+
+- **Content Studio's Clipper integration** confirmed at workflow level — `Generate Clips` httpRequest targets `138.68.138.214:4002` (the qclaw clipper-worker PM2 process). Confirms the architecture documented in `FLOW_OS_SPECIALISTS.md` Content Studio Operator entry that Clipper is an internal sub-component.
+
+**Work-list item 7 updated in same commit** — folded the per-workflow `settings.timezone` observation into item 7's canonical text. Affected workflow count remains 14+; correction option set expands from 3 to 4. Original creation-point line in QCLAW_BUILD_LOG.md updated; prior eod-summary references in this file remain as historical snapshots.
+
+Pre-slice progress: N8N_WORKFLOW_INDEX.md clusters 9 + 10 + 11 of 12 complete. **1 cluster remains: Various utilities and standalone (10 workflows including reclassified intake-kylie-content-system).**

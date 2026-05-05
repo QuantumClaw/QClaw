@@ -22,7 +22,7 @@ This file is the sixth canonical doc Charlie reads at session start, after `CEO_
 
 ## Categories index
 
-11 categories identified in the discovery audit (2026-05-04). Status legend: `documented` = full entries written, `pending` = entries to come.
+12 categories identified in the discovery audit (2026-05-04). Status legend: `documented` = full entries written, `pending` = entries to come.
 
 | Category | Workflow count | Status |
 |---|---|---|
@@ -34,9 +34,9 @@ This file is the sixth canonical doc Charlie reads at session start, after `CEO_
 | Tyson personal brand — Instagram | 3 | documented |
 | Flow OS — Client integrations | 2 | documented |
 | Cross-cutting + token refresh | 3 | documented |
-| Flow OS Blog | 1 | pending |
-| Flow OS Infographics | 1 | pending |
-| FSC Content Studio | 1 | pending |
+| Flow OS Blog | 1 | documented |
+| Flow OS Infographics | 1 | documented |
+| FSC Content Studio | 1 | documented |
 | Various utilities and standalone | 10 | pending |
 
 Total: 46 active workflows.
@@ -680,6 +680,69 @@ Cluster-level findings:
 - **Known issues:** **Archive approved by Tyson 2026-05-05** — bundle with V1/V2/V3 cleanup sweep dispatch (work-list item 9). Cross-workflow Execute search confirmed zero references across all 75 workflows; no other workflow affected by archiving. Recent `updatedAt` (Apr 20) was likely metadata-only (tag/reorder), not functional change. **Recommendation:** deactivate (do not delete — preserve for archaeological reference). The Slack-notification path is a useful precedent if Tyson ever wants Slack alerts on token-refresh events for the working refreshers, but the rest is not load-bearing.
 - **Last verified:** 2026-05-05
 - **Notes:** `createdAt: 2025-10-04T11:43 UTC`, `updatedAt: 2026-04-20T14:50 UTC`. Talks to: GHL via `services.leadconnectorhq.com`, Slack (`hooks.slack.com`). **No skill file**.
+
+---
+
+## Flow OS Blog cluster
+
+1 workflow. Belongs to **Flow OS** marketing.
+
+### Flow Os Blog Post
+
+- **ID:** `TOvwXSwlXasDgsXL`
+- **Belongs to:** Flow OS (marketing — separate from Flow OS GHL Marketing cluster which targets the GHL Support Specialist product; this one is general Flow OS blog content per `FLOW_OS_STATE.md` Section 4)
+- **Specialist owner:** None — Tyson directly. (No agent specialist exists for Flow OS Blog. Cross-reference: `FLOW_OS_STATE.md` Section 4 — "Flow OS — Blog posting: Live (separate workflow from Support Bot and Infographics); Scope: Flow OS marketing only".)
+- **Trigger:** `scheduleTrigger` "Schedule Trigger1" with **interval-based** schedule `daysInterval: 3, triggerAtHour: 9, triggerAtMinute: 1` — fires every 3 days at 09:01. **Workflow has explicit `settings.timezone: "Europe/Athens"`** — fires at 09:01 Athens time = 06:01 UTC. **First per-workflow timezone override observed in the index** — see cluster-level finding below + work-list item 7 update.
+- **Purpose:** Three-day-cadence SEO blog post generator + publisher to the Flow OS HighLevel blog. `Perplexity SEO Research` (httpRequest to `api.perplexity.ai`) gathers current trend and SEO data, `Extract Trend & SEO Data` (code) shapes findings, `SEO-Optimized Blog Writer` (chainLlm with `OpenAI Chat Model` lmChatOpenAi) generates the post, `Parse Blog JSON` (code) extracts structured fields. Image generation: `Generate SEO Image (Nano Banana Pro)` calls `fal.run` (Nano Banana Pro is a fal.ai model), `Extract Image URL from fal.ai` + `Preserve Image Data` shape it. Image upload to GHL: `Get Blog Folder` queries GHL for the blog asset folder, `Merge Folder & Image Data`, `Extract Folder ID`, `Download Image Binary`, `Prepare Binary Upload`, `Upload Image to High Level`, `Extract Image URL`. Blog publication: `Merge Blog & Image`, `Schedule & Format Content`, `Format Tags`, `Validate Blog Data`, `Get Categories`, `Extract Category ID`, `Merge Category & Blog Data`, `Prepare Blog Payload`, `Publish to High Level` (httpRequest to `services.leadconnectorhq.com`). Output logging: `Prepare Sheets Data` + `Format Sheets Row` + `Append Row in Sheet` (Google Sheets), `Send Sheets Data Email` (httpRequest), `Output Sheets Data`.
+- **Heartbeat:** N
+- **Error workflow:** none.
+- **Recent activity:** **Discrepancy flagged for cluster-sweep verification (work-list item 19).** Discovery audit (2026-05-04) reported 2 executions/7d. Today's probe (2026-05-05) reports 0 in last 7d AND 0 in entire 100-row API window. Same workflow, same API, 24h gap. Most likely the executions-history API unreliability — workflow probably fired as expected (~2 fires in 7 days at every-3-days cadence); the API just isn't returning rows. UI cross-check needed.
+- **Bucket:** S (low-frequency content automation; failure non-urgent)
+- **Known issues:** **Per-workflow timezone setting** is the standout finding — `settings.timezone: "Europe/Athens"` overrides n8n's global NY default. **First counter-example to the cluster-wide NY-timezone observation** tracked under work-list item 7. Implication: cluster-sweep timezone correction now has a fourth option (use per-workflow timezone overrides where non-default scheduling is needed) — see work-list item 7 update in this commit. **API execution count discrepancy** (work-list item 19). **Naming inconsistency:** workflow named "Flow Os Blog Post" with lowercase "Os" — minor, joins V1/V2/V3 cleanup sweep (work-list item 9). No heartbeat/errorWorkflow.
+- **Last verified:** 2026-05-05
+- **Notes:** `createdAt: 2025-07-14T11:09 UTC`, `updatedAt: 2026-03-26T08:48 UTC` — has not been touched in nearly 6 weeks. 30 nodes total. Talks to: Perplexity (`api.perplexity.ai`), OpenAI (chainLlm + lmChatOpenAi nodes), fal.run (Nano Banana Pro image gen), GHL via `services.leadconnectorhq.com` (HighLevel blog endpoint), Google Sheets (logging). LLM stack diverges from ecosystem default (Anthropic) — uses OpenAI like LinkedIn cluster. **No skill file**.
+
+---
+
+## Flow OS Infographics cluster
+
+1 workflow. Belongs to **Flow OS** marketing.
+
+### Infographic Social Media Machine V2 - Flow Os
+
+- **ID:** `kJ2EdkOeEAwVbMwU`
+- **Belongs to:** Flow OS (marketing — separate from Flow OS GHL Marketing cluster which targets the GHL Support Specialist product; this is the multi-platform infographic distribution engine for Flow OS general marketing per `FLOW_OS_STATE.md` Section 4)
+- **Specialist owner:** None — Tyson directly. (Cross-reference: `FLOW_OS_STATE.md` Section 4 — "Flow OS — Infographics: Live (separate automation from Support Bot); Scope: Flow OS marketing only".)
+- **Trigger:** `scheduleTrigger` "Schedule Trigger" with **interval-based** schedule `daysInterval: 3, triggerAtHour: 9` — fires every 3 days at 09:00. **No explicit `settings.timezone` override** — fires at 09:00 NY = 13:00 UTC per the cluster-wide NY-timezone observation. Joins cluster-sweep work-list item 7.
+- **Purpose:** Three-day-cadence infographic generator + multi-platform distribution. `Content Pillar Rotation` (code) selects a rotating content theme, `AI Research - Industry Stats` + `AI Research - Flow Os Brief` (Perplexity nodes) gather grounded research, `AI Writer - Content Generator` (OpenAI) writes the infographic copy, `Build Variation 1 Prompt` (code) shapes the image prompt, `Generate Image - Variation 1` (httpRequest to `fal.run`) generates the infographic image, `Format Overlay Result` + `Convert Base64 to Binary` + `Process Image URL` shape the image asset. Approval flow: `Prepare Content for Approval` + `Send to Slack for Approval` posts the draft to Slack for review. Distribution: `Cap Hashtags` (code — recently added per commit `e4ad82c` 2026-04-29 "feat(content-studio): add Cap Hashtags node to enforce IG 5-hashtag limit"; commit message is **misleading** — that change touched THIS workflow, not Content Studio Pipeline) + 6 parallel Blotato distribution nodes: `Twitter [BLOTATO]`, `Instagram [BLOTATO]`, `Facebook [BLOTATO]`, `Youtube [BLOTATO]`, `Linkedin [BLOTATO]`, `Tiktok [BLOTATO]`. Result handling: `Collect Post Results` (merge), `Any Errors?` (IF), `Send Error Notification` (Slack) on failure, `Send Success Notification` (Slack) on success, `Log to Google Sheets` for audit trail. `Cost Per Run` code node tracks API costs.
+- **Heartbeat:** N
+- **Error workflow:** none. (Slack catch-all on errors is workflow-internal, not standard pattern.)
+- **Recent activity:** **Discrepancy flagged for cluster-sweep verification (work-list item 19).** Discovery audit (2026-05-04) reported 16 executions/7d — most active of the 3 single-workflow clusters per discovery. Today's probe (2026-05-05) reports 0 in last 7d AND 0 in entire 100-row API window. Same workflow, same API, 24h gap. Most likely the executions-history API unreliability. UI cross-check needed.
+- **Bucket:** M (high-volume Flow OS marketing distribution; multi-platform; failure has compound visibility impact across 6 platforms)
+- **Known issues:** **Schedule timezone naming mismatch** — fires at 09:00 NY (= 13:00 UTC) despite no UTC-claim in node name. Joins cluster-sweep work-list item 7. **API execution count discrepancy** (work-list item 19). **Misleading recent-commit message:** commit `e4ad82c` "feat(content-studio): add Cap Hashtags node…" was actually a change to THIS workflow (Infographic V2), not Content Studio Pipeline. Same for commit `bdc0e6f` "fix(content-studio): force JPEG output…" which also touched this workflow's image-generation path. The commits' `content-studio` prefix is wrong; bundle as a build-log historical-record correction note. **Naming inconsistency:** "Flow Os" lowercase 'o' in workflow name — joins V1/V2/V3 cleanup sweep (work-list item 9). The "V2" suffix implies a V1 predecessor exists — discovery audit found inactive `E4PDhQyrGbd8lAQi` "Master MLM avatar social media machine V1" as candidate predecessor (also surfaced in cluster 7 inactive-sweep). No heartbeat/errorWorkflow despite being mission-critical.
+- **Last verified:** 2026-05-05
+- **Notes:** `createdAt: 2026-01-13T23:14 UTC`, `updatedAt: 2026-04-29T18:59 UTC` — recently touched (Apr 29) by the Cap Hashtags + JPEG fix commits. 25 nodes total. Talks to: Perplexity (`api.perplexity.ai`), OpenAI, fal.run (image gen), Slack (approval + alerts), Google Sheets (logging), Blotato (6 platforms). LLM stack: OpenAI (matches Flow OS Blog Post). **No skill file**.
+
+---
+
+## FSC Content Studio cluster
+
+1 workflow. Belongs to **Flow States Collective** — Emma's podcast pipeline.
+
+### Content Studio Pipeline
+
+- **ID:** `Qf39NEOEgz2W0uls`
+- **Belongs to:** Flow States Collective (Emma's podcast pipeline only per `FLOW_OS_SPECIALISTS.md`)
+- **Specialist owner:** **Content Studio Operator** (per `FLOW_OS_SPECIALISTS.md` — the only entry in this index whose specialist owner is named, not "None"). Cross-reference: `FLOW_OS_SPECIALISTS.md` Content Studio Operator entry + `FLOW_OS_STATE.md` Section 4 — "FSC — Emma's podcast pipeline (Content Studio): Status: Active; Last episode: Shipped via Claude Code direct upload (bypassed dashboard due to file size); Known issue: Large file upload fails through Content Studio dashboard. Workaround: Claude Code direct upload."
+- **Trigger:** `webhook` POST `/webhook/content-studio-pipeline` (responseMode: `responseNode`).
+- **Purpose:** End-to-end Emma podcast distribution pipeline — the most complex workflow in the index (38 nodes). Webhook receives episode metadata + R2 file key from the dashboard upload (or Claude Code direct upload as workaround). Job tracking: `Create Job Record` (httpRequest to Supabase), `Notify Start` (httpRequest to Telegram). Buzzsprout upload: `Generate R2 Presigned URL` (code), `Upload to Buzzsprout` (httpRequest to `www.buzzsprout.com`), `Save Buzzsprout ID` (Supabase). Transcription: `Send to AssemblyAI` (httpRequest to `api.assemblyai.com`), polling loop via `Wait 30s Initial` + `Poll AssemblyAI` + `Check Transcript Status` (IF) + `Wait 15s Retry` until transcript completes. Multi-platform content generation: `Generate Blog Post` (Anthropic) + `Convert to HTML` + `Post to WordPress` (httpRequest to `flowstatescollective.com`); `Generate Substack Draft`; `Generate LinkedIn Post` + `Build LinkedIn Payload` + `Create post` (Blotato); the standalone `Post to LinkedIn` httpRequest is **DISABLED** (LinkedIn route went via Blotato instead). YouTube upload: `YouTube Init Upload` + `Download Video` + `Upload to YouTube` (multi-step Google APIs flow), `Wait 5s` + `Wait 3s` for processing. Clipper integration: `Extract Highlight Timestamps` (code), `Select Clip Segments` (httpRequest), `Parse Clip Selections`, `Generate Clips` (httpRequest to `138.68.138.214:4002` — the qclaw clipper-worker PM2 process per `LOCATIONS.md`), polling loop `Wait 10s Clip Poll` + `Poll Clip Status` + `Clip Done?` (IF) + `Wait 10s Retry`, `Save Clip URLs` to Supabase. Final notification: `Update Job Record`, `Merge Before Notify`, `Notify Complete` (Telegram), `Respond to Webhook`.
+- **Heartbeat:** N (job-record state in Supabase + Telegram completion message provide partial observability — closest thing to heartbeat in the workflow).
+- **Error workflow:** none.
+- **Recent activity:** **Discrepancy flagged for cluster-sweep verification (work-list item 19).** Discovery audit (2026-05-04) reported 2 executions/7d. Today's probe (2026-05-05) reports 0 in last 7d AND 0 in entire 100-row API window. Most likely the executions-history API unreliability. UI cross-check needed. Per `FLOW_OS_STATE.md` Section 4: "Last episode: Shipped via Claude Code direct upload (bypassed dashboard due to file size)" — so episodes ARE shipping, just outside the standard webhook flow when files are too large.
+- **Bucket:** M (Emma's full podcast distribution; failure means an episode goes to Buzzsprout but doesn't reach blog/Substack/LinkedIn/YouTube/clips — partial-platform shipping)
+- **Known issues:** **Large file upload bypass** — per `FLOW_OS_STATE.md` Section 4 known issue: "Content Studio dashboard fails on large file uploads. Workaround: Claude Code direct upload. Resolution pending." Episodes >some-threshold can't be uploaded through the dashboard's standard webhook path — Tyson uploads directly via Claude Code instead. **YouTube auto-publish carparked** per state doc: "YouTube auto-publish: parked. Awaiting Emma to test pipeline end-to-end." Workflow has the YouTube nodes wired but they may be in test/preview mode. **Confusing commit-message history:** commits `e4ad82c` "feat(content-studio): add Cap Hashtags node…" and `bdc0e6f` "fix(content-studio): force JPEG output…" (both 2026-04-29) used `content-studio` prefix but actually modified the **Flow OS Infographics V2** workflow (`kJ2EdkOeEAwVbMwU`), NOT this Content Studio Pipeline. Worth surfacing as historical record correction. No heartbeat/errorWorkflow standard pattern. **API execution count discrepancy** (work-list item 19).
+- **Last verified:** 2026-05-05
+- **Notes:** `createdAt: 2026-03-31T13:58 UTC`, `updatedAt: 2026-04-28T18:14 UTC` — last touched ~1 week ago. 38 nodes total — most complex workflow in the index. Talks to: Anthropic (`api.anthropic.com`), AssemblyAI (`api.assemblyai.com`), Buzzsprout (`www.buzzsprout.com`), WordPress (FSC site), Blotato, YouTube (Google APIs), Telegram (`api.telegram.org`), Supabase (`fdabygmromuqtysitodp.supabase.co` — main QClaw Supabase, NOT the LinkedIn cluster's secondary), qclaw clipper-worker (`138.68.138.214:4002`). LLM stack: Anthropic — matches ecosystem default. **Skill file:** `content-studio.md` exists per Phase 2 audit but is a 440-byte stub; should be rebuilt from `FLOW_OS_SPECIALISTS.md` Content Studio Operator entry per Phase 4 Slice 2 reconciliation work-list item 6. **Architectural note:** Content Studio Operator's relationship with Clipper is documented in `FLOW_OS_SPECIALISTS.md` — Clipper is an internal sub-component of Content Studio Operator scope, not a standalone specialist. This workflow's `Generate Clips` httpRequest to qclaw confirms that architecture.
 
 ## Maintenance log
 
