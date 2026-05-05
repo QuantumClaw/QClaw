@@ -541,6 +541,11 @@
       "main": [
         [
           {
+            "node": "RSS Read",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Heartbeat: Start",
             "type": "main",
             "index": 0
@@ -778,13 +783,7 @@
     },
     "Heartbeat: Start": {
       "main": [
-        [
-          {
-            "node": "RSS Read",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "No Relevant Updates \u2014 Stop": {
@@ -801,7 +800,7 @@
   },
   "settings": {
     "executionOrder": "v1",
-    "availableInMCP": false,
+    "availableInMCP": true,
     "callerPolicy": "workflowsFromSameOwner"
   }
 }

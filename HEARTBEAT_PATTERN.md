@@ -161,9 +161,42 @@ Body — error:
 ## Wiring rules
 
 - **Wire heartbeats off always-emits parents** — the trigger node itself (Schedule, Webhook, Manual, Cron), or a node that always fires. Per the existing memo on n8n empty-input behaviour: a heartbeat downstream of a node that may emit zero items will be silently skipped, defeating the whole point.
-- **Branch the start heartbeat on a separate path from the main work.** Don't put it in the main pipeline — that couples its failure to the workflow's failure. Put it on a parallel branch with `Continue (using error output)`.
+- **The Start heartbeat MUST be on a parallel branch off the trigger, never serially interposed.** Treat this as load-bearing — see the "Heartbeat: Start MUST be parallel-branch" section below for the gotcha that makes interposed Start heartbeats break webhook workflows in production.
 - **The terminal-node success heartbeat goes after the last business-critical node**, not after the heartbeat itself. Heartbeats are observability, not state.
 - **Error Trigger workflows or the workflow's own error branch should always end in an error heartbeat.** `partial` is reserved for workflows that explicitly handle "some items succeeded, some failed" (e.g. fan-out batch jobs).
+
+## Heartbeat: Start MUST be parallel-branch (load-bearing)
+
+**The gotcha:** n8n's Postgres node `executeQuery` operation REPLACES the output items with the SQL query result row. If you wire `Heartbeat: Start` serially between the trigger and the first work node — i.e., `Trigger → Heartbeat: Start → Validate → ...` — the trigger payload (webhook headers/body, Telegram message, schedule timestamp) is **lost** at the heartbeat, and downstream nodes that read `$json` see `{id: <uuid>}` instead.
+
+For schedule-triggered workflows whose downstream doesn't read the trigger payload, this is silently fine. For webhook/Telegram-trigger workflows, it breaks the pipeline and the failure mode is invisible: n8n marks executions as `error`, but the dashboard sees `started` heartbeats only and assumes the workflow is just slow. The empty-input rule and the Continue-on-error config don't catch it.
+
+**Anti-pattern (do not do this):**
+
+```
+Trigger ──→ Heartbeat: Start ──→ Validate ──→ ...
+            (Postgres node replaces output with {id: uuid};
+             Validate sees {id: uuid} instead of {headers, body};
+             reads $json.headers['x-signature-256'] → undefined → throws)
+```
+
+**Correct pattern (parallel branch):**
+
+```
+Trigger ──┬──→ Validate ──→ ... ──→ Respond ──→ Heartbeat: Success
+          │
+          └──→ Heartbeat: Start (sink — empty outgoing edges)
+```
+
+`Heartbeat: Start` becomes a side-effect node: it fires concurrently with the main flow, the original trigger payload reaches the validate/processing nodes unchanged, and `continueOnFail: true` ensures a Supabase outage cannot block the workflow.
+
+**Cited incident (2026-05-05 16:43–18:46 UTC):** Sub-project B Batches 1–5 used the wrong wiring for every Start heartbeat across 23 workflows. For 13 schedule-triggered workflows it was silently fine. For 9 webhook/Telegram-trigger workflows it broke production. The Morning Light WL→HL pipeline (a paying client integration, ~24k executions/day) failed 100% for ~5 hours, ~6,500 failed executions. The bug surfaced only when Sub-project C's dashboard showed 0% success rate. Full post-mortem in `QCLAW_BUILD_LOG.md`.
+
+**Rules-as-code enforcement.** Documented patterns aren't enough — the prose for this rule existed in this same file before the incident. The fix landed:
+
+- `n8n-workflows/_tools/b_common.py` provides `parallel_branch_off(wf, trigger_node, hb_node)` — the only correct way to wire a trigger-fed Start heartbeat. The legacy `insert_after()` helper has a comment block warning against using it for trigger-fed Start heartbeats.
+- `validate_start_heartbeats_are_parallel(wf)` is a pre-PUT validator that fails closed on any node whose name starts with `Heartbeat: Start` and has non-empty outgoing edges. Run via `assert_clean_for_put(wf, tag)` before every PUT.
+- `n8n-workflows/_tools/fix_interpose.py` is the idempotent rewrite tool that converts any interposed Heartbeat: Start to parallel-branch. Used to repair the 23 affected workflows post-incident.
 
 ## Idempotency contract
 

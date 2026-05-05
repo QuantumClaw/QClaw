@@ -193,6 +193,11 @@
       "main": [
         [
           {
+            "node": "Check Token Expiry",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Heartbeat: Start",
             "type": "main",
             "index": 0
@@ -242,13 +247,7 @@
     },
     "Heartbeat: Start": {
       "main": [
-        [
-          {
-            "node": "Check Token Expiry",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Slack \u2014 Token Alert": {
@@ -277,6 +276,6 @@
   "settings": {
     "executionOrder": "v1",
     "callerPolicy": "workflowsFromSameOwner",
-    "availableInMCP": false
+    "availableInMCP": true
   }
 }

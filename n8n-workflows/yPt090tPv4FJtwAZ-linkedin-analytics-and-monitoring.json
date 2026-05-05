@@ -682,6 +682,11 @@
       "main": [
         [
           {
+            "node": "Recent Posts Query",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Heartbeat: Start (Analytics)",
             "type": "main",
             "index": 0
@@ -747,6 +752,11 @@
     "Weekly Report Trigger": {
       "main": [
         [
+          {
+            "node": "Weekly Metrics Query",
+            "type": "main",
+            "index": 0
+          },
           {
             "node": "Heartbeat: Start (Weekly)",
             "type": "main",
@@ -847,6 +857,11 @@
       "main": [
         [
           {
+            "node": "System Health Query",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Heartbeat: Start (Health)",
             "type": "main",
             "index": 0
@@ -890,35 +905,17 @@
     },
     "Heartbeat: Start (Analytics)": {
       "main": [
-        [
-          {
-            "node": "Recent Posts Query",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Heartbeat: Start (Weekly)": {
       "main": [
-        [
-          {
-            "node": "Weekly Metrics Query",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Heartbeat: Start (Health)": {
       "main": [
-        [
-          {
-            "node": "System Health Query",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Alert Logger": {

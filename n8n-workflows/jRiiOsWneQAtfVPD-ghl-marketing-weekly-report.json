@@ -226,6 +226,11 @@
       "main": [
         [
           {
+            "node": "Calculate Date Range",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Heartbeat: Start",
             "type": "main",
             "index": 0
@@ -290,13 +295,7 @@
     },
     "Heartbeat: Start": {
       "main": [
-        [
-          {
-            "node": "Calculate Date Range",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Send Report to Telegram": {

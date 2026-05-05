@@ -430,6 +430,26 @@
       "main": [
         [
           {
+            "node": "Fetch Polymarket",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Page 2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Page 3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Page 4",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Heartbeat: Start",
             "type": "main",
             "index": 0
@@ -570,28 +590,7 @@
     },
     "Heartbeat: Start": {
       "main": [
-        [
-          {
-            "node": "Fetch Polymarket",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Fetch Page 2",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Fetch Page 3",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Fetch Page 4",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     }
   },

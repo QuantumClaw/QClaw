@@ -1086,6 +1086,11 @@
       "main": [
         [
           {
+            "node": "Get Next Pending Row",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Heartbeat: Start",
             "type": "main",
             "index": 0
@@ -1095,13 +1100,7 @@
     },
     "Heartbeat: Start": {
       "main": [
-        [
-          {
-            "node": "Get Next Pending Row",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Slack \u2014 Success": {

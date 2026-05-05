@@ -4181,3 +4181,285 @@ four cases: encode the rule as code, not prose. Build validators
 that fail-closed on the bad pattern and run them in the fix
 pipeline.
 
+---
+
+## 2026-05-05 — REGRESSION + FIX: tooling + 13 schedule-only rewires (Phase 4 Slice 0 sub-project B regression fix, part 2)
+
+### What landed (defensive consistency)
+
+Rewired the same interpose→parallel pattern across 13 schedule-only
+workflows + the inverse-alerter, even though they were silently
+fine (their downstreams don't read trigger payload). 14 workflows,
+16 `Heartbeat: Start*` nodes rewired uniformly. No behavioural
+change for any of them — the goal was eliminating mixed wiring so
+every workflow looks the same, and so a future grep/audit doesn't
+have to distinguish "wrong-but-fine" from "wrong-and-broken."
+
+| Workflow ID | Slug | Heartbeat: Start* nodes |
+|---|---|---|
+| `3YahxqOguET3pifj` | trading-market-scanner | 1 |
+| `tnvXFYvODL1PrhJa` | crete-content-generator | 1 |
+| `9kTWhh9PlxMpyMlp` | crete-scheduled-publisher | 1 |
+| `dHceOMijUOcnEowO` | ghl-marketing-scheduled-publisher | 1 |
+| `Awo65rdSe5BvDHtC` | ghl-marketing-content-generator | 1 |
+| `jRiiOsWneQAtfVPD` | ghl-marketing-weekly-report | 1 |
+| `kJ2EdkOeEAwVbMwU` | infographic-social-media-v2 | 1 |
+| `UYA0JppH7eqyI7fQ` | trading-position-monitor | 1 |
+| `44g7cbGz5osQ1pcBVhIoz` | instagram-trial-reels-auto-publisher | 1 |
+| `yPt090tPv4FJtwAZ` | linkedin-analytics-and-monitoring | 3 (Analytics + Weekly + Health) |
+| `vjj2uBIPc07FpIxx` | trading-weekly-analyst | 1 |
+| `cP5TjJ3DFle6r6FC` | instagram-token-expiry-monitor | 1 |
+| `3XGcnolBQ7AXMubO` | ghl-changelog-emails | 1 |
+| `O5ir2Mp0e2AXkUXZ` | workflow-dormancy-alerter | 1 |
+| **14 workflows** | | **16 nodes** |
+
+Combined with part 1 (9 broken webhook/Telegram workflows, 13 nodes
+rewired), **all 23 instrumented workflows are now uniformly wired
+parallel-branch**. 29 total `Heartbeat: Start*` rewires.
+
+### Tooling landed (`n8n-workflows/_tools/`)
+
+Promoted from `/tmp/n8n_inv/` scratch into the canonical repo path
+`n8n-workflows/_tools/`:
+
+- **`b_common.py`** — shared helpers used by all five Sub-project B
+  build scripts. Updated in this commit:
+  - **NEW** `parallel_branch_off(wf, trigger_node, hb_node)` — the
+    only correct way to wire a trigger-fed Start heartbeat. Wires
+    the heartbeat as a parallel sibling of the trigger's existing
+    downstream nodes, with empty outgoing edges (sink). Idempotent.
+  - **NEW** `validate_start_heartbeats_are_parallel(wf)` — fail-
+    closed pre-PUT validator. Returns a list of any node whose name
+    starts with `Heartbeat: Start` AND has non-empty outgoing edges
+    (= still serially interposed, the bug pattern).
+  - **NEW** `validate_all(wf)` — runs every validator, returns
+    {check: failures}.
+  - **NEW** `assert_clean_for_put(wf, tag)` — raises on any validator
+    failure. Use as a hard gate before every PUT.
+  - `insert_after()` retains a prominent docstring warning AGAINST
+    using it for trigger-fed Heartbeat: Start. Validator catches the
+    misuse if anyone forgets the docstring.
+- **`fix_interpose.py`** — idempotent rewrite tool that converts any
+  interposed Heartbeat: Start* to parallel-branch. The tool used to
+  repair the 23 affected workflows post-incident. Reusable for any
+  future workflow that picks up the same bug pattern.
+
+### Validator audit across all 23 instrumented workflows
+
+Ran `validate_all` over every canonical post-fix JSON in
+`n8n-workflows/`:
+
+```
+overall: CLEAN
+  23/23 workflows: no orphans, no brace-collapse, no serially-
+  interposed Heartbeat: Start* nodes.
+```
+
+Three benign sticky-note nodes (`Setup Notes` in meta-ads + bot-
+router, `Unknown Intent Reply` in bot-router, `Tiktok [BLOTATO]`
+in infographic-v2) are excluded from the orphan check — they're
+n8n editor annotations intentionally disconnected from the
+execution graph.
+
+### HEARTBEAT_PATTERN.md updated
+
+Added a load-bearing section "Heartbeat: Start MUST be parallel-
+branch" with:
+- The exact gotcha (n8n Postgres `executeQuery` replaces output
+  items with the SQL query result row).
+- Anti-pattern code block showing the broken wiring.
+- Correct-pattern code block showing the parallel-branch wiring.
+- Citation to the 2026-05-05 incident with date range, blast radius
+  (~6,500 failed executions, ~5 hours), and how it surfaced (only
+  via Sub-project C's dashboard).
+- Pointer to the rules-as-code enforcement
+  (`b_common.parallel_branch_off`, `assert_clean_for_put`,
+  `fix_interpose.py`).
+
+### Architectural lesson, restated
+
+**Documented patterns need lint enforcement, not just docs.** The
+HEARTBEAT_PATTERN.md said "Branch the start heartbeat on a separate
+path from the main work" before this incident; the implementation
+drifted across 23 workflows anyway. Cost: 5 hours of paying-client
+production breakage that surfaced via dashboard symptoms, not via
+the heartbeat system itself.
+
+This is the fourth same-class incident in Sub-project B (a layer
+above silently mangling the layer below). All four are now mitigated
+the same way — encode the rule as code:
+
+| Incident | Layer that bit | Mitigation |
+|---|---|---|
+| Supabase default-grant overrode `revoke from public` | Supabase default privileges machinery | Explicit `revoke from anon` migration; routine_privileges post-condition check on any new SECURITY DEFINER function |
+| n8n `=`-prefix two-mode confusion | n8n expression parser | Inline gotcha note in HEARTBEAT_PATTERN.md; pre-PUT brace-syntax validator (`validate_no_brace_collapse`) |
+| Python `{{` brace-escape collapsed templated SQL | Python str.format / f-string escaping | Same brace-syntax validator catches the symptom; `_q()` helper in `b_common.py` uses plain concatenation only |
+| n8n Postgres `executeQuery` replaced webhook payload | n8n Postgres node behaviour | `parallel_branch_off()` helper + `validate_start_heartbeats_are_parallel` pre-PUT validator |
+
+Going forward: any new pattern in HEARTBEAT_PATTERN.md must ship
+with a corresponding validator in `b_common.py`. Prose-only rules
+will drift; lint-enforced rules won't.
+
+---
+
+## 2026-05-05 — Phase 4 Slice 0 closeout (FINAL — supersedes earlier Sub-project B closeout)
+
+This supersedes the earlier "Sub-project B closeout" entry from
+2026-05-05 — that closeout was written before the post-mortem
+discovery that 9 webhook/Telegram-trigger workflows were silently
+broken in production. The work below is the actual final state.
+
+### What landed across Phase 4 Slice 0
+
+**Sub-project A — Heartbeat infrastructure foundation**
+- `public.workflow_heartbeats` table in Supabase (`fdabygmromuqtysitodp`)
+  with check-constrained status, jsonb metadata, partial unique
+  index for `(workflow_id, execution_id)` upsert idempotency.
+- `record_heartbeat()` SECURITY DEFINER RPC, EXECUTE granted to
+  `service_role` + `authenticated` only (anon revoked, see post-A
+  fix migration `2026_05_05_record_heartbeat_grant_authenticated.sql`).
+- RLS: anon = no access, authenticated = read-only, service_role
+  bypasses.
+- `HEARTBEAT_PATTERN.md` documents the standard wiring + the
+  load-bearing parallel-branch rule for Start heartbeats.
+
+**Sub-project B — 22 workflows instrumented + 1 inverse-alerter**
+- Batch 0 — Workflow Dormancy Alerter (alerts when expected workflows
+  go silent past 2× cadence; 16-entry hardcoded cadence list; sweeps
+  hourly).
+- Batch 1 — Trading Market Scanner + 3 Crete (4 workflows, 10
+  heartbeats; replaced existing Telegram heartbeats; fixed Crete
+  `continueOnFail=null` latent bug; removed orphaned dead-code
+  Heartbeat node in crete-gen).
+- Batch 2 — 5 GHL Marketing workflows (12 heartbeats; multi-trigger
+  pattern on Approval Handler).
+- Batch 3 — 5 mission-critical workflows including Morning Light (17
+  heartbeats; append-after-Respond pattern landed; `_ALLOWED_SETTINGS_KEYS`
+  whitelist landed).
+- Batch 4 — 4 ad-agency + LinkedIn workflows (14 heartbeats; fan-in
+  heartbeat pattern landed; distinct-success-with-metadata for
+  explicit no-work paths).
+- Batch 5 — 4 dormant-recovery workflows (8 heartbeats; deactivate→
+  reactivate cycle; Bot Router live-verified via Tyson's Telegram
+  test at 18:02 UTC).
+- **Regression fix** — discovered 9 of the 22 workflows had been
+  silently broken in production since the Batch 3 PUT due to
+  Heartbeat: Start serial-interpose stripping the trigger payload
+  via Postgres `executeQuery` output replacement. Morning Light
+  ~6,500 failed executions over ~5 hours. Rewired all 23 instrumented
+  workflows (9 broken + 14 schedule-only/alerter cosmetic) to
+  parallel-branch. Live-verified Morning Light end-to-end recovery
+  at 18:52:50 UTC.
+
+**Sub-project C — Kayla iframe migration**
+- `tysonven/n8n-dashboard` repo branch `feat/heartbeat-migration`,
+  PR #1 open. Vercel preview deploy ready; awaiting Tyson's Vercel
+  env-var step (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) before
+  merge. Frontend `dashboard.html` unchanged — backend swap only.
+
+### Final inventory
+
+| Component | Count |
+|---|---|
+| Workflows instrumented | 22 (Sub-project B targets) |
+| Inverse-alerter | 1 |
+| Total instrumented | 23 |
+| Total `Heartbeat: *` nodes wired | 63 |
+| `Heartbeat: Start*` rewired post-regression | 29 (across all 23 workflows) |
+| Latent bugs fixed in passing | 2 (Crete `continueOnFail=null`, orphan dead-code Heartbeat in crete-gen) |
+| Same-class incidents (layer-collision) discovered + mitigated | 4 |
+| Pre-PUT validators added | 3 (orphans, brace-collapse, start-heartbeats-are-parallel) |
+| Tooling files in `n8n-workflows/_tools/` | 2 (`b_common.py`, `fix_interpose.py`) |
+| Migration files in `n8n-workflows/migrations/` | 2 (`2026_05_05_workflow_heartbeats.sql`, `2026_05_05_record_heartbeat_grant_authenticated.sql`) |
+| New work-list items captured | 3 (item 26 Morning Light retention, item 27 empty-input success-skip, the implicit "rules-as-code" lesson for Phase 4) |
+
+### Patterns established (reusable across future workflows)
+
+1. **Postgres node + `record_heartbeat()` RPC** as default transport;
+   HTTP/PostgREST as alternative when no Postgres credential.
+2. **`parallel_branch_off(trigger, hb)`** for trigger-fed Start
+   heartbeats — never `insert_after`.
+3. **Append-after-`Respond`** for webhook-trigger workflows so the
+   webhook caller's HTTP response isn't delayed by the heartbeat
+   write.
+4. **Fan-in heartbeats** for equivalent terminals (one node, multiple
+   incoming edges) — saves nodes when "did the run complete" is the
+   only question.
+5. **Distinct heartbeats with metadata** for explicit no-work paths
+   (e.g. IG Reels `No Pending Posts` → `success` with
+   `metadata.terminal: "no_pending"`). Concrete answer to work-list
+   item 27.
+6. **Distinct named Start heartbeats per trigger** in multi-trigger
+   workflows (`Heartbeat: Start (Telegram)` /
+   `Heartbeat: Start (Dashboard)`). Each trigger fires its own
+   execution_id; idempotency partitions correctly.
+7. **Surgical `replace_node`** for mid-graph swaps (when an existing
+   Telegram-Heartbeat sat between predecessor and Respond).
+
+### Process improvements landed
+
+- `git fetch origin && git status` against origin pre-flight rule
+  applied every batch — clean push throughout.
+- `_ALLOWED_SETTINGS_KEYS` whitelist in `trim_for_put` — n8n's PUT
+  API uses strict-mode JSON schema, rejects unknown keys.
+- Pre-PUT validators: orphan detection, brace-collapse detection,
+  start-heartbeat-parallel-branch detection.
+- Canonical tooling at `n8n-workflows/_tools/b_common.py` —
+  promoted from scratch into the repo for durability.
+- Hybrid `<id>-<slug>.json` naming convention flat under
+  `n8n-workflows/`. Established in Batch 0; held through Batch 5.
+
+### Architectural lesson (the load-bearing one)
+
+**Documented patterns need lint enforcement, not just docs.**
+
+This Sub-project hit four same-class incidents — every layer in the
+pipeline (Python templating → n8n expression → SQL escaping →
+Postgres-node behaviour) silently mangled the layer below. Three of
+the four were caught at PUT-time by validators that landed within
+the Sub-project. The fourth — the Heartbeat: Start serial-interpose
+— had a documented rule in HEARTBEAT_PATTERN.md before the incident,
+and the implementation drifted from it across 23 workflows anyway.
+Cost: 5 hours of paying-client production breakage that surfaced
+only via Sub-project C's dashboard.
+
+The mitigation pattern is uniform: encode the rule as code, not
+prose. Going forward, any new pattern in HEARTBEAT_PATTERN.md must
+ship with a corresponding validator in `b_common.py`. Prose-only
+rules will drift; lint-enforced rules won't.
+
+This lesson goes in to Phase 4 design notes for Charlie 2.0's
+bootstrap probe and dashboard layer — both will be generating /
+reading n8n syntax and Supabase queries at scale, and the same
+bug-class will recur unless validators are baked into the workflows
+that produce the output.
+
+### Open items for next session
+
+- **Sub-project C merge.** PR #1 on `tysonven/n8n-dashboard` awaits
+  Vercel env-var setup (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY)
+  then merge to main. Production dashboard at
+  `n8n-dashboard-one.vercel.app` will start showing real success
+  rates once heartbeat rows accumulate.
+- **Morning Light `saveDataSuccessExecution: 'none'` flip.** Now safe
+  to perform — heartbeat instrumentation gives Charlie's bootstrap
+  probe and the iframe a non-API source for Morning Light health.
+  Held as a separate decision for next session per Tyson.
+- **Heartbeats archive job + Morning Light 14-day retention** (work-
+  list item 26). Defer until ~2 weeks of real-volume data is
+  observable.
+- **Empty-input success-skip handling** (work-list item 27). Concrete
+  pattern landed in Batch 4 (IG Reels distinct-success-with-metadata);
+  may need to apply to schedule-triggered workflows where downstream
+  success path skips on empty input. Defer until dashboard data
+  surfaces specific cases worth handling.
+
+### Phase 4 Slice 0 status: CLOSED
+
+Sub-project A done. Sub-project B done (with regression fixed and
+documented). Sub-project C code done, awaiting Vercel env-var setup +
+merge. Tooling promoted, validators in place, build log captures the
+incident + lesson. Ready for Phase 4 Slice 1 (Charlie 2.0 bootstrap
+probe + canonical doc loading) once Sub-project C merges and the
+Morning Light flip decision is made.
+

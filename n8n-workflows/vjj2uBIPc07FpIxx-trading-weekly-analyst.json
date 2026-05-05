@@ -220,6 +220,11 @@
       "main": [
         [
           {
+            "node": "Fetch Week Trades",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Heartbeat: Start",
             "type": "main",
             "index": 0
@@ -273,13 +278,7 @@
     },
     "Heartbeat: Start": {
       "main": [
-        [
-          {
-            "node": "Fetch Week Trades",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Send Report": {
@@ -297,6 +296,6 @@
   "settings": {
     "executionOrder": "v1",
     "callerPolicy": "workflowsFromSameOwner",
-    "availableInMCP": false
+    "availableInMCP": true
   }
 }
