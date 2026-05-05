@@ -3706,3 +3706,98 @@ Notable patterns:
   is the right hook — out of scope for Sub-project B; bundle with
   the heartbeat + errorWorkflow sweep (work-list item 3).
 
+---
+
+## 2026-05-05 — Phase 4 Slice 0 Sub-project B Batch 3: mission-critical heartbeats
+
+Instrumented 5 mission-critical workflows including the Morning Light
+buffer-eater. 17 new heartbeat nodes total. None of the 5 had existing
+heartbeats (fresh adds per HEARTBEAT_PATTERN.md, Postgres node variant).
+
+| Workflow ID | Slug | Trigger(s) | Heartbeats |
+|---|---|---|---|
+| `Qf39NEOEgz2W0uls` | content-studio-pipeline | Webhook | Start, Success (after Respond) |
+| `kJ2EdkOeEAwVbMwU` | infographic-social-media-v2 | Schedule (every 3 days, 09:00) | Start, Success, Error |
+| `TikJkWLzpreI6iTa` | morning-light-wl-to-hl | Webhook (~24k/day, BUFFER-EATER) | Start, Success (after Respond) |
+| `9VqCAnczY5gFJcRE` | gutful-shopify-to-flow-os-v3 | 2 Shopify webhooks (Customer + Order) | 2× Start, 4× terminal (Success/Error per path) |
+| `UYA0JppH7eqyI7fQ` | trading-position-monitor | Schedule (every 15 min) | Start, Success |
+
+**Pattern refinement landed in Batch 3: append-after-Respond for
+webhook-trigger workflows.** Earlier batches (1+2) used "interpose
+Heartbeat: Success between predecessor and Respond" for webhook
+workflows. n8n's `respondToWebhook` returns the HTTP response
+immediately and *continues* running downstream nodes, so appending
+the heartbeat AFTER Respond keeps webhook-caller latency unchanged —
+the heartbeat fires while the caller is already happy. Critical for
+Morning Light's volume; useful default everywhere. Documented as the
+preferred pattern for webhook workflows; Batches 1+2 left as-is (low
+volume, latency delta is negligible).
+
+**Morning Light safety review (Tyson's concern):**
+
+- `Heartbeat: Start` and `Heartbeat: Success` both have
+  `continueOnFail: true`, `retryOnFail: true`, `maxTries: 2`,
+  `waitBetweenTries: 2000` ms. Worst-case extra wall time per
+  execution if Supabase is fully unreachable: 4 s × 2 nodes = 8 s,
+  then the workflow continues. The webhook caller doesn't see the
+  delay (Heartbeat: Success is downstream of `Respond 200`).
+- No error heartbeat — at 24k/day, an extra Postgres node would cost
+  ~24k more RPC calls/day for marginal value (silence detection is
+  already covered by the inverse-alerter). When Morning Light fails
+  catastrophically, dormancy alerts in 2× cadence = 2 hours.
+- Live volume estimate after rollout: ~48k heartbeats/day from
+  Morning Light alone (24k execs × 2). Confirms the work-list item
+  26 (14-day retention partition for Morning Light specifically) is
+  load-bearing — without it, Morning Light alone produces ~1.4M rows
+  per 30-day retention window.
+
+**Process improvement landed:**
+
+- **`b_common.trim_for_put` now filters settings keys.** Content
+  Studio's PUT was rejected first time with
+  `request/body/settings must NOT have additional properties`
+  because its workflow settings include `timeSavedMode: "fixed"`,
+  which the n8n PUT API doesn't accept (it's allowed in the GET
+  response but not the PUT request schema — strict-mode JSON schema
+  with no `additionalProperties`). Added an `_ALLOWED_SETTINGS_KEYS`
+  whitelist:
+  `executionOrder, saveDataSuccessExecution, saveDataErrorExecution,
+  saveExecutionProgress, saveManualExecutions, callerPolicy,
+  errorWorkflow, timezone, executionTimeout, availableInMCP`. Future
+  batches won't need to discover this per-workflow.
+
+**Verification:**
+
+- 5 PUTs returned 200 (Content Studio after the second attempt with
+  filtered settings), all `active=true`. Post-PUT GET confirms 17
+  new heartbeat nodes with correct `{{ $workflow.id }}`/`{{ $execution.id }}`
+  syntax across all of them.
+- Natural fires (UTC):
+  - `morning-light`: webhook, 24k/day — first fires expected within
+    seconds of next WellnessLiving event
+  - `trading-pos`: every 15 min — next at 16:45 / 17:00 / etc.
+  - `content-studio`: webhook, ad-hoc when content uploaded
+  - `gutful`: webhook, ad-hoc when Shopify event fires
+  - `infographic-v2`: every 3 days at 09:00 UTC — next on whatever
+    cadence offset n8n is on
+- Per Tyson's "defer testing for mutating workflows" rule: no manual
+  fires.
+
+**Files added (5 canonical post-PUT JSONs):**
+
+- `n8n-workflows/Qf39NEOEgz2W0uls-content-studio-pipeline.json`
+- `n8n-workflows/kJ2EdkOeEAwVbMwU-infographic-social-media-v2.json`
+- `n8n-workflows/TikJkWLzpreI6iTa-morning-light-wl-to-hl.json`
+- `n8n-workflows/9VqCAnczY5gFJcRE-gutful-shopify-to-flow-os-v3.json`
+- `n8n-workflows/UYA0JppH7eqyI7fQ-trading-position-monitor.json`
+
+**Out of scope (deferred):**
+
+- Batches 4-5 (4 misc + 4 dormants).
+- Slug-only file rationalisation.
+- Morning Light `saveDataSuccessExecution: 'none'` flip — STILL HELD
+  until Sub-project C (Kayla iframe migration) lands. Now safe to
+  flip whenever C is ready: heartbeat instrumentation gives Charlie's
+  bootstrap probe and the future ops dashboards a non-API source
+  for Morning Light health.
+

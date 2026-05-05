@@ -1,0 +1,1052 @@
+{
+  "id": "kJ2EdkOeEAwVbMwU",
+  "name": "Infographic Social Media Machine V2 - Flow Os",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "daysInterval": 3,
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -9968,
+        1728
+      ],
+      "id": "56e40c6b-114c-46d1-b0c4-36a129a1dd39",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Content Pillar Rotation for Flow Os\n// Rotates through different feature categories to ensure diverse content\n\nconst pillars = [\n  {\n    pillar: \"Client Acquisition\",\n    focus: \"Lead generation, sales funnels, landing pages, and converting prospects into paying clients\",\n    features: [\"Sales Funnels\", \"Landing Pages\", \"Lead Capture Forms\", \"Facebook/Google Ads Integration\", \"Referral Programs\"],\n    painPoints: [\"Struggling to find new clients\", \"Wasting money on ads that don't convert\", \"No system for lead follow-up\", \"Losing leads to competitors\"],\n    benefits: [\"Automated lead nurturing\", \"Higher conversion rates\", \"Consistent client pipeline\", \"ROI tracking on marketing spend\"]\n  },\n  {\n    pillar: \"Automation Power\",\n    focus: \"Email/SMS sequences, appointment reminders, client onboarding, and workflow automation\",\n    features: [\"Email Sequences\", \"SMS Campaigns\", \"Appointment Reminders\", \"Automated Onboarding\", \"Workflow Triggers\"],\n    painPoints: [\"Spending hours on manual follow-ups\", \"Clients forgetting appointments\", \"Inconsistent communication\", \"Repetitive admin tasks\"],\n    benefits: [\"Save 10+ hours per week\", \"Reduce no-shows by 80%\", \"Consistent client experience\", \"Focus on what you do best\"]\n  },\n  {\n    pillar: \"Powerful Integrations\",\n    focus: \"Connecting Flow Os with other tools like Stripe, Calendly, Zoom, Zapier for seamless operations\",\n    features: [\"Stripe/PayPal Payments\", \"Calendar Integrations\", \"Zoom/Telehealth\", \"Zapier/Make Connections\", \"Google/Facebook Sync\"],\n    painPoints: [\"Juggling multiple disconnected tools\", \"Data scattered across platforms\", \"Manual data entry between systems\", \"Missing important information\"],\n    benefits: [\"Everything in one place\", \"Automatic data sync\", \"Unified client view\", \"Streamlined operations\"]\n  },\n  {\n    pillar: \"Client Retention\",\n    focus: \"Membership sites, community features, review collection, and keeping clients engaged long-term\",\n    features: [\"Membership Sites\", \"Community Platform\", \"Review Collection\", \"Reactivation Campaigns\", \"Client Portal\"],\n    painPoints: [\"Clients leaving after first program\", \"No system for collecting testimonials\", \"Difficulty building community\", \"Losing touch with past clients\"],\n    benefits: [\"Increase client lifetime value\", \"Build social proof automatically\", \"Create recurring revenue\", \"Turn clients into advocates\"]\n  },\n  {\n    pillar: \"Time Freedom\",\n    focus: \"Booking automation, invoice automation, unified inbox, and reporting dashboards\",\n    features: [\"Online Booking\", \"Automatic Invoicing\", \"Unified Inbox\", \"Reporting Dashboard\", \"Task Automation\"],\n    painPoints: [\"Drowning in admin work\", \"Chasing payments manually\", \"Messages scattered across platforms\", \"No visibility into business metrics\"],\n    benefits: [\"Reclaim your evenings and weekends\", \"Get paid faster\", \"Never miss a message\", \"Make data-driven decisions\"]\n  },\n  {\n    pillar: \"Revenue Growth\",\n    focus: \"Online courses, payment plans, upsell funnels, and affiliate programs\",\n    features: [\"Course Hosting\", \"Payment Plans\", \"Upsell Funnels\", \"Affiliate Program\", \"Digital Products\"],\n    painPoints: [\"Income limited by available hours\", \"Clients can't afford full payment\", \"Missing upsell opportunities\", \"No passive income streams\"],\n    benefits: [\"Scale beyond 1:1 services\", \"Make premium offers accessible\", \"Maximize client value\", \"Build passive income\"]\n  }\n];\n\n// Rotate based on execution count or date\nconst today = new Date();\nconst dayOfYear = Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000);\nconst pillarIndex = dayOfYear % pillars.length;\nconst selectedPillar = pillars[pillarIndex];\n\n// Also pick a random feature to highlight\nconst featureIndex = Math.floor(Math.random() * selectedPillar.features.length);\nconst highlightedFeature = selectedPillar.features[featureIndex];\n\nreturn {\n  json: {\n    ...selectedPillar,\n    highlightedFeature,\n    pillarIndex,\n    generatedAt: today.toISOString(),\n    allPillars: pillars.map(p => p.pillar)\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9744,
+        1728
+      ],
+      "id": "0302cd1d-6db4-4a5e-a2d7-47abd014ff35",
+      "name": "Content Pillar Rotation"
+    },
+    {
+      "parameters": {
+        "model": "sonar-pro",
+        "messages": {
+          "message": [
+            {
+              "content": "=Research current statistics, challenges, and pain points that health and wellness professionals face in 2026, specifically related to: {{ $json.pillar }}\n\nContext: {{ $json.focus }}\n\nKey areas to research:\n{{ $json.painPoints.map((p, i) => `${i+1}. ${p}`).join('\\n') }}\n\nTarget professionals: Health coaches, personal trainers, nutritionists, wellness spa owners, yoga/pilates instructors, functional medicine practitioners, therapists, chiropractors, fitness studio owners, holistic health practitioners.\n\nProvide:\n1. Specific statistics and percentages about these challenges\n2. Industry data on time/money lost to these problems\n3. Trends in how wellness businesses are solving these issues with technology\n4. Real examples or case studies if available\n\nFocus on BUSINESS OPERATIONS challenges, NOT health/medical topics. We want data that shows why wellness professionals need better business systems and automation.\n\nIMPORTANT: Focus specifically on the {{ $json.pillar }} category and the feature: {{ $json.highlightedFeature }}"
+            }
+          ]
+        },
+        "simplify": true,
+        "options": {
+          "searchRecency": "month"
+        },
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-base.perplexity",
+      "typeVersion": 1,
+      "position": [
+        -9520,
+        1728
+      ],
+      "id": "0787eb91-09fa-47d6-95d2-22fffdf0a080",
+      "name": "AI Research - Industry Stats",
+      "credentials": {
+        "perplexityApi": {
+          "id": "9upQiaSPtmnz7IFj",
+          "name": "Perplexity account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "sonar-pro",
+        "messages": {
+          "message": [
+            {
+              "content": "=# INSTRUCTIONS\n\nYou are creating content for Flow Os, the all-in-one CRM and business automation platform designed specifically for health and wellness professionals. Flow Os helps practitioners streamline their business so they can focus on transforming lives.\n\n## CONTENT PILLAR\nToday's focus: {{ $('Content Pillar Rotation').item.json.pillar }}\nHighlighted feature: {{ $('Content Pillar Rotation').item.json.highlightedFeature }}\n\n## RESEARCH DATA\n<industry_research>\n{{ $('AI Research - Industry Stats').item.json.message }}\n</industry_research>\n\n## YOUR TASK\n\nCreate a compelling narrative that:\n\n1. **Identifies the Core Problem**\n   - Select the most emotionally resonant pain point from the research\n   - Quantify it (hours lost, revenue impact, stress level)\n   - Make it relatable to wellness professionals\n\n2. **Agitate the Problem**\n   - What happens if this problem continues?\n   - What are practitioners missing out on?\n   - How does this affect their clients and mission?\n\n3. **Present Flow Os as THE Solution**\n   - Explain exactly how Flow Os solves this specific problem\n   - Focus on the {{ $('Content Pillar Rotation').item.json.highlightedFeature }} feature\n   - Include specific benefits: {{ $('Content Pillar Rotation').item.json.benefits.join(', ') }}\n\n4. **Provide Proof Points**\n   - Use statistics from the research\n   - Mention typical results wellness pros achieve\n   - Reference the transformation possible\n\n## OUTPUT\n\nWrite a detailed brief (400-600 words) that covers:\n- The specific problem and who faces it\n- Statistics and data supporting the problem's severity\n- How Flow Os's {{ $('Content Pillar Rotation').item.json.highlightedFeature }} feature solves it\n- Tangible benefits (time saved, revenue gained, stress reduced)\n- Why Flow Os is uniquely suited for health/wellness professionals\n\nIMPORTANT: Always refer to Flow Os by name. Do NOT mention competitors like HubSpot, Salesforce, Kajabi, etc. Flow Os is THE solution for wellness professionals."
+            }
+          ]
+        },
+        "simplify": true,
+        "options": {},
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-base.perplexity",
+      "typeVersion": 1,
+      "position": [
+        -9296,
+        1728
+      ],
+      "id": "bb27b1e8-204d-4468-9a23-6df9d72341f3",
+      "name": "AI Research - Flow Os Brief",
+      "credentials": {
+        "perplexityApi": {
+          "id": "9upQiaSPtmnz7IFj",
+          "name": "Perplexity account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=# ROLE\nYou are a senior social media content strategist for Flow Os, the all-in-one CRM and business automation platform built specifically for health and wellness professionals.\n\n# BRAND GUIDELINES\n- **Brand Name:** Flow Os (always capitalize the F and O)\n- **What it is:** All-in-one CRM, marketing automation, and business management platform\n- **Target Audience:** Health coaches, personal trainers, nutritionists, wellness practitioners, fitness entrepreneurs, holistic health professionals\n- **Brand Voice:** Empowering, solution-focused, professional yet approachable, transformation-oriented\n- **Visual Style:** Modern, clean, professional \u2013 Flow Os brand palette (teal, warm beige, charcoal, white, green accent)\n- **Key Differentiator:** Built specifically for health and wellness professionals (not generic business software)\n- **Website:** flowos.tech\n\n# BRAND VISUAL SPEC (for image prompts)\n**Flow Os brand colors \u2013 use these in the infographic:**\n- Primary: Teal #99cccc, Warm Beige #eae5da\n- Secondary: Charcoal grey #333333, White #ffffff\n- Button/accent: #8bc34a\n**Typography:** Heading font: Montserrat Bold. Primary font: Raleway. Headlines large and high-contrast. Minimal text. No script or decorative fonts.\n\n# COMPETITOR POLICY\n**CRITICAL:** NEVER mention, compare to, or reference ANY other CRM, software, or platform by name. This includes but is not limited to: HubSpot, Salesforce, Go High Level, GHL, Kajabi, Kartra, ClickFunnels, Mailchimp, ActiveCampaign, Mindbody, etc. Flow Os is THE solution - present it as the obvious choice, not as an alternative to something else.\n\n# INPUT\n## Content Pillar: {{ $('Content Pillar Rotation').item.json.pillar }}\n## Featured Benefit: {{ $('Content Pillar Rotation').item.json.highlightedFeature }}\n\n## Content Brief:\n<brief>\n{{ $('AI Research - Flow Os Brief').item.json.message }}\n</brief>\n\n# YOUR TASKS\n\n## TASK 1: Create Variation 1 Structured Data (one image only)\nOutput structured data for a single infographic image. We no longer generate two variations; only one image is created and posted. \n\n**CRITICAL TEXT RENDERING RULES:**\n- MINIMIZE TEXT IN THE IMAGE - AI image generators render text poorly; less text = legible text\n- ONLY these text elements are allowed: (1) One SHORT headline at the top, uppercase, 3-5 words; (2) \"flowos.tech\" in the footer. No other words (no \"Flow Os\" in the main area, no color codes, no subtitles).\n- DO NOT include: body copy, statistics, percentages, sentences, labels on icons, calendar text, \"Dashboard\", day names, two-column text sections, left/right text blocks, or any other words\n- Convey the message with ICONS and VISUAL METAPHORS only \u2013 no captions under icons, no UI labels\n- Only TWO text elements in the image: (1) ONE headline at the top, (2) \"flowos.tech\" in the footer. No other text. No subtitles, no description text, no labels, no color codes.\n- Typography: Montserrat Bold for headings, Raleway for any other text. Large headline, high contrast. No script or decorative fonts.\n\n**FLOW OS BRAND COLORS (use in prompts):** Primary: Teal #99cccc, Warm Beige #eae5da. Secondary: Charcoal grey #333333, White #ffffff. Button/accent: #8bc34a. Use this palette for backgrounds, icons, and footer.\n\n**Visual Requirements:**\n- Use 9:16 vertical format (social media stories/reels)\n- Apply the brand color palette above\n- Use icons, illustrations, and visual metaphors only \u2013 no text except headline, brand, and flowos.tech\n- Footer: one dark grey bar at the bottom with white text flowos.tech only\n- Style: Modern, minimalist SaaS marketing graphic, clean and professional\n- NO photos of people \u2013 abstract icons, geometric shapes, simple graphics only\n- Scroll-stopping through VISUAL impact, not text\n\n**Vary the infographic icons every time:** Do NOT always use \"calendar\" as centralIcon. Choose centralIcon to match the pillar and featured benefit: e.g. clock or timer for Automation Power, chart for Revenue Growth, puzzle or link for Integrations, inbox or envelope for Client Retention, calendar for Time Freedom/booking, funnel for Client Acquisition. orbitingIcons must also match the theme\u2014pick 5\u20136 from: clock, document, chart, calendar, refresh, wallet, plus, phone, envelope, gear, inbox, link\u2014and vary the set so each run produces a distinct visual (not the same icon list every time).\n\n**Image (structured data only):** Output only variation1Structured: headline (3\u20135 words, uppercase, e.g. \"EFFORTLESS BOOKING\"), centralIcon (one word, chosen as above), orbitingIcons (array of 5\u20136 one-word icon names that support the headline and central icon). The image is built from a template; do not write a free-form image prompt.\n\n\n## TASK 2: Write Platform-Specific Captions\nAll captions MUST:\n- Mention Flow Os by name at least once\n- Never mention any competitor platforms\n- Focus on the transformation/benefit for wellness professionals\n- Include a soft call-to-action\n- Do NOT include meta-labels in the caption text (e.g. do not write \"Hook:\" or \"POV:\" as a label before a line; write the hook or POV as the first line only, with no label). Use real line breaks for readability; do not use literal backslash-n.\n- Always write in UK/Australian English:\n  - Use \"s\" instead of \"z\" (e.g. customisation, standardised, normalised)\n  - Avoid American spellings and idioms\n\n### FACEBOOK (250-400 words)\n- Open with a relatable question about the pain point\n- Share 2-3 compelling statistics\n- Explain how Flow Os solves this specific problem\n- Include tangible benefits (time saved, revenue potential, stress reduction)\n- End with engagement question + soft CTA\n- Hashtags (3-5): #FlowOs #WellnessBusiness #HealthCoach #BusinessAutomation #WellnessEntrepreneur\n\n### INSTAGRAM (150-250 words)\n- First line = scroll-stopping hook (this shows before \"more\")\n- Problem \u2192 Flow Os Solution \u2192 Transformation structure\n- Use line breaks for easy reading\n- Professional tone (minimal emojis, 1-2 max if any)\n- Mention Flow Os clearly as the solution\n- Hashtags (EXACTLY 5, no more): pick 5 highly relevant tags only.\n  Choose from: #FlowOs #WellnessBusiness #HealthCoachLife \n  #BusinessAutomation #CRMforCoaches #WellnessMarketing \n  #HealthProfessionals #WellnessIndustry \u2014 never more than 5 total.\n\n### TWITTER/X (under 280 characters)\n- Punchy stat or provocative question\n- Quick mention of Flow Os as solution\n- 1-2 hashtags: #FlowOs #WellnessBusiness\n- Make it retweetable\n\n### YOUTUBE (200-350 words)\n- SEO-optimized description\n- Keywords naturally included: wellness business, CRM for health coaches, business automation for wellness, Flow Os\n- Brief overview of what viewers will learn\n- Mention Flow Os and its benefits\n- Hashtags (3-5): #FlowOs #WellnessBusiness #HealthCoachCRM #BusinessAutomation #WellnessEntrepreneur\n\n### LINKEDIN (200-300 words)\n- Professional, industry-insight tone\n- Lead with compelling statistic or trend\n- Position as thought leadership for wellness industry\n- Explain how Flow Os addresses this industry challenge\n- Focus on ROI and business outcomes\n- Encourage professional discussion\n- Hashtags (3-5): #WellnessIndustry #HealthTech #BusinessAutomation #FlowOs #WellnessEntrepreneur\n\n### TIKTOK (100-150 words)\n- First line = scroll-stopping hook (no \"Hook:\" label\u2014just write the hook as the first line)\n- Conversational, direct, slightly playful tone\n- \"POV: You're a wellness pro who just discovered...\" style works well (POV as the line itself is fine; do not add extra labels)\n- Quick problem \u2192 Flow Os solution\n- Mention Flow Os by name\n- Hashtags (max 5): #FlowOs #WellnessBusiness #SmallBusinessTips #HealthCoachTok #EntrepreneurLife \u2014 never more than 5 total.\n\n## TASK 3: Create Title\nShort, punchy title (max 8 words) that captures the main benefit. Should work as infographic headline.\n\n# OUTPUT FORMAT\n\nReturn ONLY valid JSON. We generate one image from your structured data (no free-form image prompt).\n\n```json\n{\n  \"variation1Structured\": {\n    \"headline\": \"EFFORTLESS BOOKING\",\n    \"centralIcon\": \"calendar\",\n    \"orbitingIcons\": [\"clock\", \"document\", \"chart\", \"refresh\", \"wallet\", \"plus\"]\n  },\n  \"captions\": { \"facebook\": \"...\", \"instagram\": \"...\", \"twitter\": \"...\", \"youtube\": \"...\", \"linkedin\": \"...\", \"tiktok\": \"...\" },\n  \"title\": \"Short Catchy Title Here\"\n}\n```",
+              "role": "system"
+            }
+          ]
+        },
+        "simplify": false,
+        "jsonOutput": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -9104,
+        1728
+      ],
+      "id": "df6f7eea-a00d-4689-bfc6-dafcd6573121",
+      "name": "AI Writer - Content Generator",
+      "credentials": {
+        "openAiApi": {
+          "id": "I9np0X3gCWfXpKEf",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build image prompt for Gemini (Nano Banana) - includes headline and footer so Gemini renders text.\nconst inputItem = $input.item.json;\nlet content = inputItem.choices?.[0]?.message?.content;\nif (typeof content === 'string') {\n  try { content = JSON.parse(content); } catch (e) { throw new Error('AI Writer content is not valid JSON: ' + e.message); }\n}\nconst v1 = content.variation1Structured;\nif (!v1 || !v1.headline || !v1.centralIcon || !Array.isArray(v1.orbitingIcons)) {\n  throw new Error('Missing variation1Structured (headline, centralIcon, orbitingIcons). Got: ' + JSON.stringify(v1));\n}\nconst icons = v1.orbitingIcons.slice(0, 6).join(', ');\nconst headline = String(v1.headline).trim();\nconst variation1Prompt = `Vertical 4:5 minimalist infographic. Top: \"${headline}\" in Montserrat Bold font and soft gradient only. Middle: one circular diagram with a single ${v1.centralIcon} icon in the center and five or six small icons around it: ${icons}. Icons only, no text in or under the diagram. Bottom: one dark grey bar only, flowos.tech in Raleway font. Background: soft teal and warm beige. Clean, simple, illustration only.`;\nreturn { json: { variation1Prompt } };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -8816,
+        1728
+      ],
+      "id": "092bd783-1913-4530-9e71-dde1231e23f8",
+      "name": "Build Variation 1 Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fal.run/fal-ai/gemini-25-flash-image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.FAL_KEY ? 'Key ' + $env.FAL_KEY : '' }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompt: $json.variation1Prompt, aspect_ratio: '4:5', output_format: 'jpeg' }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -8624,
+        1728
+      ],
+      "id": "a4db370c-7eb7-4977-8082-4b863cdc9ee6",
+      "name": "Generate Image - Variation 1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format image URL for Prepare Content: supports Gemini (images[0].url) or overlay (url) response.\nconst inputItem = $input.item.json;\nconst url = inputItem.images?.[0]?.url || inputItem.url || inputItem.data?.url;\nif (!url) throw new Error('No image URL in response. Check FAL Gemini or overlay response.');\nreturn { json: { images: [{ url }] } };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -8432,
+        1728
+      ],
+      "id": "b3bde134-368d-4637-8a7a-d432bbae8a1a",
+      "name": "Format Overlay Result"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare single generated image and content for posting\nconst inputItem = $input.item.json;\nconst aiContent = $('AI Writer - Content Generator').item.json.choices[0].message.content;\nconst pillarData = $('Content Pillar Rotation').item.json;\nconst imageUrl = inputItem.images?.[0]?.url || null;\nif (!imageUrl) throw new Error('No image URL from overlay or FAL.');\nreturn {\n  json: {\n    imageVariation1: imageUrl,\n    title: aiContent.title,\n    captions: aiContent.captions,\n    pillar: pillarData.pillar,\n    highlightedFeature: pillarData.highlightedFeature,\n    generatedAt: new Date().toISOString(),\n    previewData: {\n      title: aiContent.title,\n      pillar: pillarData.pillar,\n      feature: pillarData.highlightedFeature,\n      twitterPreview: aiContent.captions.twitter,\n      instagramPreview: (aiContent.captions.instagram || '').substring(0, 200) + '...'\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -8176,
+        1728
+      ],
+      "id": "5da85fa9-4b05-47f3-824e-81aa722fcc32",
+      "name": "Prepare Content for Approval"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ACAGY8H3P",
+          "mode": "list",
+          "cachedResultName": "infographic-approval"
+        },
+        "text": "=\ud83c\udfa8 *New Flow Os Infographic Ready!*  \n*Title:* {{ $json.title }} \n*Pillar:* {{ $json.pillar }} \n*Feature:* {{ $json.highlightedFeature }}  \n*Image URL:*{{ $json.imageVariation1 }}\n\n--- *Twitter Preview:* {{ $json.previewData.twitterPreview }}  \n--- *Instagram Preview:* {{ $json.previewData.instagramPreview }}  \n--- Generated: {{ $json.generatedAt }}  \n\n\u2705 Posting automatically...",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -7936,
+        1728
+      ],
+      "id": "9b623c16-af08-42c0-8e6a-f1602e9c4044",
+      "name": "Send to Slack for Approval",
+      "webhookId": "60ee3296-12ab-462b-a234-e2498253f21e",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "qvXU2mcT4H1OJgRo",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract base64 data from data URL for the selected image variation\n// AUTO-POST MODE: Uses variation 1 by default (no approval needed)\n\n// Get data from Prepare Content for Approval node\nconst preparedData = $('Prepare Content for Approval').item.json;\n\n// Default to variation 1 (can be changed to 2 if preferred)\nconst selectedVariation = 1;\nlet dataUrl = selectedVariation === 1 ? preparedData.imageVariation1 : preparedData.imageVariation2;\n\nif (!dataUrl) {\n  throw new Error('No image data found. Check that image generation succeeded.');\n}\n\n// Check if it's a data URL (base64)\nif (dataUrl && dataUrl.startsWith('data:')) {\n  const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);\n  \n  if (matches) {\n    const mimeType = matches[1];\n    const base64Data = matches[2];\n    const imageBuffer = Buffer.from(base64Data, 'base64');\n    const extension = mimeType.split('/')[1] || 'png';\n    \n    return {\n      json: {\n        url: dataUrl,\n        mimeType: mimeType,\n        fileName: `flowos-infographic-${Date.now()}.${extension}`,\n        title: preparedData.title,\n        captions: preparedData.captions,\n        pillar: preparedData.pillar,\n        selectedVariation: selectedVariation\n      },\n      binary: {\n        data: {\n          data: imageBuffer,\n          mimeType: mimeType,\n          fileName: `flowos-infographic-${Date.now()}.${extension}`\n        }\n      }\n    };\n  }\n}\n\n// If it's already a URL (not base64), just pass it through\nreturn {\n  json: {\n    url: dataUrl,\n    title: preparedData.title,\n    captions: preparedData.captions,\n    pillar: preparedData.pillar,\n    selectedVariation: selectedVariation\n  },\n  binary: {}\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -7664,
+        1728
+      ],
+      "id": "2c0e369f-f192-4848-b9ae-5b1f2bba37d7",
+      "name": "Convert Base64 to Binary"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the image URL from FAL.ai and pass it through\n// FAL.ai should return hosted URLs like https://fal.media/files/...\n\nconst inputData = $input.item.json;\nconst preparedData = $('Prepare Content for Approval').item.json;\n\n// The URL should come from the previous node\nlet imageUrl = inputData.url;\n\n// Debug: Log what we received to help troubleshoot\nif (!imageUrl) {\n  throw new Error('No image URL found in input. Input data: ' + JSON.stringify(Object.keys(inputData)));\n}\n\n// Check if it's a real URL or base64\nconst isBase64 = imageUrl.startsWith('data:');\nconst isHostedUrl = imageUrl.startsWith('http');\n\nif (isBase64) {\n  // FAL.ai returned base64 instead of a hosted URL\n  // This is unexpected - throw an error with details so we can investigate\n  throw new Error('FAL.ai returned base64 data instead of a hosted URL. First 100 chars: ' + imageUrl.substring(0, 100));\n}\n\nif (!isHostedUrl) {\n  throw new Error('Unexpected URL format: ' + imageUrl.substring(0, 100));\n}\n\n// If we get here, we have a valid hosted URL from FAL.ai\nreturn {\n  json: {\n    url: imageUrl,\n    title: inputData.title || preparedData.title,\n    captions: inputData.captions || preparedData.captions,\n    pillar: inputData.pillar || preparedData.pillar,\n    highlightedFeature: inputData.highlightedFeature || preparedData.highlightedFeature\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -7424,
+        1728
+      ],
+      "id": "12d29d1a-d92d-49d7-ac6f-17af43575f07",
+      "name": "Process Image URL"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Cost per run: estimate from FAL + OpenAI + Perplexity (token counts not always in output)\nconst item = $input.item.json;\nconst FAL_IMAGE_USD = 0.039;\nconst OPENAI_ESTIMATE_USD = 0.02;\nconst PERPLEXITY_ESTIMATE_USD = 0.02;\nconst totalUsd = FAL_IMAGE_USD + OPENAI_ESTIMATE_USD + PERPLEXITY_ESTIMATE_USD;\nreturn {\n  json: {\n    ...item,\n    runCost: {\n      estimatedTotalUsd: Math.round(totalUsd * 100) / 100,\n      falImageUsd: FAL_IMAGE_USD,\n      openaiEstimateUsd: OPENAI_ESTIMATE_USD,\n      perplexityEstimateUsd: PERPLEXITY_ESTIMATE_USD\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -7200,
+        1728
+      ],
+      "id": "c8a08e03-d9cf-4683-aef6-43410185dc6d",
+      "name": "Cost Per Run"
+    },
+    {
+      "parameters": {
+        "platform": "twitter",
+        "accountId": {
+          "__rl": true,
+          "value": "11273",
+          "mode": "list",
+          "cachedResultName": "FlowosAgency",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/11273"
+        },
+        "postContentText": "={{ $json.captions.twitter }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {}
+      },
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        -6720,
+        1312
+      ],
+      "id": "d9860209-3fde-4c3e-a235-4d1c120bb9e1",
+      "name": "Twitter [BLOTATO]",
+      "credentials": {
+        "blotatoApi": {
+          "id": "Bs2TEAOA9mVKfcR3",
+          "name": "Blotato account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "accountId": {
+          "__rl": true,
+          "value": "27064",
+          "mode": "list",
+          "cachedResultName": "flow_os_",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/27064"
+        },
+        "postContentText": "={{ $json.captions.instagram }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {}
+      },
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        -6720,
+        1488
+      ],
+      "id": "a2b0f7d1-0deb-4088-a236-145f0396aaf4",
+      "name": "Instagram [BLOTATO]",
+      "credentials": {
+        "blotatoApi": {
+          "id": "Bs2TEAOA9mVKfcR3",
+          "name": "Blotato account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "platform": "facebook",
+        "accountId": {
+          "__rl": true,
+          "value": "17274",
+          "mode": "list",
+          "cachedResultName": "Tyson Venables",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/17274"
+        },
+        "postContentText": "={{ $json.captions.facebook }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "facebookPageId": {
+          "__rl": true,
+          "value": "452895447897010",
+          "mode": "list",
+          "cachedResultName": "Flow Os ",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/17274/subaccounts/452895447897010"
+        },
+        "options": {}
+      },
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        -6720,
+        1648
+      ],
+      "id": "99c45655-0b60-448f-ae38-5eca045b7bd9",
+      "name": "Facebook [BLOTATO]",
+      "credentials": {
+        "blotatoApi": {
+          "id": "Bs2TEAOA9mVKfcR3",
+          "name": "Blotato account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "platform": "youtube",
+        "accountId": {
+          "__rl": true,
+          "value": "23942",
+          "mode": "list",
+          "cachedResultName": "FlowOs Team (Flow Os CRM & Automations)",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/23942"
+        },
+        "postContentText": "={{ $json.captions.youtube }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "postCreateYoutubeOptionTitle": "={{ $('AI Writer - Content Generator').item.json.choices[0].message.content.title }}",
+        "options": {}
+      },
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        -6720,
+        1808
+      ],
+      "id": "5ad295aa-bd4e-475c-83b8-0c0f46ccc3d9",
+      "name": "Youtube [BLOTATO]",
+      "credentials": {
+        "blotatoApi": {
+          "id": "Bs2TEAOA9mVKfcR3",
+          "name": "Blotato account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "platform": "linkedin",
+        "accountId": {
+          "__rl": true,
+          "value": "11109",
+          "mode": "list",
+          "cachedResultName": "Tyson Venables",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/11109"
+        },
+        "postContentText": "={{ $json.captions.linkedin }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {}
+      },
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        -6720,
+        1968
+      ],
+      "id": "c0278c9d-5d67-4367-a8f0-ee9545d03887",
+      "name": "Linkedin [BLOTATO]",
+      "credentials": {
+        "blotatoApi": {
+          "id": "Bs2TEAOA9mVKfcR3",
+          "name": "Blotato account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "platform": "tiktok",
+        "accountId": {
+          "__rl": true,
+          "value": "27064",
+          "mode": "list",
+          "cachedResultName": "flow_os_",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/27064"
+        },
+        "postContentText": "={{ $json.captions.tiktok }}",
+        "postContentMediaUrls": "={{ $json.url }}",
+        "options": {}
+      },
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        -6720,
+        2128
+      ],
+      "id": "e6fba13e-ba1a-40c7-b929-7a773be6bb46",
+      "name": "Tiktok [BLOTATO]",
+      "credentials": {
+        "blotatoApi": {
+          "id": "Bs2TEAOA9mVKfcR3",
+          "name": "Blotato account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "numberInputs": 6
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -6288,
+        1664
+      ],
+      "id": "fd4d056e-6095-4fd8-92ba-950acbae895c",
+      "name": "Collect Post Results"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-errors",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -6080,
+        1728
+      ],
+      "id": "1cec0e84-cd87-461e-ab4c-a5a583ad14ec",
+      "name": "Any Errors?"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0AC7JF8AQK",
+          "mode": "list",
+          "cachedResultName": "n8n-error"
+        },
+        "text": "=\u26a0\ufe0f *Flow Os Infographic Posting Error*  \nSome posts failed to publish.  \n*Time:* {{ new Date().toISOString() }} \n* Cost for run:* {{ $('Cost Per Run').item.json.runCost.estimatedTotalUsd }}\nCheck the n8n execution log for details.",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -5888,
+        1616
+      ],
+      "id": "c18e6ce9-1e38-45b5-af26-39c9856c4f81",
+      "name": "Send Error Notification",
+      "webhookId": "f06fc70a-f450-48d6-b3e7-52be3018eec6",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "qvXU2mcT4H1OJgRo",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.CONTENT_LOG_SHEET_ID || 'YOUR_GOOGLE_SHEET_ID' }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "Content Log"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "cachedResultName": ""
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -5888,
+        1856
+      ],
+      "id": "6cf9571b-c688-4ef8-8179-8b4ccae87d02",
+      "name": "Log to Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "hyBONhD1mYNRNs6l",
+          "name": "GoogleAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0ACT56TYQ1",
+          "mode": "list",
+          "cachedResultName": "n8n-success"
+        },
+        "text": "=\u2705 *Flow Os Infographic Posted Successfully!*  \n*Title:* {{ $('AI Writer - Content Generator').item.json.choices[0].message.content.title }} \n*Pillar:* {{ $('Content Pillar Rotation').item.json.pillar }} \n*Feature:* {{ $('Content Pillar Rotation').item.json.highlightedFeature }}  \n*Posted to:* Twitter, Instagram, Facebook, YouTube, LinkedIn, TikTok\n* Cost for run:* {{ $('Cost Per Run').item.json.runCost.estimatedTotalUsd }}\n",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        -5664,
+        1856
+      ],
+      "id": "f57c2d8b-236c-44c2-abaf-414ba57c00ff",
+      "name": "Send Success Notification",
+      "webhookId": "6253b6f7-1cd3-4c90-a18b-4fc33ac291b2",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "qvXU2mcT4H1OJgRo",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Cap hashtags to max 5 per caption, defensive against AI drift\nconst MAX_HASHTAGS = 5;\nfunction capHashtags(text) {\n  if (!text || typeof text !== 'string') return text;\n  let count = 0;\n  const stripped = text.replace(/#\\w+/g, (m) => (++count <= MAX_HASHTAGS ? m : ''));\n  return stripped.replace(/[ \\t]+/g, ' ').replace(/\\n[ \\t]+/g, '\\n').trim();\n}\nconst item = $input.item.json;\nconst captions = item.captions || {};\nconst cappedCaptions = {};\nfor (const platform of ['facebook','instagram','twitter','youtube','linkedin','tiktok']) {\n  cappedCaptions[platform] = capHashtags(captions[platform]);\n}\nreturn {\n  json: {\n    ...item,\n    captions: cappedCaptions,\n    _hashtagCapApplied: { max: MAX_HASHTAGS, at: new Date().toISOString() }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -7088,
+        1728
+      ],
+      "id": "0b0ab9e2-3a2c-494f-a4cb-352f5c890b5a",
+      "name": "Cap Hashtags"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'Infographic Social Media V2'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -9768,
+        1728
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "0276dc70-0544-4a5f-b74e-db6e86cfce5c"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Infographic Social Media V2'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -5414,
+        1856
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "650d306a-d942-4d39-a7bd-1e25b32f98b2"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'error'::text, 'Infographic Social Media V2'::text, '{{ $execution.id }}'::text, '{{ JSON.stringify({terminal:\"Send Error Notification\"}) }}'::jsonb);",
+        "options": {}
+      },
+      "name": "Heartbeat: Error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -5638,
+        1616
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "578b4775-3618-4601-b3d6-da754f4b093f"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Pillar Rotation": {
+      "main": [
+        [
+          {
+            "node": "AI Research - Industry Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Research - Industry Stats": {
+      "main": [
+        [
+          {
+            "node": "AI Research - Flow Os Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Research - Flow Os Brief": {
+      "main": [
+        [
+          {
+            "node": "AI Writer - Content Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Writer - Content Generator": {
+      "main": [
+        [
+          {
+            "node": "Build Variation 1 Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Variation 1 Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Image - Variation 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image - Variation 1": {
+      "main": [
+        [
+          {
+            "node": "Format Overlay Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Overlay Result": {
+      "main": [
+        [
+          {
+            "node": "Prepare Content for Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Content for Approval": {
+      "main": [
+        [
+          {
+            "node": "Send to Slack for Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Slack for Approval": {
+      "main": [
+        [
+          {
+            "node": "Convert Base64 to Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Base64 to Binary": {
+      "main": [
+        [
+          {
+            "node": "Process Image URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Image URL": {
+      "main": [
+        [
+          {
+            "node": "Cost Per Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cost Per Run": {
+      "main": [
+        [
+          {
+            "node": "Cap Hashtags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Twitter [BLOTATO]": {
+      "main": [
+        [
+          {
+            "node": "Collect Post Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Collect Post Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instagram [BLOTATO]": {
+      "main": [
+        [
+          {
+            "node": "Collect Post Results",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Collect Post Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Facebook [BLOTATO]": {
+      "main": [
+        [
+          {
+            "node": "Collect Post Results",
+            "type": "main",
+            "index": 2
+          }
+        ],
+        [
+          {
+            "node": "Collect Post Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Youtube [BLOTATO]": {
+      "main": [
+        [
+          {
+            "node": "Collect Post Results",
+            "type": "main",
+            "index": 3
+          }
+        ],
+        [
+          {
+            "node": "Collect Post Results",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Linkedin [BLOTATO]": {
+      "main": [
+        [
+          {
+            "node": "Collect Post Results",
+            "type": "main",
+            "index": 4
+          }
+        ],
+        [
+          {
+            "node": "Collect Post Results",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Tiktok [BLOTATO]": {
+      "main": [
+        [
+          {
+            "node": "Collect Post Results",
+            "type": "main",
+            "index": 5
+          }
+        ],
+        [
+          {
+            "node": "Collect Post Results",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Collect Post Results": {
+      "main": [
+        [
+          {
+            "node": "Any Errors?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Errors?": {
+      "main": [
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Send Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cap Hashtags": {
+      "main": [
+        [
+          {
+            "node": "Instagram [BLOTATO]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Facebook [BLOTATO]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Youtube [BLOTATO]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Linkedin [BLOTATO]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Twitter [BLOTATO]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        [
+          {
+            "node": "Content Pillar Rotation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Success Notification": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Error Notification": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

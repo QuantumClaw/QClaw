@@ -1,0 +1,1490 @@
+{
+  "id": "Qf39NEOEgz2W0uls",
+  "name": "Content Studio Pipeline",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "content-studio-pipeline",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        304
+      ],
+      "webhookId": "content-studio-pipeline"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fdabygmromuqtysitodp.supabase.co/rest/v1/content_studio_jobs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ r2_file_key: $json.body.r2FileKey, episode_title: $json.body.episodeTitle, episode_description: $json.body.episodeDescription, status: 'processing' }) }}",
+        "options": {}
+      },
+      "id": "create-job-record",
+      "name": "Create Job Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        176,
+        304
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      },
+      "notes": "Supabase: Create job record. NEEDS: SUPABASE_ANON_KEY env var"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $(\"Webhook Trigger\").first().json.body.chatId || 1375806243, text: \"\ud83c\udf99\ufe0f Content Studio started for: \" + $(\"Webhook Trigger\").first().json.body.episodeTitle + \"\\nProcessing your episode now. I will update you at each step.\", parse_mode: \"HTML\" }) }}",
+        "options": {}
+      },
+      "id": "notify-start",
+      "name": "Notify Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookData = $('Webhook Trigger').first().json.body || \n                    $('Webhook Trigger').first().json;\n\nconst createJobResult = $('Create Job Record').first().json;\nconst jobId = Array.isArray(createJobResult) \n  ? createJobResult[0]?.id \n  : createJobResult?.id;\n\nconst r2FileKey = webhookData.r2FileKey;\nconst r2Url = webhookData.r2Url;\nconst r2PublicUrl = r2Url || \n  `https://pub-70c436931e9e4611a135e7405c596611.r2.dev/${r2FileKey}`;\n\nreturn [{ json: {\n  r2PublicUrl,\n  r2FileKey,\n  jobId,\n  episodeTitle: webhookData.episodeTitle,\n  episodeDescription: webhookData.episodeDescription,\n  chatId: webhookData.chatId || 1375806243\n}}];"
+      },
+      "id": "generate-r2-url",
+      "name": "Generate R2 Presigned URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        304
+      ],
+      "notesInFlow": true,
+      "notes": "Passes through r2Url from webhook or builds from file key"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.buzzsprout.com/api/1946225/episodes.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: $json.episodeTitle, description: $json.episodeDescription, audio_url: $json.r2PublicUrl, published: false }) }}",
+        "options": {}
+      },
+      "id": "upload-buzzsprout",
+      "name": "Upload to Buzzsprout",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        832,
+        304
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "AZ6bcaghBgkzpQ3N",
+          "name": "Buzzsprout"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/content_studio_jobs?id=eq.{{ $('Generate R2 Presigned URL').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ buzzsprout_episode_id: String($json.id) }) }}",
+        "options": {}
+      },
+      "id": "save-buzzsprout-id",
+      "name": "Save Buzzsprout ID",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1056,
+        304
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.assemblyai.com/v2/transcript",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ audio_url: $(\"Generate R2 Presigned URL\").first().json.r2PublicUrl, auto_highlights: true, speech_models: [\"universal-2\"], word_boost: [\"Maidment\", \"Emma Maidment\", \"Flowlane\", \"Flow Lane\"], custom_spelling: [{ from: [\"Maidman\", \"Maidmen\", \"Maiden\", \"Maidon\"], to: \"Maidment\" }] }) }}",
+        "options": {}
+      },
+      "id": "send-assemblyai",
+      "name": "Send to AssemblyAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        304
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "sopodhCOmlVCOJpG",
+          "name": "AssemblyAI"
+        }
+      },
+      "notes": "NEEDS: ASSEMBLYAI_API_KEY env var (placeholder)"
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "id": "wait-initial",
+      "name": "Wait 30s Initial",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1488,
+        304
+      ],
+      "webhookId": "f8c668b8-786b-4dbb-8eda-dfa5e1ff668a"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.assemblyai.com/v2/transcript/{{ $('Send to AssemblyAI').first().json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "poll-assemblyai",
+      "name": "Poll AssemblyAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1712,
+        304
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "sopodhCOmlVCOJpG",
+          "name": "AssemblyAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-completed",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "completed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-transcript-status",
+      "name": "Check Transcript Status",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 15
+      },
+      "id": "wait-retry",
+      "name": "Wait 15s Retry",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1936,
+        528
+      ],
+      "webhookId": "88b38d83-09f0-4151-bcc5-c4512ffe2542"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 4096, messages: [{ role: 'user', content: 'You are Emma Maidment writing a blog post for your website flowstatescollective.com. Write in first person as Emma. Use I, my, we (when referring to your community). Never write about Emma in third person. IMPORTANT: Never use em dashes. No hashtags. Write a detailed SEO blog post based on this podcast transcript.\\nEpisode title: ' + $('Generate R2 Presigned URL').first().json.episodeTitle + '\\nTranscript: ' + $('Poll AssemblyAI').first().json.text + '\\n\\nFormat as:\\n- Compelling intro paragraph\\n- 3-5 main sections with H2 headings\\n- Key takeaways section\\n- Call to action to listen to the full episode\\nKeep it 800-1200 words. Tone: warm, practical, empowering.\\n\\nAt the end of the blog post, include this section exactly:\\n\\n\ud83c\udfa7 Listen to the full episode: ' + ($('Upload to Buzzsprout').first().json.url || '') + '\\nFollow Emma on LinkedIn: https://www.linkedin.com/in/emmamaidment\\nSubscribe on Substack: https://emmamaidment.substack.com\\n\\nIMPORTANT: Never use em dashes (\\u2014) in the writing. Use commas, colons, or rewrite sentences instead.' }] }) }}",
+        "options": {}
+      },
+      "id": "generate-blog",
+      "name": "Generate Blog Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2624,
+        288
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "JYejjBR2H2EMmdGy",
+          "name": "Anthropic"
+        }
+      },
+      "notes": "NEEDS: ANTHROPIC_API_KEY env var (placeholder)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://flowstatescollective.com/wp-json/wp/v2/posts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "wordpressApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: $('Generate R2 Presigned URL').first().json.episodeTitle, content: $json.htmlContent, status: 'draft' }) }}",
+        "options": {}
+      },
+      "id": "post-wordpress",
+      "name": "Post to WordPress",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3072,
+        288
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "wordpressApi": {
+          "id": "9wJkjOmNNLH3lh4w",
+          "name": "WordPress FSC"
+        }
+      },
+      "notes": "NEEDS: WP_USERNAME + WP_APP_PASSWORD env vars (placeholder)"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/content_studio_jobs?id=eq.{{ $('Generate R2 Presigned URL').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ wordpress_post_url: $json.link }) }}",
+        "options": {}
+      },
+      "id": "save-wp-url",
+      "name": "Save WordPress URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3296,
+        288
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 4096, messages: [{ role: 'user', content: 'You are Emma Maidment writing a personal newsletter post for your Substack. Write in first person as Emma, warm and conversational, like writing to a close friend. Use I, my, you (addressing the reader directly). Never write about Emma in third person. IMPORTANT: Never use em dashes. No hashtags. Write a Substack newsletter post based on this podcast episode.\\nEpisode title: ' + $('Generate R2 Presigned URL').first().json.episodeTitle + '\\nTranscript: ' + $('Poll AssemblyAI').first().json.text + '\\n\\nFormat as a personal, conversational newsletter post.\\nInclude: hook opener, 3 key insights from the episode, personal reflection, link to listen.\\nTone: warm, direct, like writing to a friend. 600-800 words.\\n\\nAt the end include:\\n\ud83c\udfa7 Listen to the full episode: ' + ($('Upload to Buzzsprout').first().json.url || '') + '\\n\ud83d\udcd6 Read the blog post: ' + ($('Post to WordPress').first().json.link || '') + '\\nFollow Emma on LinkedIn: https://www.linkedin.com/in/emmamaidment\\n\\nIMPORTANT: Never use em dashes (\\u2014) in the writing. Use commas, colons, or rewrite sentences instead.' }] }) }}",
+        "options": {}
+      },
+      "id": "generate-substack",
+      "name": "Generate Substack Draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3808,
+        288
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "JYejjBR2H2EMmdGy",
+          "name": "Anthropic"
+        }
+      },
+      "notes": "NEEDS: ANTHROPIC_API_KEY env var (placeholder)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, messages: [{ role: 'user', content: 'You are Emma Maidment writing a LinkedIn post in your own voice. Write in first person as Emma. Professional but warm and direct. Use I, my, I am. Max 200 words.\\n\\nIMPORTANT FORMATTING RULES:\\n- Write in plain text only. No markdown, no asterisks, no bold formatting.\\n- No bullet points with dashes or asterisks. Use line breaks between points.\\n- No hashtags.\\n- Never use em dashes. Use commas, colons, or rewrite sentences instead.\\n- Never write about Emma in third person.\\n\\nEpisode title: ' + $('Generate R2 Presigned URL').first().json.episodeTitle + '\\nTranscript summary: ' + ($('Poll AssemblyAI').first().json.text || '').substring(0, 500) + '\\n\\nFormat: Hook line, then 3 key insights as short punchy lines separated by line breaks, then CTA to listen. Max 200 words.\\n\\nEnd the post with exactly this line:\\n\ud83c\udfa7 Listen here: ' + ($('Upload to Buzzsprout').first().json.audio_url || '') }] }) }}",
+        "options": {}
+      },
+      "id": "generate-linkedin",
+      "name": "Generate LinkedIn Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4256,
+        288
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "JYejjBR2H2EMmdGy",
+          "name": "Anthropic"
+        }
+      },
+      "notes": "NEEDS: ANTHROPIC_API_KEY env var (placeholder)"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/content_studio_jobs?id=eq.{{ $('Generate R2 Presigned URL').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'completed', substack_draft: $('Generate Substack Draft').first().json.content[0].text, linkedin_post: $('Generate LinkedIn Post').first().json.content[0].text, transcript_text: $('Poll AssemblyAI').first().json.text.substring(0, 10000), blog_post: $('Generate Blog Post').first().json.content[0].text, clip_selections: JSON.stringify((() => { try { return $('Poll Clip Status').first().json.clips || []; } catch(e) { return []; } })()), clip_job_id: (() => { try { return $('Generate Clips').first().json.job_id; } catch(e) { return null; } })(), linkedin_post_url: 'https://www.linkedin.com/feed/update/' + ($('Post to LinkedIn').first().json.id || ''), youtube_url: 'https://youtu.be/' + ($('Upload to YouTube').first().json.id || '') }) }}",
+        "options": {}
+      },
+      "id": "update-job-record",
+      "name": "Update Job Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5808,
+        288
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      },
+      "notes": "NEEDS: SUPABASE_ANON_KEY env var"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Generate R2 Presigned URL').first().json.chatId || 1375806243, text: '\\u2705 Content Studio Complete \\u2014 ' + $('Generate R2 Presigned URL').first().json.episodeTitle + '\\n\\nHere\\'s what\\'s ready:\\n\\ud83c\\udf99\\ufe0f Buzzsprout: Episode uploaded (draft)\\n\\ud83d\\udcdd Blog post: Published to WordPress\\n\\ud83d\\udce7 Substack: Draft ready\\n\\u2705 LinkedIn: Posted \\u2014 https://www.linkedin.com/feed/update/' + ($('Post to LinkedIn').first().json.id || '') + '\\n\\ud83c\\udfac YouTube: Unlisted \\u2014 https://youtu.be/' + ($('Upload to YouTube').first().json.id || '') + '\\n\\n\\u2702\\ufe0f Clips:\\n' + (() => { try { const j = $('Poll Clip Status').first().json; if (j.clips && j.clips.length) return j.clips.map((c,i) => (i+1) + '. ' + (c.hook_title || 'Clip') + ': ' + c.public_url).join('\\n'); return 'No clips generated'; } catch(e) { return 'Clips unavailable'; } })(), parse_mode: 'HTML' }) }}",
+        "options": {}
+      },
+      "id": "notify-complete",
+      "name": "Notify Complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6032,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ JSON.stringify({ success: true, jobId: $('Generate R2 Presigned URL').first().json.jobId }) }}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        6256,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nconst highlights = result.auto_highlights_result?.results || [];\nconst top5 = highlights\n  .sort((a, b) => b.rank - a.rank)\n  .slice(0, 5)\n  .map(h => {\n    const mins = Math.floor(h.timestamps[0].start / 60000);\n    const secs = Math.floor((h.timestamps[0].start % 60000) / 1000);\n    return `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')} \u2014 \"${h.text}\"`;\n  });\n\nconst highlightText = top5.length > 0 \n  ? top5.join('\\n')\n  : 'No highlights detected';\n\nreturn [{ json: { \n  ...result,\n  highlightTimestamps: highlightText,\n  highlightCount: top5.length\n}}];"
+      },
+      "id": "extract-highlights",
+      "name": "Extract Highlight Timestamps",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2096,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2048, messages: [{ role: 'user', content: 'You are a viral content strategist. Analyse this podcast transcript and identify the best segments for short-form social media clips.\\n\\nEpisode: ' + $('Generate R2 Presigned URL').first().json.episodeTitle + '\\nTranscript: ' + ($('Poll AssemblyAI').first().json.text || '').substring(0, 8000) + '\\n\\nSelect 5-8 segments that would make great 30-90 second clips. Each segment must have a strong hook in the first 5 seconds.\\n\\nReturn ONLY a JSON array, no other text:\\n[{\\n  \"start_time\": \"MM:SS\",\\n  \"end_time\": \"MM:SS\",\\n  \"hook_title\": \"Short punchy title\",\\n  \"virality_score\": 7,\\n  \"caption_text\": \"Caption for this clip\",\\n  \"why_it_works\": \"One sentence explanation\"\\n}]\\n\\nPrioritise: controversial takes, actionable advice, emotional moments, surprising stats, story arcs with payoff.' }] }) }}",
+        "options": {}
+      },
+      "id": "select-clip-segments",
+      "name": "Select Clip Segments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2256,
+        288
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "JYejjBR2H2EMmdGy",
+          "name": "Anthropic"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nconst highlights = $('Extract Highlight Timestamps').first().json;\nlet clips = [];\ntry {\n  const text = result.content?.[0]?.text || '[]';\n  const match = text.match(/\\[\\s*\\{[\\s\\S]*\\}\\s*\\]/);\n  if (match) clips = JSON.parse(match[0]);\n} catch(e) { clips = []; }\nreturn [{ json: { ...highlights, clipSelections: clips } }];"
+      },
+      "id": "parse-clip-selections",
+      "name": "Parse Clip Selections",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2416,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.linkedin.com/v2/ugcPosts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "linkedInOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Restli-Protocol-Version",
+              "value": "2.0.0"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "LinkedIn-Version",
+              "value": "202401"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.payload }}",
+        "options": {}
+      },
+      "id": "post-to-linkedin",
+      "name": "Post to LinkedIn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4912,
+        288
+      ],
+      "credentials": {
+        "linkedInOAuth2Api": {
+          "id": "b6hqZKTarQ9qjAsn",
+          "name": "Emma LinkedIn OAuth2"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Upload-Content-Type",
+              "value": "video/mp4"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ snippet: { title: $('Generate R2 Presigned URL').first().json.episodeTitle, description: ($('Generate R2 Presigned URL').first().json.episodeDescription || '') + '\\n\\n\\ud83c\\udf99\\ufe0f Listen on Buzzsprout: ' + ($('Upload to Buzzsprout').first().json.url || '') + '\\n\\ud83d\\udcd6 Read the blog: ' + ($('Post to WordPress').first().json.link || ''), categoryId: '22' }, status: { privacyStatus: 'unlisted', selfDeclaredMadeForKids: false } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "yt-init-upload",
+      "name": "YouTube Init Upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5136,
+        288
+      ],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "zQZfoOUGdhExsQCX",
+          "name": "Emma YouTube Oauth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Generate R2 Presigned URL').first().json.r2PublicUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download-audio",
+      "name": "Download Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5360,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $('YouTube Init Upload').first().json.headers.location || $('YouTube Init Upload').first().json.headers.Location }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "video/mp4"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "yt-upload-binary",
+      "name": "Upload to YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5584,
+        288
+      ],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "zQZfoOUGdhExsQCX",
+          "name": "Emma YouTube Oauth2"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "wait-before-substack",
+      "name": "Wait 5s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3536,
+        288
+      ],
+      "webhookId": "03d1da81-92a7-4096-8648-cf67bc40aa5a"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "id": "wait-before-linkedin",
+      "name": "Wait 3s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        4032,
+        288
+      ],
+      "webhookId": "8dc19afb-d3de-47e8-b256-3a5de1cc24cd"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $input.first().json.content[0].text;\n\n// Convert markdown to basic HTML\nlet html = text\n  // Headers\n  .replace(/^### (.+)$/gm, '<h3>$1</h3>')\n  .replace(/^## (.+)$/gm, '<h2>$1</h2>')\n  .replace(/^# (.+)$/gm, '<h1>$1</h1>')\n  // Bold\n  .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')\n  // Italic\n  .replace(/\\*(.+?)\\*/g, '<em>$1</em>')\n  // Horizontal rule\n  .replace(/^---$/gm, '<hr>')\n  // Unordered lists\n  .replace(/^\\- (.+)$/gm, '<li>$1</li>')\n  .replace(/(<li>.*<\\/li>\\n?)+/g, '<ul>$&</ul>')\n  // Line breaks to paragraphs\n  .split('\\n\\n')\n  .map(p => p.trim())\n  .filter(p => p && !p.startsWith('<h') && !p.startsWith('<ul') && !p.startsWith('<hr'))\n  .map(p => p.startsWith('<') ? p : `<p>${p}</p>`)\n  .join('\\n');\n\nreturn [{ json: { ...$input.first().json, htmlContent: html } }];"
+      },
+      "id": "convert-to-html",
+      "name": "Convert to HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2848,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $('Generate LinkedIn Post').first().json.content[0].text;\nconst payload = JSON.stringify({\n  author: 'urn:li:member:194094731',\n  lifecycleState: 'PUBLISHED',\n  specificContent: {\n    'com.linkedin.ugc.ShareContent': {\n      shareCommentary: { text: text },\n      shareMediaCategory: 'NONE'\n    }\n  },\n  visibility: {\n    'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC'\n  }\n});\nreturn [{ json: { payload } }];"
+      },
+      "id": "build-linkedin-payload",
+      "name": "Build LinkedIn Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4480,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "platform": "linkedin",
+        "accountId": {
+          "__rl": true,
+          "value": "17146",
+          "mode": "list",
+          "cachedResultName": "Emma Maidment",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/17146"
+        },
+        "postContentText": "={{ $('Generate LinkedIn Post').item.json.content[0].text }}",
+        "options": {}
+      },
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        4688,
+        288
+      ],
+      "id": "3da4c851-749e-43a6-ae1b-1abfd9054e24",
+      "name": "Create post",
+      "credentials": {
+        "blotatoApi": {
+          "id": "Bs2TEAOA9mVKfcR3",
+          "name": "Blotato account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://138.68.138.214:4002/clip",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ video_url: $('Generate R2 Presigned URL').first().json.r2PublicUrl, r2_file_key: $('Generate R2 Presigned URL').first().json.r2FileKey, episode_title: $('Generate R2 Presigned URL').first().json.episodeTitle, transcript: $('Poll AssemblyAI').first().json.words, num_clips: 5, caption_style: { font: 'Montserrat Bold', font_size: 48, color: '#FFFFFF', outline_color: '#000000', outline_width: 2, position: 'bottom', highlight_color: '#FFD700', animation: 'word_by_word' } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "generate-clips",
+      "name": "Generate Clips",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2624,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "id": "wait-clip-poll",
+      "name": "Wait 10s Clip Poll",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2848,
+        576
+      ],
+      "webhookId": "6b419486-583e-4589-b316-982a635b223e"
+    },
+    {
+      "parameters": {
+        "url": "=http://138.68.138.214:4002/clip/{{ $('Generate Clips').first().json.job_id }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "poll-clip-status",
+      "name": "Poll Clip Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3072,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "clip-done-check",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "complete",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check-clip-done",
+      "name": "Clip Done?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3296,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "id": "wait-clip-retry",
+      "name": "Wait 10s Retry",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3520,
+        720
+      ],
+      "webhookId": "4db9d3bc-b8ab-466d-8cdb-de1e0987bff6"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/content_studio_jobs?id=eq.{{ $('Generate R2 Presigned URL').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ clip_job_id: $('Generate Clips').first().json.job_id, clip_selections: JSON.stringify($json.clips || []) }) }}",
+        "options": {}
+      },
+      "id": "save-clip-urls",
+      "name": "Save Clip URLs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3520,
+        480
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "merge-before-notify",
+      "name": "Merge Before Notify",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        5584,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'Content Studio Pipeline'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        152,
+        304
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "2abfa971-1b6f-40cc-a7a7-26c233cd06af"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Content Studio Pipeline'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        6506,
+        288
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "40598ca2-9ff7-4b55-9c7c-b1d24846f65e"
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Job Record": {
+      "main": [
+        [
+          {
+            "node": "Notify Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Start": {
+      "main": [
+        [
+          {
+            "node": "Generate R2 Presigned URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate R2 Presigned URL": {
+      "main": [
+        [
+          {
+            "node": "Upload to Buzzsprout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Buzzsprout": {
+      "main": [
+        [
+          {
+            "node": "Save Buzzsprout ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Buzzsprout ID": {
+      "main": [
+        [
+          {
+            "node": "Send to AssemblyAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to AssemblyAI": {
+      "main": [
+        [
+          {
+            "node": "Wait 30s Initial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 30s Initial": {
+      "main": [
+        [
+          {
+            "node": "Poll AssemblyAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll AssemblyAI": {
+      "main": [
+        [
+          {
+            "node": "Check Transcript Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Transcript Status": {
+      "main": [
+        [
+          {
+            "node": "Extract Highlight Timestamps",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 15s Retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 15s Retry": {
+      "main": [
+        [
+          {
+            "node": "Poll AssemblyAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Blog Post": {
+      "main": [
+        [
+          {
+            "node": "Convert to HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to WordPress": {
+      "main": [
+        [
+          {
+            "node": "Save WordPress URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save WordPress URL": {
+      "main": [
+        [
+          {
+            "node": "Wait 5s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Substack Draft": {
+      "main": [
+        [
+          {
+            "node": "Wait 3s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate LinkedIn Post": {
+      "main": [
+        [
+          {
+            "node": "Build LinkedIn Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Job Record": {
+      "main": [
+        [
+          {
+            "node": "Notify Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Complete": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Highlight Timestamps": {
+      "main": [
+        [
+          {
+            "node": "Select Clip Segments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Clip Segments": {
+      "main": [
+        [
+          {
+            "node": "Parse Clip Selections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Clip Selections": {
+      "main": [
+        [
+          {
+            "node": "Generate Blog Post",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Clips",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "YouTube Init Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube Init Upload": {
+      "main": [
+        [
+          {
+            "node": "Download Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to YouTube": {
+      "main": [
+        [
+          {
+            "node": "Merge Before Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Video": {
+      "main": [
+        [
+          {
+            "node": "Upload to YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5s": {
+      "main": [
+        [
+          {
+            "node": "Generate Substack Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 3s": {
+      "main": [
+        [
+          {
+            "node": "Generate LinkedIn Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to HTML": {
+      "main": [
+        [
+          {
+            "node": "Post to WordPress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LinkedIn Payload": {
+      "main": [
+        [
+          {
+            "node": "Create post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create post": {
+      "main": [
+        [
+          {
+            "node": "Post to LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Clips": {
+      "main": [
+        [
+          {
+            "node": "Wait 10s Clip Poll",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 10s Clip Poll": {
+      "main": [
+        [
+          {
+            "node": "Poll Clip Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Clip Status": {
+      "main": [
+        [
+          {
+            "node": "Clip Done?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clip Done?": {
+      "main": [
+        [
+          {
+            "node": "Save Clip URLs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 10s Retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 10s Retry": {
+      "main": [
+        [
+          {
+            "node": "Poll Clip Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Clip URLs": {
+      "main": [
+        [
+          {
+            "node": "Merge Before Notify",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Before Notify": {
+      "main": [
+        [
+          {
+            "node": "Update Job Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        [
+          {
+            "node": "Create Job Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed"
+  }
+}

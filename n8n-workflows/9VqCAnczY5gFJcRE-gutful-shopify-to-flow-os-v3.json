@@ -1,0 +1,999 @@
+{
+  "id": "9VqCAnczY5gFJcRE",
+  "name": "Gutful Shopify to Flow OS V3",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "shopify-customer",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "99e9e64e-40c9-4ff2-82f2-9d9c66740c19",
+      "name": "Shopify Customer Webhook1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1856,
+        -1312
+      ],
+      "webhookId": "shopify-customer-hook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "shopify-order",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "23f22b17-4d53-406c-9903-a7ff16b28cf8",
+      "name": "Shopify Order Webhook1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1888,
+        -912
+      ],
+      "webhookId": "shopify-order-hook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-email",
+              "name": "email",
+              "value": "={{ $('Validate Customer Email').item.json.body.email }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-firstName",
+              "name": "firstName",
+              "value": "={{ $('Validate Customer Email').item.json.body.first_name }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-lastName",
+              "name": "lastName",
+              "value": "={{ $('Validate Customer Email').item.json.body.last_name }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-phone",
+              "name": "phone",
+              "value": "={{ $('Validate Customer Email').item.json.body.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-address",
+              "name": "address1",
+              "value": "={{ $('Validate Customer Email').item.json.body.addresses?.[0]?.address1 || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-city",
+              "name": "city",
+              "value": "={{ $('Validate Customer Email').item.json.body.addresses?.[0]?.city || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-state",
+              "name": "state",
+              "value": "={{ $('Validate Customer Email').item.json.body.addresses?.[0]?.province || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-country",
+              "name": "country",
+              "value": "={{ $('Validate Customer Email').item.json.body.addresses?.[0]?.country || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-zip",
+              "name": "postalCode",
+              "value": "={{ $('Validate Customer Email').item.json.body.addresses?.[0]?.zip || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-customerId",
+              "name": "shopifyCustomerId",
+              "value": "={{ $('Validate Customer Email').item.json.body.id }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-ordersCount",
+              "name": "ordersCount",
+              "value": "={{ $json.orders_count || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "assign-totalSpent",
+              "name": "totalSpent",
+              "value": "={{ $json.total_spent || '0.00' }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-customerState",
+              "name": "customerState",
+              "value": "={{ $json.state || 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-acceptsMarketing",
+              "name": "acceptsMarketing",
+              "value": "={{ $json.accepts_marketing || false }}",
+              "type": "boolean"
+            },
+            {
+              "id": "assign-shopifyTags",
+              "name": "shopifyTags",
+              "value": "={{ $json.tags || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-createdAt",
+              "name": "createdAt",
+              "value": "={{ $json.created_at }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "28590135-05eb-45e6-be5f-0048b2608050",
+      "name": "Map Customer Fields1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        -944,
+        -1328
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c5fff4cf-d28f-4f3c-a14f-72cdf2c13890",
+              "name": "email",
+              "value": "={{ $('Validate order Email1').item.json.body.customer.email }}",
+              "type": "string"
+            },
+            {
+              "id": "ce28c860-7495-42af-b760-4e2094a61d05",
+              "name": "firstName",
+              "value": "={{ $('Validate order Email1').item.json.body.customer.first_name }}",
+              "type": "string"
+            },
+            {
+              "id": "9614c7e7-e968-430a-be79-845cb438fc77",
+              "name": "lastName",
+              "value": "={{ $('Validate order Email1').item.json.body.customer.last_name }}",
+              "type": "string"
+            },
+            {
+              "id": "872cce46-72e9-4def-a7a1-7c049ae142c1",
+              "name": "phone",
+              "value": "={{ $('Validate order Email1').item.json.body.customer.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "7550b089-ba52-4ff2-bbbf-05f686479cad",
+              "name": "address1",
+              "value": "={{ $('Validate order Email1').item.json.body.billing_address?.address1 || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "2055219d-e87d-4a22-b51d-dddf4d8ab068",
+              "name": "city",
+              "value": "={{ $('Validate order Email1').item.json.body.billing_address?.city || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "b2341411-4134-438a-8a69-24b9b5f4bb8d",
+              "name": "state",
+              "value": "={{ $('Validate order Email1').item.json.body.billing_address?.province || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "97356585-ff14-4a68-affa-731b73917754",
+              "name": "postalCode",
+              "value": "={{ $('Validate order Email1').item.json.body.billing_address?.zip || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "7f65e771-f79c-4b29-abbe-41b93bfc7d4b",
+              "name": "shopifyCustomerId",
+              "value": "={{ $('Validate order Email1').item.json.body.customer.id }}",
+              "type": "string"
+            },
+            {
+              "id": "d395b9e6-0884-4064-9808-56b1f9ded7e6",
+              "name": "shopifyOrderId",
+              "value": "={{ $('Validate order Email1').item.json.body.id }}",
+              "type": "string"
+            },
+            {
+              "id": "7dca5903-2f5b-4cda-9062-1823d0433b6a",
+              "name": "orderNumber",
+              "value": "={{ $('Validate order Email1').item.json.body.order_number }}",
+              "type": "string"
+            },
+            {
+              "id": "fe0c444e-164b-47cf-b1a4-8d8d2c2f56e6",
+              "name": "orderTotal",
+              "value": "={{ $('Validate order Email1').item.json.body.total_price }}",
+              "type": "string"
+            },
+            {
+              "id": "9a3f340a-6b8e-4f17-b1e2-d600fec58d81",
+              "name": "orderCurrency",
+              "value": "={{ $('Validate order Email1').item.json.body.currency }}",
+              "type": "string"
+            },
+            {
+              "id": "64d3c366-3a47-4e10-bd19-f0f06e330019",
+              "name": "orderStatus",
+              "value": "={{ $('Validate order Email1').item.json.body.financial_status }}",
+              "type": "string"
+            },
+            {
+              "id": "0b9a1473-6596-4653-ab3f-421701239590",
+              "name": "fulfillmentStatus",
+              "value": "={{ $('Validate order Email1').item.json.body.fulfillment_status }}",
+              "type": "string"
+            },
+            {
+              "id": "138f77aa-c180-4b10-8078-462d66cc28f8",
+              "name": "webhookTopic",
+              "value": "={{ $('Validate order Email1').item.json.headers[\"x-shopify-topic\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "1fad8065-4e18-4d92-b045-45212ab9c84b",
+              "name": "orderCreatedAt",
+              "value": "={{ $('Validate order Email1').item.json.body.created_at }}",
+              "type": "string"
+            },
+            {
+              "id": "43fe210f-22b6-4434-90ea-3170fae9f223",
+              "name": "orderUpdatedAt",
+              "value": "={{ $('Validate order Email1').item.json.body.updated_at }}",
+              "type": "string"
+            },
+            {
+              "id": "shopify-last-order-id",
+              "name": "shopifyLastOrderId",
+              "value": "={{ String($('Validate order Email1').item.json.body.id || '') }}",
+              "type": "string"
+            },
+            {
+              "id": "shopify-last-order-number",
+              "name": "shopifyLastOrderNumber",
+              "value": "={{ String($('Validate order Email1').item.json.body.name || $('Validate order Email1').item.json.body.order_number || '') }}",
+              "type": "string"
+            },
+            {
+              "id": "shopify-last-order-name",
+              "name": "shopifyLastOrderName",
+              "value": "={{ String($('Validate order Email1').item.json.body.name || '') }}",
+              "type": "string"
+            },
+            {
+              "id": "shopify-last-order-total",
+              "name": "shopifyLastOrderTotal",
+              "value": "={{ String($('Validate order Email1').item.json.body.total_price || '0.00') }}",
+              "type": "string"
+            },
+            {
+              "id": "shopify-last-order-date",
+              "name": "shopifyLastOrderDate",
+              "value": "={{ $('Validate order Email1').item.json.body.created_at || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "shopify-last-payment-status",
+              "name": "shopifyLastPaymentStatus",
+              "value": "={{ String($('Validate order Email1').item.json.body.financial_status || '') }}",
+              "type": "string"
+            },
+            {
+              "id": "shopify-last-fulfillment-status",
+              "name": "shopifyLastFulfillmentStatus",
+              "value": "={{ String($('Validate order Email1').item.json.body.fulfillment_status || 'unfulfilled') }}",
+              "type": "string"
+            },
+            {
+              "id": "line-items",
+              "name": "lineItems",
+              "value": "={{ $('Validate order Email1').item.json.body.line_items || [] }}",
+              "type": "array"
+            },
+            {
+              "id": "customer-accepts-marketing",
+              "name": "customerAcceptsMarketing",
+              "value": "={{ $('Validate order Email1').item.json.body.customer?.accepts_marketing || $('Validate order Email1').item.json.body.buyer_accepts_marketing || false }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "28fc5513-327a-4b9d-aceb-12e8f058007e",
+      "name": "Map Order Fields1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        -992,
+        -896
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Generate intelligent tags for customer\nconst tags = [];\nconst item = $input.item.json;\n\n// Source tag\ntags.push('shopify-customer');\n\n// Customer lifecycle tags\nconst ordersCount = item.ordersCount || 0;\nif (ordersCount === 0) {\n  tags.push('new-customer', 'no-purchases');\n} else if (ordersCount === 1) {\n  tags.push('first-purchase');\n} else if (ordersCount >= 2 && ordersCount <= 4) {\n  tags.push('repeat-customer');\n} else if (ordersCount >= 5) {\n  tags.push('vip-customer', 'repeat-customer');\n}\n\n// Value-based tags\nconst totalSpent = parseFloat(item.totalSpent) || 0;\nif (totalSpent > 1000) {\n  tags.push('high-value-customer');\n} else if (totalSpent > 500) {\n  tags.push('medium-value-customer');\n} else if (totalSpent > 0) {\n  tags.push('low-value-customer');\n}\n\n// Marketing tags - FIXED: Check if acceptsMarketing exists and is true\nif (item.acceptsMarketing === true) {\n  tags.push('accepts-marketing');\n} else if (item.acceptsMarketing === false) {\n  tags.push('marketing-declined');\n}\n// If acceptsMarketing is null/undefined, don't add any marketing tag\n\n// Customer state tag\nif (item.customerState && item.customerState !== 'unknown') {\n  tags.push(`customer-${item.customerState}`);\n}\n\n// Shopify native tags (prefixed to avoid conflicts) - FIXED: Handle null/undefined\nif (item.shopifyTags && item.shopifyTags.trim() !== '') {\n  const shopifyTags = item.shopifyTags.split(',').map(t => t.trim()).filter(t => t);\n  shopifyTags.forEach(tag => {\n    tags.push(`shopify-${tag}`);\n  });\n}\n\nreturn { ...item, hlTags: tags };"
+      },
+      "id": "5b4c5621-3438-43ac-b791-ded9177f7c06",
+      "name": "Generate Customer Tags1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        -1328
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Generate order-specific tags and extract product names\nconst tags = [];\nconst item = $input.item.json;\nconst webhookTopic = item.webhookTopic;\n\n// Source tag\ntags.push('shopify-customer');\n\n// Order event tags based on webhook topic\nif (webhookTopic === 'orders/create') {\n  tags.push('order-created');\n} else if (webhookTopic === 'orders/paid') {\n  tags.push('order-paid', 'customer-paid');\n} else if (webhookTopic === 'orders/fulfilled') {\n  tags.push('order-fulfilled', 'customer-shipped');\n}\n\n// Extract product names from line_items and add as tags\nconst lineItems = item.lineItems || [];\nconst productNames = lineItems.map(item => item.title || item.name).filter(Boolean);\n\n// Add product names as tags (avoid duplicates)\nproductNames.forEach(productName => {\n  if (productName && !tags.includes(productName)) {\n    tags.push(productName);\n  }\n});\n\n// Value-based tags\nconst orderTotal = parseFloat(item.orderTotal) || 0;\nif (orderTotal > 1000) {\n  tags.push('high-value-customer');\n} else if (orderTotal > 500) {\n  tags.push('medium-value-customer');\n} else if (orderTotal > 0) {\n  tags.push('low-value-customer');\n}\n\n// Customer lifecycle tags\ntags.push('has-purchases');\n\nreturn { ...item, hlTags: tags };"
+      },
+      "id": "88dea32b-ae38-4a6e-8b1a-db6345602c6e",
+      "name": "Generate Order Tags1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        -896
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/upsert",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "={\n     \"Authorization\": \"Bearer {{ $('Execute a SQL query2').item.json.access_token }}\",\n     \"Content-Type\": \"application/json\",\n     \"Version\": \"2021-07-28\"\n} ",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify((() => { const data = { locationId: 'biianjtJPDFAGcw79LdL', email: $json.email, firstName: $json.firstName || '', lastName: $json.lastName || '', phone: $json.phone || '', address1: $json.address1 || '', city: $json.city || '', state: $json.state || '', postalCode: $json.postalCode || '', source: 'Shopify Customer', tags: $json.hlTags || [], customFields: [{ key: 'shopify_customer_id', value: String($json.shopifyCustomerId || '') }, { key: 'shopify_orders_count', value: String($json.ordersCount || 0) }, { key: 'shopify_total_spent', value: String($json.totalSpent || '0.00') }, { key: 'shopify_customer_since', value: $json.createdAt || null }, { key: 'shopify_accepts_marketing', value: String($json.acceptsMarketing || false) }] }; if ($json.country && String($json.country).trim()) { data.country = String($json.country); } return data; })()) }}",
+        "options": {}
+      },
+      "id": "8e7870be-035b-484a-8f14-144fe1117cd6",
+      "name": "Upsert HighLevel Contact (Customer)1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -528,
+        -1328
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/upsert",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "=  {\n    \"Authorization\": \"Bearer {{ $('Execute a SQL query3').item.json.access_token }}\",\n    \"Content-Type\": \"application/json\",\n    \"Version\": \"2021-07-28\"\n  }",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify((() => { const data = { locationId: 'biianjtJPDFAGcw79LdL', email: $json.email, firstName: $json.firstName || '', lastName: $json.lastName || '', phone: $json.phone || '', address1: $json.address1 || '', city: $json.city || '', state: $json.state || '', postalCode: $json.postalCode || '', source: 'Shopify Customer', tags: $json.hlTags || [], customFields: [{ key: 'shopify_customer_id', value: String($json.shopifyCustomerId || '') }, { key: 'shopify_orders_count', value: '1' }, { key: 'shopify_total_spent', value: String($json.orderTotal || '0.00') }, { key: 'shopify_customer_since', value: $json.orderCreatedAt || null }, { key: 'shopify_accepts_marketing', value: String($json.customerAcceptsMarketing || false) }, { key: 'shopify_last_order_id', value: String($json.shopifyLastOrderId || '') }, { key: 'shopify_last_order_number', value: String($json.shopifyLastOrderNumber || '') }, { key: 'shopify_last_order_name', value: String($json.shopifyLastOrderName || '') }, { key: 'shopify_last_order_total', value: String($json.shopifyLastOrderTotal || '0.00') }, { key: 'shopify_last_order_date', value: $json.shopifyLastOrderDate || '' }, { key: 'shopify_last_payment_status', value: String($json.shopifyLastPaymentStatus || '') }, { key: 'shopify_last_fulfillment_status', value: String($json.shopifyLastFulfillmentStatus || 'unfulfilled') }] }; if ($json.country && String($json.country).trim()) { data.country = String($json.country); } return data; })()) }}",
+        "options": {}
+      },
+      "id": "5ac22eb5-1de6-4d01-ba6d-8e1aa6abf97c",
+      "name": "Upsert HighLevel Contact (Order)1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -544,
+        -896
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"message\": \"Customer synced successfully\", \"contactId\": $json.contact?.id } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "751f5dbd-7612-42ef-bdf4-d36be6956470",
+      "name": "Respond Customer Success1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -304,
+        -1328
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"message\": \"Order synced successfully\", \"contactId\": $json.contact?.id } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "2cc5f3c7-a04c-45c4-a2f2-147cbb6c4fa6",
+      "name": "Respond Order Success1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -320,
+        -896
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": false, \"error\": \"Invalid customer data - missing email\" } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "095edb5d-0a5b-44f3-be35-cb01cf47f178",
+      "name": "Respond Customer Error1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1152,
+        -1136
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": false, \"error\": \"Invalid order data - missing customer email\" } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "f9c2e676-b8d9-4190-ba16-74fcba7a7ba7",
+      "name": "Respond Order Error1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1168,
+        -704
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "33d689c5-afe6-48c9-8b5a-4fc5f4168b18",
+              "leftValue": "={{ $json.body.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1376,
+        -1312
+      ],
+      "id": "165ad066-1b1d-48b8-bd43-9d9c1bca10a6",
+      "name": "Validate Customer Email"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "     SELECT access_token FROM highlevel_tokens WHERE location_id = 'biianjtJPDFAGcw79LdL' LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1152,
+        -1328
+      ],
+      "id": "56415fed-de2c-47b3-9ac7-7d4932b592c3",
+      "name": "Execute a SQL query2",
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "     SELECT access_token FROM highlevel_tokens WHERE location_id = 'biianjtJPDFAGcw79LdL' LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1168,
+        -896
+      ],
+      "id": "d0fd72a7-13b9-4f1a-be00-ac20b923ce32",
+      "name": "Execute a SQL query3",
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "33d689c5-afe6-48c9-8b5a-4fc5f4168b18",
+              "leftValue": "={{ $json.body.customer.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1408,
+        -912
+      ],
+      "id": "4a8e2b58-f6d4-42a9-adf2-4e41b6fd3961",
+      "name": "Validate order Email1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Basic Shopify webhook validation\n// This only runs in this specific workflow\n\nconst hasSignature = $json.headers['x-shopify-hmac-sha256'];\nconst hasTopic = $json.headers['x-shopify-topic'];\nconst hasShopDomain = $json.headers['x-shopify-shop-domain'];\nconst hasUserAgent = $json.headers['user-agent']?.includes('Shopify-Captain-Hook');\nconst hasEventId = $json.headers['x-shopify-event-id'];\n\n// All Shopify webhooks must have these headers\nif (!hasSignature || !hasTopic || !hasShopDomain || !hasUserAgent || !hasEventId) {\n  throw new Error('Invalid webhook - missing required Shopify headers');\n}\n\n// Verify shop domain matches expected\nconst expectedShopDomain = '7ihrm9-ip.myshopify.com';\nif ($json.headers['x-shopify-shop-domain'] !== expectedShopDomain) {\n  throw new Error('Invalid shop domain');\n}\n\nreturn $json;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1680,
+        -912
+      ],
+      "id": "a899e45b-3077-41d2-a181-c4e78343fab1",
+      "name": "Validate Shopify Order Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Basic Shopify webhook validation\n// This only runs in this specific workflow\n\nconst hasSignature = $json.headers['x-shopify-hmac-sha256'];\nconst hasTopic = $json.headers['x-shopify-topic'];\nconst hasShopDomain = $json.headers['x-shopify-shop-domain'];\nconst hasUserAgent = $json.headers['user-agent']?.includes('Shopify-Captain-Hook');\nconst hasEventId = $json.headers['x-shopify-event-id'];\n\n// All Shopify webhooks must have these headers\nif (!hasSignature || !hasTopic || !hasShopDomain || !hasUserAgent || !hasEventId) {\n  throw new Error('Invalid webhook - missing required Shopify headers');\n}\n\n// Verify shop domain matches expected\nconst expectedShopDomain = '7ihrm9-ip.myshopify.com';\nif ($json.headers['x-shopify-shop-domain'] !== expectedShopDomain) {\n  throw new Error('Invalid shop domain');\n}\n\nreturn $json;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1648,
+        -1312
+      ],
+      "id": "7668d039-ad15-4be0-a28b-ccb42c85a654",
+      "name": "Validate Shopify Customer Webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'Gutful Shopify to Flow OS V3'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start (Customer)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1656,
+        -1312
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "05789b5b-bc28-47c2-8eef-632ade7dadd4"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'Gutful Shopify to Flow OS V3'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start (Order)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1688,
+        -912
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "8a7f443a-b500-45a0-89b7-72d4b8243e30"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Gutful Shopify to Flow OS V3'::text, '{{ $execution.id }}'::text, '{{ JSON.stringify({path:\"customer\"}) }}'::jsonb);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success (Customer)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -54,
+        -1328
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "ded3e83e-b13c-4458-b6fd-0dc1e5863f5a"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'error'::text, 'Gutful Shopify to Flow OS V3'::text, '{{ $execution.id }}'::text, '{{ JSON.stringify({path:\"customer\"}) }}'::jsonb);",
+        "options": {}
+      },
+      "name": "Heartbeat: Error (Customer)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -902,
+        -1136
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "8c3a8c49-ddd0-47ea-810a-0792a7e0482e"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Gutful Shopify to Flow OS V3'::text, '{{ $execution.id }}'::text, '{{ JSON.stringify({path:\"order\"}) }}'::jsonb);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success (Order)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -70,
+        -896
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "88290b5e-956a-47e9-a224-462417320e3f"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'error'::text, 'Gutful Shopify to Flow OS V3'::text, '{{ $execution.id }}'::text, '{{ JSON.stringify({path:\"order\"}) }}'::jsonb);",
+        "options": {}
+      },
+      "name": "Heartbeat: Error (Order)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -918,
+        -704
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "45c07110-d94b-456d-98d1-015eb32d98d1"
+    }
+  ],
+  "connections": {
+    "Shopify Customer Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start (Customer)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shopify Order Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start (Order)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Customer Fields1": {
+      "main": [
+        [
+          {
+            "node": "Generate Customer Tags1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Order Fields1": {
+      "main": [
+        [
+          {
+            "node": "Generate Order Tags1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Customer Tags1": {
+      "main": [
+        [
+          {
+            "node": "Upsert HighLevel Contact (Customer)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Order Tags1": {
+      "main": [
+        [
+          {
+            "node": "Upsert HighLevel Contact (Order)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert HighLevel Contact (Customer)1": {
+      "main": [
+        [
+          {
+            "node": "Respond Customer Success1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert HighLevel Contact (Order)1": {
+      "main": [
+        [
+          {
+            "node": "Respond Order Success1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Customer Email": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Customer Error1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query2": {
+      "main": [
+        [
+          {
+            "node": "Map Customer Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query3": {
+      "main": [
+        [
+          {
+            "node": "Map Order Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate order Email1": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Order Error1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Shopify Order Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate order Email1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Shopify Customer Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Customer Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start (Customer)": {
+      "main": [
+        [
+          {
+            "node": "Validate Shopify Customer Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start (Order)": {
+      "main": [
+        [
+          {
+            "node": "Validate Shopify Order Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Customer Success1": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success (Customer)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Customer Error1": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Error (Customer)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Order Success1": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success (Order)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Order Error1": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Error (Order)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  }
+}

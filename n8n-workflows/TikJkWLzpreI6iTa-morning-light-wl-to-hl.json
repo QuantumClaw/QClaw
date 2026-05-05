@@ -1,0 +1,702 @@
+{
+  "id": "TikJkWLzpreI6iTa",
+  "name": "21/10/25 Morning Light WL to HL",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        3760,
+        -512
+      ],
+      "id": "d40ed0be-009b-409d-ae9a-e7ccacaf126e",
+      "name": "Respond 200"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wl-production",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        320,
+        -608
+      ],
+      "id": "ec597e4a-2cda-4135-870b-491360c0a1db",
+      "name": "Webhook2",
+      "webhookId": "bc9043ee-7f62-4620-b264-aa1ffca86743"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "{\n  \"Authorization\": \"Bearer {{ $('Execute a SQL query').first().json.access_token }}\",\n  \"Content-Type\": \"application/json\",\n  \"Version\": \"2021-07-28\"\n}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"locationId\": \"JKgdyOKXN76dkoZRmoGM\",\n  \"firstName\": \"{{ $('Map WL -> HL').first().json.firstName || '' }}\",\n  \"lastName\": \"{{ $('Map WL -> HL').first().json.lastName || '' }}\",\n  \"email\": \"{{ $('Map WL -> HL').first().json.email || '' }}\",\n  \"phone\": \"{{ $('Map WL -> HL').first().json.phone || '' }}\",\n  \"dateOfBirth\": \"{{ $('Map WL -> HL').first().json.dateOfBirth || '' }}\",\n  \"tags\": {{ JSON.stringify($('Map WL -> HL').first().json.tags || []) }},\n  \"customFields\": {{ JSON.stringify(Object.entries($('Map WL -> HL').first().json.customField || {}).map(([key, value]) => ({ key, value }))) }}\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2992,
+        -512
+      ],
+      "id": "c0e6bf10-05ae-4e1b-806e-d76853b55057",
+      "name": "Send To HL2",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// WELLNESSLIVING \u2192 HIGHLEVEL MAPPER\n// Version: 5.2 - Enhanced Custom Field Mapping + Skip Non-Customer Webhooks\n// Handles: Class bookings, purchases, profile updates, client creation\n// Features: Smart tagging + Comprehensive custom field tracking\n// ============================================\n\n// DEBUG: Log the raw input structure\nconsole.log('Raw $json keys:', Object.keys($json));\nconsole.log('webhook_data type:', typeof $json.webhook_data);\nconsole.log('webhook_data exists:', !!$json.webhook_data);\n\n// Parse webhook_data from string to object\nlet webhookPayload = {};\ntry {\n  if ($json.webhook_data && typeof $json.webhook_data === 'string') {\n    webhookPayload = JSON.parse($json.webhook_data);\n  } else if ($json.webhook_data && typeof $json.webhook_data === 'object') {\n    webhookPayload = $json.webhook_data;\n  }\n} catch (error) {\n  console.error('Error parsing webhook_data:', error.message);\n  throw new Error('Failed to parse webhook_data: ' + error.message);\n}\n\nif (!webhookPayload || !webhookPayload.headers) {\n  throw new Error('Invalid webhook_data structure. Expected headers and body.');\n}\n\n// Extract headers and body from the parsed webhook_data\nconst headers = webhookPayload.headers || {};\nconst body = webhookPayload.body || {};\nconst topic = headers['x-topic'] || 'unknown';\n\nconsole.log('Topic detected:', topic);\nconsole.log('Body keys:', Object.keys(body));\n\n// ============================================\n// SKIP NON-CUSTOMER WEBHOOKS\n// ============================================\nconst nonCustomerWebhooks = [\n  'purchase_option.created',\n  'purchase_option.updated', \n  'purchase_option.deleted',\n  'class.created',\n  'class.updated',\n  'class.deleted',\n  'staff.created',\n  'staff.updated',\n  'staff.deleted'\n];\n\nif (nonCustomerWebhooks.includes(topic)) {\n  console.log(`Skipping non-customer webhook: ${topic}`);\n  // Return a minimal response that won't break the workflow\n  return {\n    firstName: '',\n    lastName: '',\n    email: '',\n    phone: '',\n    dateOfBirth: '',\n    tags: ['skipped-webhook'],\n    customField: {\n      wl_webhook_skipped: topic,\n      wl_skip_reason: 'No customer data in webhook'\n    },\n    debug: {\n      topic: topic,\n      skipReason: 'Non-customer webhook - no client data available'\n    }\n  };\n}\n\nconsole.log('Client data:', body.client);\nconsole.log('Customer data:', body.a_customer);\n\n// ============================================\n// HELPER: Convert text to tag format\n// ============================================\nfunction toTag(text) {\n  if (!text) return '';\n  return text\n    .trim()\n    .toLowerCase()\n    .replace(/[^a-z0-9\\s-]/g, '') // Remove special characters except spaces and hyphens\n    .replace(/\\s+/g, '-') // Replace spaces with hyphens\n    .replace(/-+/g, '-'); // Replace multiple hyphens with a single one\n}\n\n// ============================================\n// HELPER: Format date to YYYY-MM-DD\n// ============================================\nfunction formatDate(dateString) {\n  if (!dateString) return '';\n  try {\n    const date = new Date(dateString);\n    if (isNaN(date.getTime())) {\n      const parts = dateString.split(/[\\s-:]+/);\n      if (parts.length >= 3) {\n        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;\n      }\n      return dateString;\n    }\n    return date.toISOString().split('T')[0];\n  } catch (e) {\n    console.error('Error formatting date:', e.message, 'Original:', dateString);\n    return dateString;\n  }\n}\n\n// ============================================\n// HELPER: Extract client data from multiple sources\n// ============================================\nfunction extractClientData(body, topic) {\n  let client = {};\n  let clientSource = 'unknown';\n  \n  // Handle different webhook types\n  if (topic === 'client.created') {\n    // Client creation webhooks - client data is directly in body\n    client = body;\n    clientSource = 'body (direct)';\n  } else if (topic.startsWith('client.class.schedule')) {\n    // Class bookings - usually in body.client\n    client = body.client || {};\n    clientSource = 'body.client';\n  } else if (topic === 'purchase.created') {\n    // Purchase webhooks - can be in body.client OR body.a_customer\n    client = body.client || body.a_customer || {};\n    clientSource = body.client ? 'body.client' : 'body.a_customer';\n  } else {\n    // Fallback - try all possible locations\n    client = body.client || body.a_customer || body;\n    clientSource = body.client ? 'body.client' : (body.a_customer ? 'body.a_customer' : 'body (direct)');\n  }\n  \n  // Normalize client data structure\n  const normalizedClient = {\n    s_first_name: client.s_first_name || client.text_name?.split(' ')[0] || '',\n    s_last_name: client.s_last_name || client.text_name?.split(' ').slice(1).join(' ') || '',\n    s_mail: client.s_mail || client.text_mail || '',\n    s_phone: client.s_phone || client.text_phone || '',\n    dt_birth: client.dt_birth || '',\n    uid: client.uid || '',\n    s_member: client.s_member || '',\n    dt_add: client.dt_add || '',\n    is_customer_new: client.is_customer_new || false,\n    has_discount: client.has_discount || false,\n    text_login_type: client.text_login_type || '',\n    a_custom_field: client.a_custom_field || [],\n    a_member_group: client.a_member_group || [],\n    attendance: client.attendance || {}\n  };\n  \n  console.log('Client source:', clientSource);\n  console.log('Normalized client:', normalizedClient);\n  \n  return { client: normalizedClient, clientSource };\n}\n\n// ============================================\n// DEFENSIVE CLIENT DATA EXTRACTION\n// ============================================\nconst { client, clientSource } = extractClientData(body, topic);\nlet additionalData = {};\nlet tags = [];\nlet customField = {};\n\n// Extract client data based on topic\nif (topic === 'client.created') {\n  // New client creation\n  tags.push('wl-client', 'new-client');\n  \n  // Add client type tag\n  if (client.text_login_type) {\n    tags.push(toTag(client.text_login_type));\n  }\n  \n  // Add new customer tag if applicable\n  if (client.is_customer_new) {\n    tags.push('new-customer');\n  }\n  \n  // Basic client information\n  customField.wl_member_id = client.uid || '';\n  customField.wl_member_since = formatDate(client.dt_add);\n  customField.wl_member_status = client.text_login_type || '';\n  customField.wl_client_type = client.text_login_type || '';\n  customField.wl_has_discount = client.has_discount || false;\n  \n  additionalData = {\n    memberId: client.uid,\n    memberSince: client.dt_add,\n    clientType: client.text_login_type,\n    isNewCustomer: client.is_customer_new,\n    hasDiscount: client.has_discount\n  };\n\n} else if (topic.startsWith('client.class.schedule')) {\n  // Class bookings/cancellations/attendance\n  tags.push('wl-client');\n\n  const visitAction = body.id_visit?.value || '';\n  const classTitle = body.s_title || '';\n  const location = body.text_location || '';\n  const instructor = body.a_staff?.[0]?.s_name || '';\n  const bookingDate = formatDate(body.dt_date_local);\n\n  if (visitAction === 'Book') {\n    tags.push('class-booked', toTag(classTitle));\n    customField.wl_last_class_booked = classTitle;\n    customField.wl_last_class_date = bookingDate;\n    customField.wl_last_booking_action = 'Book';\n    customField.wl_last_booking_date = bookingDate;\n  } else if (visitAction === 'Cancel') {\n    tags.push('class-cancelled', toTag(classTitle));\n    customField.wl_last_class_cancelled = classTitle;\n    customField.wl_last_cancellation_date = bookingDate;\n    customField.wl_last_booking_action = 'Cancel';\n    customField.wl_last_booking_date = bookingDate;\n  } else if (visitAction === 'Attend') {\n    tags.push('class-attended', toTag(classTitle));\n    customField.wl_last_class_attended = classTitle;\n    customField.wl_last_attendance_date = bookingDate;\n    customField.wl_last_booking_action = 'Attend';\n    customField.wl_last_booking_date = bookingDate;\n  }\n\n  // Enhanced membership information\n  if (client.attendance) {\n    customField.wl_classes_remaining = client.attendance.i_left || null;\n    customField.wl_membership_type = client.attendance.text_promotion || '';\n    customField.wl_classes_total = client.attendance.i_total || null;\n    customField.wl_classes_attended_count = client.attendance.i_use || null;\n    \n    // Purchase information\n    if (client.attendance.o_purchase_item) {\n      customField.wl_last_purchase_amount = client.attendance.o_purchase_item.m_cost_item || null;\n      customField.wl_last_purchase_date = formatDate(client.attendance.o_purchase_item.dt_purchase);\n      customField.wl_last_purchase_item = client.attendance.o_purchase_item.s_title || '';\n    }\n    \n    // Add VIP tags based on membership value\n    const membershipValue = parseFloat(client.attendance.o_purchase_item?.m_cost_item || 0);\n    if (membershipValue >= 300) {\n      tags.push('vip-300-plus', 'vip-member');\n    } else if (membershipValue >= 200) {\n      tags.push('vip-200-plus', 'vip-member');\n    } else if (membershipValue >= 150) {\n      tags.push('vip-150-plus', 'vip-member');\n    }\n  }\n\n  // Additional client information\n  customField.wl_member_id = client.uid || '';\n  customField.wl_member_since = formatDate(client.dt_add);\n  customField.wl_instructor_name = instructor;\n  customField.wl_member_status = client.text_login_type || '';\n\n  additionalData = {\n    classTitle: classTitle,\n    visitAction: visitAction,\n    location: location,\n    instructor: instructor,\n    bookingDate: bookingDate,\n    classesRemaining: client.attendance?.i_left || null,\n    classesTotal: client.attendance?.i_total || null,\n    classesUsed: client.attendance?.i_use || null,\n    membershipType: client.attendance?.text_promotion || '',\n    membershipValue: client.attendance?.o_purchase_item?.m_cost_item || null,\n    memberSince: client.dt_add,\n    memberId: client.uid\n  };\n\n} else if (topic === 'purchase.created') {\n  // Purchase webhooks\n  tags.push('wl-client', 'purchase-made');\n\n  const purchase = body.purchase || {};\n  const purchaseItems = body.purchase_items || [];\n\n  if (purchase.amount) {\n    customField.wl_last_purchase_amount = parseFloat(purchase.amount);\n  }\n  if (purchase.description) {\n    customField.wl_last_purchase_item = purchase.description;\n    tags.push(toTag(purchase.description));\n  }\n  if (purchase.date) {\n    customField.wl_last_purchase_date = formatDate(purchase.date);\n  }\n\n  // Add VIP tags based on purchase amount\n  const purchaseAmount = parseFloat(purchase.amount || 0);\n  if (purchaseAmount >= 300) {\n    tags.push('vip-300-plus', 'vip-member');\n  } else if (purchaseAmount >= 200) {\n    tags.push('vip-200-plus', 'vip-member');\n  } else if (purchaseAmount >= 150) {\n    tags.push('vip-150-plus', 'vip-member');\n  }\n\n  additionalData = {\n    purchaseAmount: purchase.amount || null,\n    purchaseCurrency: purchase.currency || '',\n    purchaseDescription: purchase.description || '',\n    purchaseDate: formatDate(purchase.date),\n    paymentMethod: purchase.payment_method || '',\n    purchaseStatus: purchase.status || '',\n    purchaseItems: purchaseItems.map(item => ({\n      title: item.title,\n      price: item.price,\n      quantity: item.quantity\n    }))\n  };\n\n} else {\n  // Fallback\n  tags.push('wl-client', 'unknown-event');\n}\n\n// Ensure client has at least an email or phone for HighLevel\nif (!client.s_mail && !client.s_phone) {\n  console.error('No email or phone found for client:', client);\n  throw new Error('No email or phone found for client in webhook payload.');\n}\n\n// Clean up tags (remove duplicates)\nconst uniqueTags = [...new Set(tags.filter(t => t))];\n\n// ============================================\n// BUILD HIGHLEVEL PAYLOAD\n// ============================================\nconst result = {\n  firstName: client.s_first_name || '',\n  lastName: client.s_last_name || '',\n  email: client.s_mail || '',\n  phone: client.s_phone || '',\n  dateOfBirth: formatDate(client.dt_birth),\n  tags: uniqueTags,\n  customField: customField,\n  // Include additional data for debugging\n  debug: {\n    topic: topic,\n    clientSource: clientSource,\n    client: client,\n    additionalData: additionalData,\n    customFieldData: customField\n  }\n};\n\nconsole.log('Final HighLevel payload:', JSON.stringify(result, null, 2));\nconsole.log('Custom fields being sent:', JSON.stringify(customField, null, 2));\n\nreturn result;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        -608
+      ],
+      "id": "87d7c793-2dae-4b37-8ae5-be30dfbcfd1e",
+      "name": "Map WL -> HL"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1c567fc-18da-40ae-b4f1-39aa4e365940",
+              "name": "debug_input",
+              "value": "={{ JSON.stringify($json) }}",
+              "type": "string"
+            },
+            {
+              "id": "2902796b-0f82-4aca-b315-e360304a7356",
+              "name": "webhook_data",
+              "value": "={{ $('Webhook2').first().json }}",
+              "type": "string"
+            },
+            {
+              "id": "887a71d9-bdd5-4160-80e4-96a058a64009",
+              "name": "access_token",
+              "value": "={{ $('Execute a SQL query').first().json.access_token }}",
+              "type": "string"
+            },
+            {
+              "id": "b7901a7f-6ae3-4e41-b3ef-1e68d3a35b56",
+              "name": "refresh_token",
+              "value": "={{ $('Execute a SQL query').first().json.refresh_token }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        976,
+        -608
+      ],
+      "id": "1b93ce15-187c-4b17-bb3e-84093915510a",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://services.leadconnectorhq.com/contacts/search",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "={\n     \"Authorization\": \"Bearer {{ $('Edit Fields').first().json.access_token }}\",\n     \"Content-Type\": \"application/json\",\n     \"Version\": \"2021-07-28\"\n} ",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"locationId\": \"JKgdyOKXN76dkoZRmoGM\",\n  \"query\": \"{{ $json.email }}\",\n  \"pageLimit\": 20\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1424,
+        -512
+      ],
+      "id": "e5c028d5-0d4e-4567-9a38-f265ffc95291",
+      "name": "Get Contact"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e01008cf-b88e-44c9-9059-d7820f4d2cf5",
+              "leftValue": "={{ $json.contacts && $json.contacts.length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1648,
+        -512
+      ],
+      "id": "7b620148-88ed-45c9-8fe8-546a849c6213",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get all inputs\nconst inputs = $input.all();\nconsole.log('Total inputs:', inputs.length);\n\n// Find GET Contact data and Map WL \u2192 HL data\nlet getContactData = null;\nlet mapWLData = null;\n\ninputs.forEach((input, index) => {\n  const data = input.json;\n  console.log(`Input ${index}:`, data);\n  \n  if (data.contacts && Array.isArray(data.contacts)) {\n    getContactData = data;\n    console.log(`Found GET Contact data in input ${index}`);\n  }\n  \n  if (data.customField && Object.keys(data.customField).length > 0) {\n    mapWLData = data;\n    console.log(`Found Map WL \u2192 HL data in input ${index}`);\n  }\n});\n\n// Get existing contact\nconst existingContact = getContactData?.contacts?.[0] || null;\nconst existingTags = existingContact ? (existingContact.tags || []) : [];\n\n// Get new data\nconst newTags = mapWLData?.tags || [];\nconst customFieldData = mapWLData?.customField || {};\n\n// ============================================\n// PHONE CONFLICT PREVENTION\n// ============================================\nconst existingPhone = existingContact?.phone || '';\nconst newPhone = mapWLData?.phone || '';\nlet phoneToUse = newPhone; // Default: use new phone\nlet conflictDetected = false;\n\nif (existingContact && existingPhone && newPhone && existingPhone !== newPhone) {\n  // Phone numbers differ - HighLevel may reject if new phone exists on another contact\n  // STRATEGY: Preserve existing phone to avoid conflict\n  phoneToUse = existingPhone;\n  conflictDetected = true;\n  console.warn(`\u26a0\ufe0f Phone conflict prevention: Keeping existing phone ${existingPhone} instead of new phone ${newPhone}`);\n  \n  // Log conflict info in custom fields for manual review\n  customFieldData.wl_phone_conflict_detected = true;\n  customFieldData.wl_phone_original = existingPhone;\n  customFieldData.wl_phone_attempted = newPhone;\n  customFieldData.wl_conflict_resolution = 'Preserved existing phone to prevent duplicate error';\n} else if (existingContact && existingPhone && newPhone && existingPhone === newPhone) {\n  // Same phone, no change\n  phoneToUse = existingPhone;\n} else if (!existingContact || !existingPhone) {\n  // No existing contact or no existing phone - safe to use new phone\n  phoneToUse = newPhone;\n}\n\n// Merge tags\nconst mergedTags = [...new Set([...existingTags, ...newTags])];\n\n// Add notification tags if conflict detected\nif (conflictDetected) {\n  mergedTags.push('duplicate-contact-conflict');\n  mergedTags.push('needs-manual-review');\n  console.log('\ud83d\udce2 Duplicate contact conflict detected - tags added for visibility');\n}\n\nconsole.log('Existing contact:', existingContact);\nconsole.log('Existing phone:', existingPhone);\nconsole.log('New phone:', newPhone);\nconsole.log('Phone to use:', phoneToUse);\nconsole.log('Conflict detected:', conflictDetected);\nconsole.log('Merged tags:', mergedTags);\nconsole.log('Custom field data:', customFieldData);\n\n// Return the merged data (Code node format - NO array wrapper)\nreturn {\n  firstName: mapWLData?.firstName || existingContact?.firstName || '',\n  lastName: mapWLData?.lastName || existingContact?.lastName || '',\n  email: mapWLData?.email || existingContact?.email || '',\n  phone: phoneToUse, // Use conflict-prevented phone\n  dateOfBirth: mapWLData?.dateOfBirth || existingContact?.dateOfBirth || '',\n  tags: mergedTags,\n  contactId: existingContact ? existingContact.id : null,\n  customField: customFieldData\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2096,
+        -672
+      ],
+      "id": "68384b6b-6b63-42e1-a5bb-22de354f6c3f",
+      "name": "Merge Tags"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://services.leadconnectorhq.com/contacts/{{ $json.contactId }}",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "={\n  \"Authorization\": \"Bearer {{ $('Execute a SQL query').first().json.access_token }}\",\n  \"Content-Type\": \"application/json\",\n  \"Version\": \"2021-07-28\"\n}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"firstName\": \"{{ $json.firstName || '' }}\",\n  \"lastName\": \"{{ $json.lastName || '' }}\",\n  \"email\": \"{{ $json.email || '' }}\",\n  \"phone\": \"{{ $json.phone || '' }}\",\n  \"dateOfBirth\": \"{{ $json.dateOfBirth || '' }}\",\n  \"tags\": {{ JSON.stringify($json.tags || []) }},\n  \"customFields\": {{ JSON.stringify(Object.entries($json.customField || {}).map(([key, value]) => ({ key, value }))) }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2768,
+        -688
+      ],
+      "id": "dcee9361-3523-4d56-ae14-e7ad177e579d",
+      "name": "Put",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT access_token, refresh_token FROM highlevel_tokens WHERE id = 1 ORDER BY updated_at DESC LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        752,
+        -608
+      ],
+      "id": "0a501913-f090-411d-9b69-bbfcb3381e7b",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get all inputs\nconst inputs = $input.all();\nconsole.log('Total inputs:', inputs.length);\n\n// Find the input with custom fields (this is what we want)\nlet finalData = null;\n\ninputs.forEach((input, index) => {\n  const data = input.json;\n  console.log(`Input ${index}:`, data);\n  \n  // Use the input that has custom fields\n  if (data.customField && Object.keys(data.customField).length > 0) {\n    finalData = data;\n    console.log(`Using data from input ${index} (has custom fields)`);\n  }\n});\n\n// If no custom fields found, use the first item\nif (!finalData && inputs.length > 0) {\n  finalData = inputs[0].json;\n  console.log('No custom fields found, using first item');\n}\n\nconsole.log('Final data:', finalData);\n\n// Return ONLY ONE item\nreturn finalData;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        -672
+      ],
+      "id": "820707ba-0829-461d-b889-cddc3b4a3cfc",
+      "name": "Select best data"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "fieldsToMatchString": "email",
+        "joinMode": "keepEverything",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1872,
+        -672
+      ],
+      "id": "ec1d6e40-c2e8-4a4b-baf0-240ccd4405a2",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "517cd597-1c1f-42ea-810d-fb161ee76c1d",
+              "leftValue": "={{ $json.contactId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2544,
+        -672
+      ],
+      "id": "781e14b8-f7a1-4077-8b3f-eb132da4c9d2",
+      "name": "If has contact id"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2768,
+        -512
+      ],
+      "id": "d715da4e-4a79-43b3-becb-dd7c674950cd",
+      "name": "Merge to create new contact"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get output from Put node\nconst putNodeOutput = $input.first().json;\nconst contactData = $('Select best data').first().json;\n\n// n8n stores errors when Continue on Fail is enabled\n// Based on your error structure: errorMessage, errorDescription, errorDetails\nlet hasError = false;\nlet errorMessage = '';\nlet errorDescription = '';\nlet isDuplicateError = false;\n\n// Helper function to extract clean error message from nested JSON strings\nfunction extractCleanErrorMessage(rawError) {\n  if (!rawError) return '';\n  \n  // Try to parse nested JSON strings\n  try {\n    // First level: might be \"400 - \\\"{...}\\\"\"\n    const match = rawError.match(/\"message\":\\\\?\"([^\"\\\\]+)\"/);\n    if (match) {\n      return match[1].replace(/\\\\\"/g, '\"').replace(/\\\\n/g, ' ');\n    }\n    \n    // Try to parse as JSON\n    let parsed = rawError;\n    for (let i = 0; i < 3; i++) { // Try up to 3 levels of JSON encoding\n      try {\n        parsed = JSON.parse(parsed);\n        if (parsed.message) return parsed.message;\n        if (typeof parsed === 'string') continue;\n      } catch (e) {\n        break;\n      }\n    }\n  } catch (e) {\n    // If parsing fails, return original\n  }\n  \n  // Fallback: extract meaningful parts\n  if (rawError.includes('duplicated contacts')) {\n    return 'Duplicate contact error: Another contact already has this phone number.';\n  }\n  \n  return rawError;\n}\n\n// Check for error indicators (n8n HTTP Request node error format)\nif (putNodeOutput.errorMessage) {\n  hasError = true;\n  errorMessage = putNodeOutput.errorMessage || '';\n  errorDescription = putNodeOutput.errorDescription || '';\n} else if (putNodeOutput.error) {\n  hasError = true;\n  errorMessage = putNodeOutput.error.message || JSON.stringify(putNodeOutput.error);\n  errorDescription = putNodeOutput.error.description || '';\n}\n\n// Extract clean, readable error message\nconst cleanErrorMessage = extractCleanErrorMessage(errorMessage);\nconst cleanDescription = extractCleanErrorMessage(errorDescription) || 'This location does not allow duplicated contacts.';\n\n// Check if it's a duplicate contact error\nif (hasError) {\n  const errorText = (errorMessage + ' ' + errorDescription + ' ' + cleanErrorMessage).toLowerCase();\n  isDuplicateError = errorText.includes('duplicate') || \n                     errorText.includes('duplicated contacts');\n}\n\n// Get contactId from contactData (should be from Select best data node)\nconst contactId = contactData.contactId;\n\n// Format error log as readable text (not nested JSON)\nconst errorLogText = isDuplicateError ? \n  `\u26a0\ufe0f DUPLICATE CONTACT ERROR\\n\\n` +\n  `Issue: ${cleanDescription}\\n\\n` +\n  `Contact Details:\\n` +\n  `- Email: ${contactData.email || 'Not provided'}\\n` +\n  `- Phone: ${contactData.phone || 'Not provided'}\\n` +\n  `- Name: ${contactData.firstName || ''} ${contactData.lastName || ''}\\n\\n` +\n  `Error occurred: ${new Date().toISOString()}\\n\\n` +\n  `Action Required: Please review and manually merge duplicate contacts in HighLevel.` :\n  null;\n\n// Prepare output with error detection results\n// Ensure isDuplicateError is explicitly a boolean (not string/truthy)\nconst output = {\n  ...contactData, // Keep all original contact data\n  hasError: Boolean(hasError),\n  isDuplicateError: Boolean(isDuplicateError), // Explicitly convert to boolean\n  errorMessage: errorMessage,\n  errorDescription: errorDescription,\n  contactId: contactId,\n  // Prepare custom field update with error log (as readable text)\n  duplicateErrorLog: errorLogText\n};\n\nconsole.log('Error Detection Results:', {\n  hasError,\n  isDuplicateError,\n  errorMessage,\n  contactId\n});\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2976,
+        -688
+      ],
+      "id": "2e01c1e6-1aef-49f3-bf06-af7a2e13dd59",
+      "name": "Detect Duplicate Error"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dde4d1fe-5cba-4a55-bb63-57fad4014364",
+              "leftValue": "={{ $json.isDuplicateError }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3184,
+        -688
+      ],
+      "id": "29e6ae3f-8e13-4392-a111-a3d3da1afcdb",
+      "name": "If Duplicate Error?"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://services.leadconnectorhq.com/contacts/{{ $json.contactId || $('Detect Duplicate Error').first().json.contactId }}",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "={\n  \"Authorization\": \"Bearer {{ $('Execute a SQL query').first().json.access_token }}\",\n  \"Content-Type\": \"application/json\",\n  \"Version\": \"2021-07-28\"\n}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"firstName\": \"{{ $json.firstName || '' }}\",\n  \"lastName\": \"{{ $json.lastName || '' }}\",\n  \"email\": \"{{ $json.email || '' }}\",\n  \"dateOfBirth\": \"{{ $json.dateOfBirth || '' }}\",\n  \"tags\": {{ JSON.stringify($json.tags || []) }},\n  \"customFields\": {{ JSON.stringify($json.customFields || []) }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3616,
+        -816
+      ],
+      "id": "84f9a2fd-2257-41cf-9dbb-41352a46e95c",
+      "name": "Log Error in Custom Field"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get current data\nconst data = $json;\n\n// Get existing tags and add error tag\nconst tags = [...(data.tags || []), 'needs-manual-merge'];\n\n// Get existing custom fields\nconst existingCustomFields = Object.entries(data.customField || {}).map(([key, value]) => ({\n  key: key,\n  value: value\n}));\n\n// Add error log custom fields (only if duplicateErrorLog exists)\n// Handle both old format (object) and new format (string)\nlet errorLogText = '';\nif (data.duplicateErrorLog) {\n  if (typeof data.duplicateErrorLog === 'string') {\n    // Already formatted as clean text\n    errorLogText = data.duplicateErrorLog;\n  } else if (typeof data.duplicateErrorLog === 'object') {\n    // Old format - convert to clean text\n    errorLogText = \n      `\u26a0\ufe0f DUPLICATE CONTACT ERROR\\n\\n` +\n      `Issue: This location does not allow duplicated contacts.\\n\\n` +\n      `Contact Details:\\n` +\n      `- Email: ${data.duplicateErrorLog.email || data.email || 'Not provided'}\\n` +\n      `- Phone: ${data.duplicateErrorLog.phone || data.phone || 'Not provided'}\\n` +\n      `- Name: ${data.firstName || ''} ${data.lastName || ''}\\n\\n` +\n      `Error occurred: ${data.duplicateErrorLog.date || new Date().toISOString()}\\n\\n` +\n      `Action Required: Please review and manually merge duplicate contacts in FlowOs.`;\n  }\n}\n\nconst errorCustomFields = errorLogText ? [\n  {\n    key: 'wl_duplicate_error_log',\n    value: errorLogText // Always a clean, readable string\n  },\n  {\n    key: 'wl_last_error_date',\n    value: new Date().toISOString()\n  }\n] : [];\n\n// Combine all custom fields\nconst customFields = [...existingCustomFields, ...errorCustomFields];\n\n// Build the payload\nconst payload = {\n  firstName: data.firstName || '',\n  lastName: data.lastName || '',\n  email: data.email || '',\n  dateOfBirth: data.dateOfBirth || '',\n  tags: tags,\n  customFields: customFields\n};\n\nreturn payload;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3440,
+        -816
+      ],
+      "id": "28c15380-6908-4c74-a1ac-17ea4fb223c6",
+      "name": "Prepare Error Log Payload"
+    },
+    {
+      "parameters": {
+        "jsCode": "// WellnessLiving webhook validation - Robust version\n// Handles all WellnessLiving webhook variations\n\nconst headers = $json.headers || {};\nconst body = $json.body || {};\n\n// Required WellnessLiving headers (check both underscore and hyphen for flexibility)\nconst hasSignature = headers['x-signature-256'] || headers['x-signature_256'];\nconst hasTopic = headers['x-topic'] || headers['x_topic'];\nconst hasBusinessId = headers['x-business_id'] || headers['x-business-id']; // Check both\nconst hasPayloadKey = headers['x-payload-key'] || headers['x_payload_key'];\nconst hasUserAgent = headers['user-agent']?.includes('Wellnessliving.Webhook') || \n                     headers['user-agent']?.includes('WellnessLiving.Webhook');\nconst hasContentType = headers['content-type']?.includes('application/json') ||\n                       headers['content-type']?.includes('application/json');\n\n// Expected business ID\nconst expectedBusinessId = '340157';\n\n// Get actual business ID (try both formats)\nconst actualBusinessId = headers['x-business_id'] || headers['x-business-id'];\n\n// Log what we're checking (for debugging)\nconsole.log('\ud83d\udd0d WellnessLiving Validation:');\nconsole.log('  Signature:', hasSignature ? '\u2705' : '\u274c');\nconsole.log('  Topic:', hasTopic || '\u274c Missing');\nconsole.log('  Business ID:', actualBusinessId || '\u274c Missing');\nconsole.log('  Payload Key:', hasPayloadKey ? '\u2705' : '\u274c');\nconsole.log('  User Agent:', hasUserAgent ? '\u2705' : '\u274c');\n\n// Validate required headers\nif (!hasSignature) {\n  throw new Error('Missing x-signature-256 header - request may be unauthorized');\n}\n\nif (!hasTopic) {\n  throw new Error('Missing x-topic header - invalid WellnessLiving webhook');\n}\n\nif (!hasBusinessId) {\n  throw new Error('Missing x-business_id header - invalid WellnessLiving webhook');\n}\n\nif (!hasPayloadKey) {\n  throw new Error('Missing x-payload-key header - invalid WellnessLiving webhook');\n}\n\nif (!hasUserAgent) {\n  throw new Error('Invalid user-agent - not from WellnessLiving');\n}\n\nif (!hasContentType) {\n  throw new Error('Invalid content-type - expected application/json');\n}\n\n// Validate business ID matches expected\nif (actualBusinessId && actualBusinessId !== expectedBusinessId) {\n  throw new Error(`Invalid business ID: ${actualBusinessId} - expected ${expectedBusinessId}`);\n}\n\n// Validate body structure\nif (!body || typeof body !== 'object' || Object.keys(body).length === 0) {\n  throw new Error('Invalid webhook body - missing or empty');\n}\n\n// Optional: Validate topic is a known WellnessLiving topic pattern\nconst validTopicPatterns = [\n  'client.created',\n  'client.updated',\n  'client.class.schedule',\n  'purchase.created',\n  'purchase.updated'\n];\n\nif (hasTopic) {\n  const topicValid = validTopicPatterns.some(pattern => hasTopic.startsWith(pattern));\n  if (!topicValid) {\n    console.warn(`\u26a0\ufe0f Unknown webhook topic: ${hasTopic} - proceeding anyway`);\n  }\n}\n\nconsole.log('\u2705 WellnessLiving webhook validation PASSED');\nconsole.log('  Topic:', hasTopic);\nconsole.log('  Business ID:', actualBusinessId);\n\nreturn $json;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        -608
+      ],
+      "id": "4b064c60-6774-45c4-add2-9398971961b0",
+      "name": "Validate WellnessLiving Webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'Morning Light WL->HL'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        520,
+        -608
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "2853cb7b-cf67-4c92-b5bb-81b764b30439"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Morning Light WL->HL'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4010,
+        -512
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "026559eb-5f30-4eec-8034-f24eacc01169"
+    }
+  ],
+  "connections": {
+    "Webhook2": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send To HL2": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map WL -> HL": {
+      "main": [
+        [
+          {
+            "node": "Get Contact",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Map WL -> HL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contact": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Merge to create new contact",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Tags": {
+      "main": [
+        [
+          {
+            "node": "Select best data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Put": {
+      "main": [
+        [
+          {
+            "node": "Detect Duplicate Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select best data": {
+      "main": [
+        [
+          {
+            "node": "If has contact id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Merge Tags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If has contact id": {
+      "main": [
+        [
+          {
+            "node": "Put",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge to create new contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge to create new contact": {
+      "main": [
+        [
+          {
+            "node": "Send To HL2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Duplicate Error": {
+      "main": [
+        [
+          {
+            "node": "If Duplicate Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Duplicate Error?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Error Log Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error in Custom Field": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Error Log Payload": {
+      "main": [
+        [
+          {
+            "node": "Log Error in Custom Field",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate WellnessLiving Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        [
+          {
+            "node": "Validate WellnessLiving Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 200": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  }
+}
