@@ -3875,3 +3875,70 @@ heartbeat nodes across the batch. None had existing heartbeats.
   earlier confirmation.
 - Slug-only file rationalisation (sweep after Batch 5).
 
+---
+
+## 2026-05-05 — Phase 4 Slice 0 Sub-project B Batch 5: dormant-recovery heartbeats
+
+Final batch. Instrumented 4 confirmed-dormant workflows (active=true in
+n8n DB but triggers don't fire due to the structural n8n behaviour
+Tyson surfaced in the discovery audit). 8 new heartbeat nodes total.
+Each workflow received a PUT followed by deactivate→reactivate cycle
+via the n8n API to force trigger re-registration.
+
+| Workflow ID | Slug | Trigger | Heartbeats | Cycle result |
+|---|---|---|---|---|
+| `vjj2uBIPc07FpIxx` | trading-weekly-analyst | Mon 09:00 UTC | Start, Success | PUT 200 → DEACT 200 → REACT 200, triggerCount=1 |
+| `lu39mAN7epBRK3Kw` | meta-ads-telegram-bot-router | Telegram Trigger (41 nodes) | Start, Success (11-source fan-in) | PUT 200 → DEACT 200 → REACT 200, triggerCount=1 |
+| `cP5TjJ3DFle6r6FC` | instagram-token-expiry-monitor | Mon 09:00 UTC | Start, Success (2-source fan-in) | PUT 200 → DEACT 200 → REACT 200, triggerCount=1 |
+| `3XGcnolBQ7AXMubO` | ghl-changelog-emails | Biweekly Mon 09:00 UTC | Start, Success (2-source fan-in) | PUT 200 → DEACT 200 → REACT 200, triggerCount=1 |
+
+**Cycle script** (`/tmp/n8n_inv/put_b5.sh`):
+
+For each workflow: `PUT /workflows/{id}` (instrument) → 1 s sleep →
+`POST /workflows/{id}/deactivate` → `POST /workflows/{id}/activate`.
+The 1 s sleep is defensive against any race between deactivate and
+reactivate. All 4 cycles succeeded clean (200 / 200 / 200 each).
+
+**Bot Router specifically:**
+
+41 nodes, 11 distinct functional terminals (excluding 2 sticky-note
+orphans `Setup Notes` and `Unknown Intent Reply`). Used the fan-in
+pattern from Batch 4: ALL 11 terminals (Ad Creation Not Authorised,
+Call Ad Creation Agent, Call Research Agent, Forward to Ad Agent,
+Help Reply, Report Restricted, Report Sent Confirmation, Send Brief
+Confirmation, Send Copy to Chat, Send Tyson Notification, Unauthorised
+Reply) → single `Heartbeat: Success` node. Saves 10 nodes vs distinct-
+per-terminal.
+
+**Verification expectations:**
+
+- **`bot-router`**: verifiable in-session by sending a Telegram
+  message to flowstatesads_bot. Expected behaviour: a `Heartbeat:
+  Start` row lands in `workflow_heartbeats` with workflow_id
+  `lu39mAN7epBRK3Kw`. If it lands, dormancy is recovered. If not, the
+  trigger is still wedged and a deeper investigation is needed.
+- **`trading-weekly`** + **`token-expiry`**: next natural fire is
+  Monday 2026-05-11 09:00 UTC (~6 days). Heartbeat-row appearance at
+  that time confirms recovery.
+- **`ghl-changelog`**: biweekly Monday — next natural fire depends on
+  which Monday is "the right one" in the cadence cycle. Earliest
+  expected fire: 2026-05-11; latest: 2026-05-18 (~12 days). Heartbeat-
+  row appearance at either confirms recovery.
+
+3 of 4 workflows are "instrumented + reactivated, awaiting natural
+fire to confirm recovery." This is the unavoidable consequence of the
+weekly/biweekly cadences; per Tyson's plan, the inverse-alerter from
+Batch 0 will alert if the workflows go silent past 2× their expected
+cadence.
+
+**Files added (4 canonical post-PUT JSONs):**
+
+- `n8n-workflows/vjj2uBIPc07FpIxx-trading-weekly-analyst.json`
+- `n8n-workflows/lu39mAN7epBRK3Kw-meta-ads-telegram-bot-router.json`
+- `n8n-workflows/cP5TjJ3DFle6r6FC-instagram-token-expiry-monitor.json`
+- `n8n-workflows/3XGcnolBQ7AXMubO-ghl-changelog-emails.json`
+
+**Sub-project B status: COMPLETE.** All 22 target workflows now have
+heartbeat instrumentation. A summary commit closing out Sub-project B
+follows next.
+

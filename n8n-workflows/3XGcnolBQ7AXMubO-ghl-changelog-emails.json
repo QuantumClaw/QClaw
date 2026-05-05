@@ -1,0 +1,807 @@
+{
+  "id": "3XGcnolBQ7AXMubO",
+  "name": "GHL Changelog Emails",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 2,
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "1cf56b94-218d-4c1a-88d4-63d275bc7bab",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -704,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ideas.gohighlevel.com/api/changelog/feed.rss",
+        "options": {}
+      },
+      "id": "62f083f9-ea49-4eb8-a530-f902a54982b2",
+      "name": "RSS Read",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        -496,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cutoff = new Date();\ncutoff.setDate(cutoff.getDate() - 14);\n\nconst filtered = items.filter(item => {\n  const pubDate = new Date(item.json.pubDate);\n  return pubDate >= cutoff;\n});\n\nif (filtered.length === 0) {\n  // Return a sentinel so downstream nodes know there's nothing to do\n  return [{ json: { noUpdates: true } }];\n}\n\nreturn filtered;\n"
+      },
+      "id": "8aa85d29-33be-46ae-8701-a4207298f55d",
+      "name": "Filter Past 14 Days",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-001",
+              "leftValue": "={{ $json.noUpdates }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "04376e87-a14f-4c72-9390-74e0a30a0a98",
+      "name": "Check Has Updates",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  return {\n    json: {\n      title: item.json.title,\n      date: item.json.pubDate,\n      content: item.json.contentSnippet || item.json.content || '',\n      link: item.json.link\n    }\n  };\n});\n"
+      },
+      "id": "2345deac-da9c-4f34-b5c8-8105cdba724d",
+      "name": "Format for GPT",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        176,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    combinedUpdates: $input.all().map(e => `Title: ${e.json.title}\\nDate: ${e.json.date}\\nContent: ${e.json.content}`).join('\\n\\n---\\n\\n')\n  }\n}];\n"
+      },
+      "id": "e305051b-4b4f-45c9-b2b7-2f5cd731af7b",
+      "name": "Combine Updates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4o mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are a product relevance filter for Flow OS, a white-labelled GoHighLevel platform built for coaches and health professionals.\n\nFlow OS's ONE job is: capture inbound leads, follow up automatically, and move them to booking without manual effort.\n\nFlow OS's core features are:\n- Automated follow-up sequences (SMS, email, voicemail drops)\n- Lead capture forms and funnels\n- Calendar and booking automation\n- Pipeline management\n- Two-way SMS and email conversations\n- Reputation management (Google reviews)\n- Missed call text-back\n- Website and landing page builder\n\nFlow OS has two plan tiers:\n- Starter ($97/mth): Core follow-up and lead capture. Limited features.\n- Unlimited ($297/mth): Full platform access including advanced automations, reporting, and all features.\n\nYou will receive a list of GoHighLevel changelog updates from the past 2 weeks.\n\nYour task:\n1. Filter out any updates that are NOT relevant to Flow OS clients (e.g. agency-level features, white-label settings, SaaS mode, marketplace items, API-only developer features).\n2. From the remaining updates, identify which ones are relevant to: (a) ALL clients, (b) UNLIMITED plan clients only, (c) STARTER plan clients only.\n3. Return a JSON object with this exact structure:\n{\n  \"hasRelevantUpdates\": true/false,\n  \"allClientsUpdates\": [\"update 1 description\", \"update 2 description\"],\n  \"unlimitedOnlyUpdates\": [\"update description\"],\n  \"starterOnlyUpdates\": [\"update description\"],\n  \"generalAudienceHighlights\": [\"key highlight 1\", \"key highlight 2\"]\n}\n\nIMPORTANT:\n- Replace ALL mentions of GoHighLevel or GHL with \"Flow OS\"\n- Do NOT include links\n- Keep each update description to 1-2 sentences maximum\n- If no relevant updates exist, set hasRelevantUpdates to false and leave arrays empty\n- generalAudienceHighlights are for non-clients (prospects) - frame as value/benefit, not feature names\n\nUpdates to filter:\n{{ $json.combinedUpdates }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fda0aeb2-3fc0-4a08-8edc-e73ac81b8277",
+      "name": "Relevance Filter (AI)",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [
+        544,
+        -32
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "I9np0X3gCWfXpKEf",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the raw AI response content\nconst raw = $input.first().json.message?.content \n         || $input.first().json.content \n         || '{}';\n\n// Strip markdown code fences (```json ... ``` or ``` ... ```)\nlet cleaned = raw.trim();\nif (cleaned.startsWith('`')) {\n  cleaned = cleaned.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '').trim();\n}\n\nlet parsed;\ntry {\n  parsed = typeof cleaned === 'object' ? cleaned : JSON.parse(cleaned);\n} catch(e) {\n  const match = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { parsed = JSON.parse(match[0]); }\n    catch(e2) { parsed = { hasRelevantUpdates: false, parseError: e2.message }; }\n  } else {\n    parsed = { hasRelevantUpdates: false, parseError: e.message };\n  }\n}\n\nreturn [{ json: parsed }];\n"
+      },
+      "id": "86aa14f6-b7b3-4029-9afc-e0ff0f77301e",
+      "name": "Parse Relevance Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-002",
+              "leftValue": "={{ $json.hasRelevantUpdates }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a61d0708-589d-47cd-9c83-b3c70fc5b6ad",
+      "name": "Has Relevant Updates?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1056,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4o mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are writing an email on behalf of Flow OS to send to EXISTING CLIENTS.\n\nFlow OS is a white-labelled GoHighLevel platform built for coaches and health professionals. It automates lead capture and follow-up so nothing slips through the cracks.\n\nBRAND VOICE:\n- Calm, direct, and practical\n- No hype, no urgency, no fear tactics\n- UK English spelling and grammar\n- Short sentences. Clear paragraphs.\n- Minimal emoji (none unless absolutely natural)\n- Never mention GoHighLevel or GHL \u2014 always say \"Flow OS\" or \"the platform\"\n- Never lead with features \u2014 lead with the outcome or relief the update provides\n\nEMAIL CONTEXT:\n- Audience: Existing Flow OS clients (mix of Starter $97/mth and Unlimited $297/mth plan holders)\n- Purpose: Inform them of new platform updates and invite them to explore or implement\n- Tone: Like a trusted operator giving a useful heads-up, not a salesperson\n- CTA framing: \"Reach out if you'd like help implementing this\" or \"Ask us how to get this set up in your account\"\n\nPLAN-SPECIFIC NOTES:\n- If there are Unlimited-only updates, mention them clearly and note they're available on the Unlimited plan\n- If there are Starter updates, mention them for all\n- Do NOT push Starter clients to upgrade \u2014 simply note what's available on each plan\n\nSTRUCTURE:\n1. Subject line (compelling, specific, not clickbait)\n2. Opening line (acknowledge the update cycle, no filler)\n3. Body (updates grouped logically \u2014 all-plan updates first, then plan-specific)\n4. Closing (calm CTA \u2014 invite them to reach out if they want help implementing)\n5. Sign-off: \"The Flow OS Team\"\n\nFORMAT YOUR RESPONSE AS JSON:\n{\n  \"subject\": \"...\",\n  \"preheader\": \"...\",\n  \"html_body\": \"...\"\n}\n\nThe html_body should use clean HTML with <p>, <strong>, <ul>, <li> tags only. No inline styles.\n\nUPDATES TO INCLUDE:\nAll clients: {{ JSON.stringify($json.allClientsUpdates) }}\nUnlimited plan only: {{ JSON.stringify($json.unlimitedOnlyUpdates) }}\nStarter plan only: {{ JSON.stringify($json.starterOnlyUpdates) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aa609760-595b-48dc-bd45-44c91c76b387",
+      "name": "Generate Client Email (AI)",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [
+        1280,
+        -192
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "I9np0X3gCWfXpKEf",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4o mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are writing an email on behalf of Flow OS to send to PROSPECTS (non-clients on the general email list).\n\nFlow OS is a platform for coaches and health professionals that automates lead capture and follow-up \u2014 so nothing slips through the cracks.\n\nBRAND VOICE:\n- Calm, direct, and practical\n- No hype, no urgency, no fear tactics\n- UK English spelling and grammar\n- Short sentences. Clear paragraphs.\n- Minimal emoji (none unless absolutely natural)\n- Never mention GoHighLevel or GHL \u2014 always say \"Flow OS\" or \"the platform\"\n- Never lead with features \u2014 lead with the problem it solves or the relief it provides\n\nEMAIL CONTEXT:\n- Audience: Coaches and health professionals who are NOT yet Flow OS clients\n- Purpose: Use the new platform updates as a reason to reach out and demonstrate ongoing value/momentum\n- Tone: Warm, informative, low-pressure \u2014 like a useful update from a brand they already know\n- This is NOT a hard sell. It's a value-add touchpoint.\n- The goal is to keep Flow OS top of mind and gently invite them to explore\n\nCONVERSION NARRATIVE (follow this structure):\n1. Name the hidden cost (leads slipping through, manual follow-up)\n2. Normalise the problem (this happens to almost every coach once things get busy)\n3. Introduce the system (Flow OS installs automatic follow-up so nothing slips)\n4. Reduce perceived effort (you don't need to rebuild your business or learn tech)\n5. Offer a calm decision (activate your follow-up system)\n\nSTRUCTURE:\n1. Subject line (curiosity-driven, outcome-focused, not feature-led)\n2. Opening line (hook \u2014 name the problem or the opportunity)\n3. Body (frame the updates as proof that the platform keeps evolving to solve real problems for coaches)\n4. Closing (soft CTA \u2014 \"Activate your follow-up system\" or \"See how it works\")\n5. Sign-off: \"The Flow OS Team\"\n\nFORMAT YOUR RESPONSE AS JSON:\n{\n  \"subject\": \"...\",\n  \"preheader\": \"...\",\n  \"html_body\": \"...\"\n}\n\nThe html_body should use clean HTML with <p>, <strong>, <ul>, <li> tags only. No inline styles.\n\nHIGHLIGHTS TO REFERENCE (frame as value, not features):\n{{ JSON.stringify($json.generalAudienceHighlights) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b298cec2-aa18-4fdb-be77-10c4a757c2da",
+      "name": "Generate Prospect Email (AI)",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [
+        1280,
+        128
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "I9np0X3gCWfXpKEf",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the raw AI response content\nconst raw = $input.first().json.message?.content \n         || $input.first().json.content \n         || '{}';\n\n// Strip markdown code fences\nlet cleaned = raw.trim();\nif (cleaned.startsWith('`')) {\n  cleaned = cleaned.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '').trim();\n}\n\nlet parsed;\ntry {\n  parsed = typeof cleaned === 'object' ? cleaned : JSON.parse(cleaned);\n} catch(e) {\n  const match = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { parsed = JSON.parse(match[0]); }\n    catch(e2) { parsed = { subject: 'Flow OS Update', preheader: '', html_body: cleaned }; }\n  } else {\n    parsed = { subject: 'Flow OS Update', preheader: '', html_body: cleaned };\n  }\n}\n\nreturn [{ json: parsed }];\n"
+      },
+      "id": "b5c728ec-f041-49af-8f0a-4afdce6985eb",
+      "name": "Parse Client Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the raw AI response content\nconst raw = $input.first().json.message?.content \n         || $input.first().json.content \n         || '{}';\n\n// Strip markdown code fences\nlet cleaned = raw.trim();\nif (cleaned.startsWith('`')) {\n  cleaned = cleaned.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '').trim();\n}\n\nlet parsed;\ntry {\n  parsed = typeof cleaned === 'object' ? cleaned : JSON.parse(cleaned);\n} catch(e) {\n  const match = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { parsed = JSON.parse(match[0]); }\n    catch(e2) { parsed = { subject: 'Flow OS Update', preheader: '', html_body: cleaned }; }\n  } else {\n    parsed = { subject: 'Flow OS Update', preheader: '', html_body: cleaned };\n  }\n}\n\nreturn [{ json: parsed }];\n"
+      },
+      "id": "7ec82c02-6f15-47f9-8348-0377281a972b",
+      "name": "Parse Prospect Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"locationId\": \"2NszMTudEJyVXCzQjNTo\", \"filters\": [{\"field\": \"tags\", \"operator\": \"contains\", \"value\": \"flowos client\"}, {\"field\": \"tags\", \"operator\": \"not_contains\", \"value\": \"spam\"}], \"pageLimit\": 100}",
+        "options": {}
+      },
+      "id": "93ec2783-a3be-4692-b656-ae2893f901af",
+      "name": "Fetch Client Contacts (Page 1)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1712,
+        -192
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "25OYxB6EthgmKoF9",
+          "name": "GHL Flow OS PIT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"locationId\": \"2NszMTudEJyVXCzQjNTo\", \"filters\": [{\"field\": \"tags\", \"operator\": \"not_contains\", \"value\": \"flowos client\"}, {\"field\": \"tags\", \"operator\": \"not_contains\", \"value\": \"spam\"}], \"pageLimit\": 100, \"page\": 1}",
+        "options": {}
+      },
+      "id": "ee9fbe7f-255e-4a80-95f7-5d2b8d68e2f8",
+      "name": "Fetch All Prospect Contacts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1712,
+        128
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "25OYxB6EthgmKoF9",
+          "name": "GHL Flow OS PIT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the email content from the Parse Client Email node\nconst emailData = $('Parse Client Email').first().json;\n\n// Get contacts from the HTTP request\nconst contacts = $input.first().json.contacts || [];\n\n// Filter: must have a valid email and not be DND\nconst validContacts = contacts.filter(c => c.email && !c.dnd);\n\n// Return one item per contact with the email content merged in\nreturn validContacts.map(c => ({\n  json: {\n    contactId: c.id,\n    firstName: c.firstName || '',\n    email: c.email,\n    tags: c.tags || [],\n    subject: emailData.subject,\n    html_body: emailData.html_body,\n    emailType: 'client'\n  }\n}));\n"
+      },
+      "id": "81337d33-b2b1-48d6-82c3-889f57a22f36",
+      "name": "Prepare Client Send List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the email content from the Parse Prospect Email node\nconst emailData = $('Parse Prospect Email').first().json;\n\n// When pagination is used, each page is a separate item - collect all contacts from all pages\nconst allContacts = [];\nfor (const item of $input.all()) {\n  const contacts = item.json.contacts || [];\n  allContacts.push(...contacts);\n}\n\n// Filter: must have a valid email and not be DND\nconst validProspects = allContacts.filter(c => c.email && !c.dnd);\n\n// Return one item per contact with the email content merged in\nreturn validProspects.map(c => ({\n  json: {\n    contactId: c.id,\n    firstName: c.firstName || '',\n    email: c.email,\n    tags: c.tags || [],\n    subject: emailData.subject,\n    html_body: emailData.html_body,\n    emailType: 'prospect'\n  }\n}));\n"
+      },
+      "id": "890e41f1-9d00-4f90-b639-dad67dfadde4",
+      "name": "Prepare Prospect Send List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/conversations/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-04-15"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"type\": \"Email\",\n  \"contactId\": \"{{ $json.contactId }}\",\n  \"subject\": {{ JSON.stringify($json.subject) }},\n  \"html\": {{ JSON.stringify($json.html_body) }},\n  \"emailFrom\": \"support@flowos.tech\",\n  \"emailReplyTo\": \"support@flowos.tech\",\n  \"status\": \"pending\"\n}",
+        "options": {}
+      },
+      "id": "f866990f-1681-4329-bc05-c85d9d19b8cc",
+      "name": "Send Email to Client",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2176,
+        -192
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "25OYxB6EthgmKoF9",
+          "name": "GHL Flow OS PIT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/conversations/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-04-15"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"type\": \"Email\",\n  \"contactId\": \"{{ $json.contactId }}\",\n  \"subject\": {{ JSON.stringify($json.subject) }},\n  \"html\": {{ JSON.stringify($json.html_body) }},\n  \"emailFrom\": \"support@flowos.tech\",\n  \"emailReplyTo\": \"support@flowos.tech\",\n  \"status\": \"pending\"\n}",
+        "options": {}
+      },
+      "id": "2abc35fa-c51e-4697-aa70-959f67f45fdc",
+      "name": "Send Email to Prospect",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        128
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "25OYxB6EthgmKoF9",
+          "name": "GHL Flow OS PIT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "id": "b2ee5c12-37de-467f-909d-6b501501e2db",
+      "name": "No Relevant Updates \u2014 Stop",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1088,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "fieldsToMatchString": "msg, msg",
+        "options": {}
+      },
+      "id": "ff4087f5-0f0d-4068-b9a7-fe7f9c0a0526",
+      "name": "Wait for Both Sends",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2400,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'GHL Changelog Emails'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -504,
+        -32
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "b491fe3d-bd76-4a09-b378-7abed42533a5"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'GHL Changelog Emails'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1388,
+        320
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "e5ad1610-dd7e-49f5-8dc2-0c76780dbe6a"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read": {
+      "main": [
+        [
+          {
+            "node": "Filter Past 14 Days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Past 14 Days": {
+      "main": [
+        [
+          {
+            "node": "Check Has Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Has Updates": {
+      "main": [
+        [
+          {
+            "node": "Format for GPT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Relevant Updates \u2014 Stop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for GPT": {
+      "main": [
+        [
+          {
+            "node": "Combine Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Updates": {
+      "main": [
+        [
+          {
+            "node": "Relevance Filter (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relevance Filter (AI)": {
+      "main": [
+        [
+          {
+            "node": "Parse Relevance Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Relevance Response": {
+      "main": [
+        [
+          {
+            "node": "Has Relevant Updates?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Relevant Updates?": {
+      "main": [
+        [
+          {
+            "node": "Generate Client Email (AI)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Prospect Email (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Relevant Updates \u2014 Stop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Client Email (AI)": {
+      "main": [
+        [
+          {
+            "node": "Parse Client Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Prospect Email (AI)": {
+      "main": [
+        [
+          {
+            "node": "Parse Prospect Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Client Email": {
+      "main": [
+        [
+          {
+            "node": "Fetch Client Contacts (Page 1)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Prospect Email": {
+      "main": [
+        [
+          {
+            "node": "Fetch All Prospect Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Client Contacts (Page 1)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Client Send List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Client Send List": {
+      "main": [
+        [
+          {
+            "node": "Send Email to Client",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Prospect Send List": {
+      "main": [
+        [
+          {
+            "node": "Send Email to Prospect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email to Client": {
+      "main": [
+        [
+          {
+            "node": "Wait for Both Sends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email to Prospect": {
+      "main": [
+        [
+          {
+            "node": "Wait for Both Sends",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch All Prospect Contacts": {
+      "main": [
+        [
+          {
+            "node": "Prepare Prospect Send List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Both Sends": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        [
+          {
+            "node": "RSS Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Relevant Updates \u2014 Stop": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

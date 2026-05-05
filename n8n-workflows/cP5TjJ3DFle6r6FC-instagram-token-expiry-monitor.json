@@ -1,0 +1,282 @@
+{
+  "id": "cP5TjJ3DFle6r6FC",
+  "name": "Instagram Token Expiry Monitor",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "token-trigger-001",
+      "name": "Every Monday at 9am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/debug_token?input_token={{ $env.IG_ACCESS_TOKEN }}&access_token={{ $env.IG_ACCESS_TOKEN }}",
+        "options": {}
+      },
+      "id": "token-debug-001",
+      "name": "Check Token Expiry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst data = $input.first().json.data;\n\nif (!data) {\n  return [{ json: { valid: false, daysUntilExpiry: 0, expiresAt: 'unknown', message: 'Could not read token data' } }];\n}\n\nconst expiresAt = data.expires_at; // Unix timestamp, or 0 if never expires\nconst isValid = data.is_valid;\n\nif (!isValid) {\n  return [{ json: { valid: false, daysUntilExpiry: 0, expiresAt: 'invalid', message: 'Token is already invalid!' } }];\n}\n\n// If expires_at is 0, the token never expires (app token)\nif (!expiresAt || expiresAt === 0) {\n  return [{ json: { valid: true, daysUntilExpiry: 999, expiresAt: 'never', message: 'Token does not expire', shouldAlert: false } }];\n}\n\nconst now = Math.floor(Date.now() / 1000);\nconst secondsUntilExpiry = expiresAt - now;\nconst daysUntilExpiry = Math.floor(secondsUntilExpiry / 86400);\nconst expiresAtDate = new Date(expiresAt * 1000).toISOString().split('T')[0];\n\nconst shouldAlert = daysUntilExpiry <= 14; // Alert if 14 days or fewer remaining\nconst isExpired = daysUntilExpiry <= 0;\n\nreturn [{\n  json: {\n    valid: isValid,\n    daysUntilExpiry,\n    expiresAt: expiresAtDate,\n    shouldAlert,\n    isExpired,\n    message: isExpired\n      ? `Token has EXPIRED! Workflow is broken.`\n      : shouldAlert\n        ? `Token expires in ${daysUntilExpiry} days (${expiresAtDate}). Renew now!`\n        : `Token is healthy. Expires in ${daysUntilExpiry} days (${expiresAtDate}).`\n  }\n}];\n"
+      },
+      "id": "token-parse-001",
+      "name": "Parse Expiry Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "should-alert",
+              "leftValue": "={{ $json.shouldAlert }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "token-check-001",
+      "name": "Needs Alert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "ig-performance-data",
+          "mode": "name"
+        },
+        "text": "={{ $json.isExpired ? ':rotating_light:' : ':warning:' }} *Instagram Access Token Alert*\n\n{{ $json.message }}\n\n*Action required:*\n1. Go to https://developers.facebook.com/tools/explorer/ and generate a new token\n2. Extend it at https://developers.facebook.com/tools/debug/accesstoken/\n3. Update `IG_ACCESS_TOKEN` in `/home/n8nadmin/n8n-project/.env`\n4. Run: `docker compose down && docker compose up -d`",
+        "otherOptions": {}
+      },
+      "id": "token-slack-alert-001",
+      "name": "Slack \u2014 Token Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        200
+      ],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "qvXU2mcT4H1OJgRo",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "ig-performance-data",
+          "mode": "name"
+        },
+        "text": "=:white_check_mark: *Instagram Token Check \u2014 All Good*\n\n{{ $json.message }}",
+        "otherOptions": {}
+      },
+      "id": "token-slack-ok-001",
+      "name": "Slack \u2014 Token OK",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        420
+      ],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "qvXU2mcT4H1OJgRo",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'Instagram Token Expiry Monitor'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        200,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "43b55553-f8ba-4fd4-ba5b-1c9685f4d55d"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Instagram Token Expiry Monitor'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1180,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "380ca768-668d-4f40-b6ef-bb144e31f24f"
+    }
+  ],
+  "connections": {
+    "Every Monday at 9am": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Token Expiry": {
+      "main": [
+        [
+          {
+            "node": "Parse Expiry Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Expiry Data": {
+      "main": [
+        [
+          {
+            "node": "Needs Alert?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Alert?": {
+      "main": [
+        [
+          {
+            "node": "Slack \u2014 Token Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack \u2014 Token OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        [
+          {
+            "node": "Check Token Expiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack \u2014 Token Alert": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack \u2014 Token OK": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

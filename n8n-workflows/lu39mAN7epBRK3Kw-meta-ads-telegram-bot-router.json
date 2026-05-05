@@ -1,0 +1,1730 @@
+{
+  "id": "lu39mAN7epBRK3Kw",
+  "name": "Meta Ads Telegram Bot Router",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -64,
+        224
+      ],
+      "webhookId": "fsc-telegram-bot-001",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract message details and check authorisation\nconst item = $input.first().json;\n// Handle both regular messages and callback queries (button presses)\nconst isCallback = !!item.callback_query;\nconst message = isCallback ? item.callback_query.message : item.message;\nconst callbackData = isCallback ? item.callback_query.data : null;\nconst callbackId = isCallback ? item.callback_query.id : null;\nconst chatId = message?.chat?.id || item.callback_query?.message?.chat?.id;\nconst userId = isCallback ? item.callback_query.from.id : message?.from?.id;\nconst firstName = isCallback ? item.callback_query.from.first_name : message?.from?.first_name;\nconst text = isCallback ? callbackData : (message?.text || message?.caption || '').trim();\n// Authorised users\nconst TYSON_ID = 1375806243;\nconst EMMA_ID = 1318710237;\nconst AUTHORISED = [TYSON_ID, EMMA_ID];\nconst isTyson = userId === TYSON_ID;\nconst isAuthorised = AUTHORISED.includes(userId);\n// Extract file info (for ad creative uploads)\nconst doc = message?.document;\nconst photo = message?.photo;\nconst video = message?.video;\nconst fileId = doc?.file_id || (photo ? photo[photo.length-1]?.file_id : null) || video?.file_id || null;\nconst fileName = doc?.file_name || (photo ? 'photo.jpg' : null) || (video ? 'video.mp4' : null) || null;\nconst fileType = doc ? 'document' : (photo ? 'photo' : (video ? 'video' : null));\nreturn [{\n  json: {\n    chatId,\n    userId,\n    firstName,\n    text,\n    isCallback,\n    callbackData,\n    callbackId,\n    isTyson,\n    isAuthorised,\n    rawMessage: message,\n    fileId,\n    fileName,\n    fileType\n  }\n}];"
+      },
+      "id": "parse-message",
+      "name": "Parse Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "auth-check",
+              "leftValue": "={{ $json.isAuthorised }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "auth-gate",
+      "name": "Authorisation Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "Sorry, you're not authorised to use this bot. Contact Tyson to get access.",
+        "additionalFields": {}
+      },
+      "id": "unauthorised-reply",
+      "name": "Unauthorised Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        912,
+        608
+      ],
+      "webhookId": "a62ab99c-6a16-460e-b6e0-609cb5da89d3",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const apiResponse = $input.first().json;\nconst raw = apiResponse.content?.[0]?.text || '{}';\nlet parsed = {};\ntry {\n  const match = raw.match(/\\{[\\s\\S]*\\}/);\n  parsed = match ? JSON.parse(match[0]) : {};\n} catch(e) {\n  parsed = { intent: 'UNKNOWN' };\n}\nconst ctx = $('Build Anthropic Request').first().json;\nreturn [{ json: { ...parsed, chatId: ctx.chatId, userId: ctx.userId, firstName: ctx.firstName, isTyson: ctx.isTyson, originalText: ctx.originalText, isCallback: ctx.isCallback, callbackData: ctx.callbackData } }];"
+      },
+      "id": "parse-intent",
+      "name": "Parse Intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "COPY",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "copy"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "BRIEF",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "brief"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "REPORT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "report"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "HELP",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "help"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "AD_CREATION",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ad_creation"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "ITERATE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "iterate"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "RESEARCH",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and",
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                }
+              },
+              "renameOutput": true,
+              "outputKey": "research"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "intent-router",
+      "name": "Intent Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1536,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "=\u23f3 Got it {{ $json.firstName }}! Writing 5 ad copy variants for *{{ $json.offer || 'your offer' }}*...\n\nAngle: _{{ $json.angle || 'not specified' }}_\nFormat: _{{ $json.format || 'not specified' }}_\n\nThis takes about 30 seconds.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "copy-ack",
+      "name": "Copy Acknowledgement",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1808,
+        -48
+      ],
+      "webhookId": "5bf2a673-0452-4d86-93c3-01130748a95f",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://webhook.flowos.tech/webhook/meta-ads-copy-agent",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "offer",
+              "value": "={{ $('Parse Intent').first().json.offer }}"
+            },
+            {
+              "name": "angle",
+              "value": "={{ $('Parse Intent').first().json.angle }}"
+            },
+            {
+              "name": "format",
+              "value": "={{ $('Parse Intent').first().json.format }}"
+            },
+            {
+              "name": "hook_style",
+              "value": "={{ $('Parse Intent').first().json.hook_style }}"
+            },
+            {
+              "name": "chatId",
+              "value": "={{ $('Parse Intent').first().json.chatId }}"
+            },
+            {
+              "name": "userId",
+              "value": "={{ $('Parse Intent').first().json.userId }}"
+            },
+            {
+              "name": "firstName",
+              "value": "={{ $('Parse Intent').first().json.firstName }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-copy-agent",
+      "name": "Call Copy Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2032,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format copy variants for Telegram (max 4096 chars per message)\nconst copyData = $input.first().json;\nconst copy = copyData.copy || copyData.copy_variants || 'Copy generation failed \u2014 please try again.';\nconst chatId = $('Parse Intent').first().json.chatId;\nconst isTyson = $('Parse Intent').first().json.isTyson;\n\n// Truncate if needed for Telegram\nconst maxLen = 3800;\nconst truncated = copy.length > maxLen ? copy.substring(0, maxLen) + '\\n\\n_[Truncated \u2014 full copy sent to email]_' : copy;\n\nlet approvalNote = '';\nif (isTyson) {\n  approvalNote = '\\n\\n\u2705 *Reply with the variant number (1-5) to approve, or say \"iterate on [number]\" for changes.*';\n} else {\n  approvalNote = '\\n\\n_Tyson will be notified to review and approve._';\n}\n\nreturn [{\n  json: {\n    chatId,\n    isTyson,\n    message: `\ud83d\udcdd *Ad Copy Variants Ready*\\n\\n${truncated}${approvalNote}`\n  }\n}];"
+      },
+      "id": "format-copy-reply",
+      "name": "Format Copy Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-copy-reply",
+      "name": "Send Copy to Chat",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2464,
+        -48
+      ],
+      "webhookId": "59deb164-357c-4ca3-b0f6-1e0e315c2855",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// If Emma requested copy, also notify Tyson for approval\nconst data = $('Format Copy Reply').first().json;\nconst isTyson = data.isTyson;\nconst TYSON_CHAT = 1375806243;\n\nif (!isTyson) {\n  return [{\n    json: {\n      chatId: TYSON_CHAT,\n      message: `\ud83d\udd14 *Approval Needed*\\n\\nEmma has requested new ad copy. Check your chat or email to review the variants and reply with your selection.`\n    }\n  }];\n}\n// If Tyson requested, no separate notification needed\nreturn [{ json: { chatId: TYSON_CHAT, message: null, skip: true } }];"
+      },
+      "id": "notify-tyson-copy",
+      "name": "Notify Tyson (if Emma requested)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2464,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notTrue"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "skip-check",
+      "name": "Skip if Tyson",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2688,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-tyson-notification",
+      "name": "Send Tyson Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2912,
+        48
+      ],
+      "webhookId": "a0117290-deb5-47ee-a53e-5a78bea69b00",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "=\u23f3 On it {{ $json.firstName }}! Creating a creative brief for *{{ $json.offer || 'your offer' }}*...\n\nFormat: _{{ $json.format || 'Reel' }}_\nCreator: _{{ $json.creator || 'Tyson' }}_\n\nThis takes about 45 seconds.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "brief-ack",
+      "name": "Brief Acknowledgement",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1808,
+        160
+      ],
+      "webhookId": "95155496-9d51-48be-a9fe-9069e7cc7d15",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://webhook.flowos.tech/webhook/meta-ads-creative-brief",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "offer",
+              "value": "={{ $('Parse Intent').first().json.offer }}"
+            },
+            {
+              "name": "angle",
+              "value": "={{ $('Parse Intent').first().json.angle }}"
+            },
+            {
+              "name": "format",
+              "value": "={{ $('Parse Intent').first().json.format }}"
+            },
+            {
+              "name": "creator",
+              "value": "={{ $('Parse Intent').first().json.creator }}"
+            },
+            {
+              "name": "hook_style",
+              "value": "={{ $('Parse Intent').first().json.hook_style }}"
+            },
+            {
+              "name": "chatId",
+              "value": "={{ $('Parse Intent').first().json.chatId }}"
+            },
+            {
+              "name": "userId",
+              "value": "={{ $('Parse Intent').first().json.userId }}"
+            },
+            {
+              "name": "firstName",
+              "value": "={{ $('Parse Intent').first().json.firstName }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-brief-agent",
+      "name": "Call Brief Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2032,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Intent').first().json.chatId }}",
+        "text": "=\ud83d\udccb *Creative Brief Ready*\n\nFull brief has been sent to Tyson's email with the complete script, visual direction, and production notes.\n\n_{{ $('Parse Intent').first().json.isTyson ? 'Check your email for the full brief.' : 'Tyson will review and confirm when ready to film.' }}_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-brief-reply",
+      "name": "Send Brief Confirmation",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2240,
+        160
+      ],
+      "webhookId": "04d3d078-1ca7-4578-aba6-2d5106d35c5c",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "=\u23f3 Pulling performance data from both ad accounts...\n\nThis takes about 60 seconds.",
+        "additionalFields": {}
+      },
+      "id": "report-ack",
+      "name": "Report Acknowledgement",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1808,
+        320
+      ],
+      "webhookId": "3160f2e0-0c63-4fcd-bce2-5aac1d0aa0a7",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Parse Intent').first().json.userId }}",
+              "rightValue": 1375806243,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "tyson-only-report",
+      "name": "Tyson Only Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2032,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "\ud83d\udd12 The optimisation report is only available to Tyson. I've sent him a notification to pull the latest report.",
+        "additionalFields": {}
+      },
+      "id": "report-restricted",
+      "name": "Report Restricted (Emma)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2240,
+        496
+      ],
+      "webhookId": "0c0291e0-74e1-4f22-abd5-dddcc45121ca",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.flowos.tech/webhook/meta-ads-optimisation-trigger",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chatId",
+              "value": "={{ $('Parse Intent').first().json.chatId }}"
+            },
+            {
+              "name": "userId",
+              "value": "={{ $('Parse Intent').first().json.userId }}"
+            },
+            {
+              "name": "firstName",
+              "value": "={{ $('Parse Intent').first().json.firstName }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "id": "trigger-report",
+      "name": "Trigger Optimisation Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Intent').first().json.chatId }}",
+        "text": "\ud83d\udcca *Report generated and delivered above.*\n\nReview the analysis and action items in the messages above.\n\n_This message was sent automatically with n8n_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "report-sent-confirm",
+      "name": "Report Sent Confirmation",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2464,
+        336
+      ],
+      "webhookId": "4751b693-f6d3-49a1-9a38-d61fd1b19b42",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "\ud83d\udc4b *Flow States Ads Agent*\nHere's what I can do:\n\n\ud83d\udcdd *Write ad copy*\n_\"Write 5 copy variants for the Manus hub, pain point angle, Reel format\"_\n\n\ud83c\udfac *Create a creative brief*\n_\"Create a Reel brief for Tyson, curiosity hook, Manus hub offer\"_\n\n\ud83d\udcca *Pull performance report*\n_\"Show me the latest ad performance report\"_\n\n\ud83d\ude80 *Create a new ad* _(Tyson only)_\n_\"Create new ad\"_ or _\"Set up an ad in Flow States Retreats\"_\n\n\u2705 *Approve copy*\n_\"Approve variant 3\"_ or _\"Iterate on 2 \u2014 make the hook shorter\"_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "help-reply",
+      "name": "Help Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1808,
+        496
+      ],
+      "webhookId": "3a856479-e064-43d2-90f6-550f9ae8a007",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "I didn't quite catch that. Here's what I can help with:\n\n\ud83d\udcdd *Write copy* \u2014 \"Write 5 variants for [offer], [angle] angle, [format]\"\n\ud83c\udfac *Create brief* \u2014 \"Create a Reel brief for [name], [hook type]\"\n\ud83d\udcca *Performance report* \u2014 \"Show me the latest ad performance\"\n\ud83d\udd0d *Research competitors* \u2014 \"Research ads for [brand name]\"\n\ud83d\ude80 *Create an ad* \u2014 \"Create new ad\" or \"Set up an ad in [account]\"\n\u2705 *Approve/iterate copy* \u2014 \"Approve variant 2\" or \"Iterate on variant 3\"",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "unknown-reply",
+      "name": "Unknown Intent Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1824,
+        1136
+      ],
+      "webhookId": "845d7d34-88f8-4b78-af05-5f7a16ebf44c",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Meta Ads Telegram Bot Router\n\n**Bot:** @flowstatesads_bot\n**Authorised users:**\n- Tyson (ID: 1375806243) \u2014 full access + approvals\n- Emma (ID: 1318710237) \u2014 copy & brief requests only\n\n**Routes:**\n- COPY \u2192 Copy Agent webhook\n- BRIEF \u2192 Creative Brief Agent webhook\n- REPORT \u2192 Optimisation Agent (Tyson only)\n- HELP \u2192 Help message\n- UNKNOWN \u2192 Prompt for clarification\n\n**Setup required:**\n1. Add Telegram credential with bot token\n2. Add Anthropic credential to Intent Classifier node\n3. Activate this workflow\n4. Activate Copy Agent and Creative Brief Agent workflows\n5. Add webhook trigger to Optimisation Agent for on-demand pulls",
+        "height": 340,
+        "width": 460
+      },
+      "id": "sticky-note",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        112,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const msgData = $('Parse Message').first().json;\nconst userText = (msgData.text || '').replace(/'/g, \"\\'\");\nconst body = {\n  model: 'claude-haiku-4-5',\n  max_tokens: 300,\n  messages: [{\n    role: 'user',\n    content: `You are an intent classifier for a Facebook Ads management bot. Be generous \u2014 if a message is close to an intent, pick it rather than UNKNOWN.\n\nClassify this message into ONE intent:\n- COPY: wants ad copy written/generated (e.g. \"write me 5 variants\", \"write copy for\", \"ad copy\", \"5 copy variants\")\n- BRIEF: wants a creative brief, script, or content plan\n- REPORT: wants performance data or stats\n- APPROVE: approving a copy variant (e.g. \"approve variant 3\", \"go with 2\", \"use 1\")\n- ITERATE: wants to refine/change a copy variant (e.g. \"iterate on variant 2\", \"make hook shorter\", \"refine 3\", \"tweak variant 1\")\n- REJECT: rejecting all variants\n- HELP: wants to know what the bot can do\n- AD_CREATION: wants to create a new ad in Meta Ads Manager (e.g. \"create new ad\", \"set up an ad\", \"launch a campaign\", \"create ad in\")\n- RESEARCH: wants to research competitor ads, save a competitor ad, or view swipe file (e.g. \"research ads for [brand]\", \"look up competitor ads\", \"save this ad\", \"show me my swipe file\")\n- UNKNOWN: genuinely unclear, off-topic, or a casual greeting with no clear intent\n\nExtract if present: offer, angle, format (Reel/static/story/single image/carousel), creator (Tyson or Emma), hook_style, feedback, variant_number (for ITERATE/APPROVE), brand (for RESEARCH).\n\nMessage: \"${userText}\"\nReply ONLY with valid JSON: {\"intent\":\"COPY\",\"offer\":\"\",\"angle\":\"\",\"format\":\"\",\"creator\":\"\",\"hook_style\":\"\",\"feedback\":\"\",\"variant_number\":\"\",\"brand\":\"\"}`\n  }]\n};\nreturn [{\n  json: {\n    body: JSON.stringify(body),\n    chatId: msgData.chatId,\n    userId: msgData.userId,\n    firstName: msgData.firstName,\n    isTyson: msgData.isTyson,\n    originalText: msgData.text,\n    isCallback: msgData.isCallback,\n    callbackData: msgData.callbackData\n  }\n}];"
+      },
+      "id": "build-anthropic-request",
+      "name": "Build Anthropic Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "intent-classifier",
+      "name": "Intent Classifier (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1136,
+        496
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "HzHw6BhuI6OFtTn7",
+          "name": "Anthropic Header Auth 19-3-26"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isTyson }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ad-creation-gate",
+      "name": "Ad Creation Gate (Tyson Only)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        768
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "\ud83c\udfaf Starting ad creation wizard...",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "ad-creation-ack",
+      "name": "Ad Creation Acknowledgement",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2032,
+        736
+      ],
+      "webhookId": "120d72a1-a07e-4f9a-a29d-f76a9efcb6e1",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "\ud83d\udd12 Ad creation is only available to Tyson. Please ask Tyson to set up the ad.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "ad-creation-not-tyson",
+      "name": "Ad Creation Not Authorised",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2032,
+        912
+      ],
+      "webhookId": "597acf9e-80ea-4325-903d-013e666f086f",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.flowos.tech/webhook/ad-creation-agent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "call-ad-agent",
+      "name": "Call Ad Creation Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2464,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst data = $input.first().json;\nconst msgData = $('Parse Message').first().json;\nconst sessions = data.sessions || [];\nconst validSessions = sessions.filter(s => s && s.id && s.step && s.step !== 'start');\nconst activeSession = validSessions.length > 0 ? validSessions[0] : null;\nreturn [{ json: {\n  ...msgData,\n  hasActiveAdSession: !!activeSession,\n  activeAdSession: activeSession\n}}];\n"
+      },
+      "id": "route-if-ad-session",
+      "name": "Route If Active Ad Session",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.hasActiveAdSession }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "active-session-gate",
+      "name": "Active Session Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        816,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.flowos.tech/webhook/ad-creation-agent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "forward-to-ad-agent-session",
+      "name": "Forward to Ad Agent (Session)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Get data from Parse Intent (which has chatId, userId, firstName, text)\n// The Ack node doesn't pass through the original data, so we need to go back\n// to the Parse Intent node output\nconst ctx = $input.first().json;\n// ctx here is the Telegram API response from Ad Creation Acknowledgement\n// We need to get the original message data - use $('Parse Intent') to reference it\nconst parseIntentData = $('Parse Intent').first().json;\nreturn [{\n  json: {\n    chatId: parseIntentData.chatId,\n    userId: parseIntentData.userId,\n    firstName: parseIntentData.firstName,\n    text: parseIntentData.originalText || parseIntentData.text || '',\n    step: 'start'\n  }\n}];\n"
+      },
+      "id": "prepare-ad-payload-node-v2",
+      "name": "Prepare Ad Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2256,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://fdabygmromuqtysitodp.supabase.co/rest/v1/ad_creation_sessions?chat_id=eq.' + $('Parse Message').first().json.chatId + '&order=updated_at.desc&limit=1' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkYWJ5Z21yb211cXR5c2l0b2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2NjI2OTQsImV4cCI6MjA3NTIzODY5NH0.6JJMkPXBufpLxlisH1ig32Xm8YM3p0jcXRlBzx5x8Dk"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkYWJ5Z21yb211cXR5c2l0b2RwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2NjI2OTQsImV4cCI6MjA3NTIzODY5NH0.6JJMkPXBufpLxlisH1ig32Xm8YM3p0jcXRlBzx5x8Dk"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "check-session-http",
+      "name": "Check Active Ad Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        272,
+        224
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the text response from Supabase (always a string now)\nconst allItems = $input.all();\nlet sessions = [];\n\nfor (const item of allItems) {\n  const j = item.json;\n  // When responseFormat is 'text', the response is in j.data as a string\n  const rawText = j.data || j.body || '';\n  if (rawText) {\n    try {\n      const parsed = JSON.parse(rawText);\n      if (Array.isArray(parsed) && parsed.length > 0) {\n        sessions = parsed;\n      }\n    } catch(e) {\n      // Not valid JSON, ignore\n    }\n  }\n}\n\nreturn [{ json: { sessions } }];\n"
+      },
+      "id": "wrap-session-result",
+      "name": "Wrap Session Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $input.first().json;\nreturn [{\n  json: {\n    chatId: ctx.chatId,\n    userId: ctx.userId,\n    firstName: ctx.firstName,\n    text: ctx.text || '',\n    step: ctx.activeAdSession ? ctx.activeAdSession.step : 'start',\n    // Pass file data through for asset upload step\n    fileId: ctx.fileId || null,\n    fileName: ctx.fileName || null,\n    fileType: ctx.fileType || null\n  }\n}];"
+      },
+      "id": "prepare-session-payload",
+      "name": "Prepare Session Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1056,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "\ud83d\udd04 Iterating on Variant {{ $json.variant_number || \"that\" }}...",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "iterate-ack",
+      "name": "Iterate Acknowledgement",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1808,
+        608
+      ],
+      "webhookId": "576efbd2-de14-4d90-b19f-b1f21f7f7338",
+      "credentials": {
+        "telegramApi": {
+          "id": "9paXQCDFP4qV3m5D",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://webhook.flowos.tech/webhook/meta-ads-copy-agent",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"offer\": \"{{ $json.offer || \\\"the previous offer\\\" }}\",\n  \"angle\": \"{{ $json.angle || \\\"same angle\\\" }}\",\n  \"format\": \"{{ $json.format || \\\"feed ad\\\" }}\",\n  \"chatId\": {{ $json.chatId }},\n  \"userId\": {{ $json.userId }},\n  \"iterate_instruction\": {{ JSON.stringify(\"Iterate on Variant \" + ($json.variant_number || \"2\") + \". \" + ($json.feedback || \"Refine and improve it.\")) }},\n  \"top_performing_insight\": \"\"\n}",
+        "options": {}
+      },
+      "id": "call-copy-iterate",
+      "name": "Call Copy Agent (Iterate)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2016,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "\ud83d\udd0d Researching competitor ads{{ $json.brand ? \" for *\" + $json.brand + \"*\" : \"\" }}...",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "research-ack",
+      "name": "Research Acknowledgement",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1808,
+        944
+      ],
+      "webhookId": "fd63165f-9bb6-4f96-91dd-4d28c14dd251",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.flowos.tech//webhook/competitor-research",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chatId\": {{ $json.chatId }},\n  \"userId\": {{ $json.userId }},\n  \"text\": {{ JSON.stringify($json.originalText || \"\") }},\n  \"brand\": {{ JSON.stringify($json.brand || \"\") }},\n  \"researchIntent\": \"research\"\n}",
+        "options": {}
+      },
+      "id": "call-research-agent",
+      "name": "Call Research Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2048,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'Meta Ads Telegram Bot Router'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        136,
+        224
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "203fe49f-ac35-4779-9866-ba5a7e85e9ac"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Meta Ads Telegram Bot Router'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3212,
+        464
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "39c86645-cfdc-4139-9090-9ab9c0496c70"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Message": {
+      "main": [
+        [
+          {
+            "node": "Check Active Ad Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorisation Gate": {
+      "main": [
+        [
+          {
+            "node": "Build Anthropic Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unauthorised Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Intent Classifier (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Parse Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Intent": {
+      "main": [
+        [
+          {
+            "node": "Intent Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Intent Router": {
+      "main": [
+        [
+          {
+            "node": "Copy Acknowledgement",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Brief Acknowledgement",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report Acknowledgement",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Help Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ad Creation Gate (Tyson Only)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Iterate Acknowledgement",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Research Acknowledgement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Copy Acknowledgement": {
+      "main": [
+        [
+          {
+            "node": "Call Copy Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Copy Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Copy Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Copy Reply": {
+      "main": [
+        [
+          {
+            "node": "Send Copy to Chat",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Tyson (if Emma requested)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Tyson (if Emma requested)": {
+      "main": [
+        [
+          {
+            "node": "Skip if Tyson",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip if Tyson": {
+      "main": [
+        [
+          {
+            "node": "Send Tyson Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Brief Acknowledgement": {
+      "main": [
+        [
+          {
+            "node": "Call Brief Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Brief Agent": {
+      "main": [
+        [
+          {
+            "node": "Send Brief Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report Acknowledgement": {
+      "main": [
+        [
+          {
+            "node": "Tyson Only Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tyson Only Gate": {
+      "main": [
+        [
+          {
+            "node": "Trigger Optimisation Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Report Restricted (Emma)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Optimisation Report": {
+      "main": [
+        [
+          {
+            "node": "Report Sent Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Anthropic Request": {
+      "main": [
+        [
+          {
+            "node": "Intent Classifier (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ad Creation Gate (Tyson Only)": {
+      "main": [
+        [
+          {
+            "node": "Ad Creation Acknowledgement",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ad Creation Not Authorised",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ad Creation Acknowledgement": {
+      "main": [
+        [
+          {
+            "node": "Prepare Ad Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Active Ad Session": {
+      "main": [
+        [
+          {
+            "node": "Wrap Session Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route If Active Ad Session": {
+      "main": [
+        [
+          {
+            "node": "Active Session Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Active Session Gate": {
+      "main": [
+        [
+          {
+            "node": "Prepare Session Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Authorisation Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Ad Payload": {
+      "main": [
+        [
+          {
+            "node": "Call Ad Creation Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wrap Session Result": {
+      "main": [
+        [
+          {
+            "node": "Route If Active Ad Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Session Payload": {
+      "main": [
+        [
+          {
+            "node": "Forward to Ad Agent (Session)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Iterate Acknowledgement": {
+      "main": [
+        [
+          {
+            "node": "Call Copy Agent (Iterate)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Copy Agent (Iterate)": {
+      "main": [
+        [
+          {
+            "node": "Format Copy Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research Acknowledgement": {
+      "main": [
+        [
+          {
+            "node": "Call Research Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        [
+          {
+            "node": "Parse Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ad Creation Not Authorised": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Ad Creation Agent": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Research Agent": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forward to Ad Agent (Session)": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Help Reply": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report Restricted (Emma)": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report Sent Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Brief Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Copy to Chat": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Tyson Notification": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unauthorised Reply": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
