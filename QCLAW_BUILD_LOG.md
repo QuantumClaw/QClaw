@@ -3164,3 +3164,27 @@ Long deep work session today on N8N_WORKFLOW_INDEX.md plus emergent architectura
 intake-kylie-content-system entry preserved at `/tmp/intake_kylie_for_cluster_11.md` on qclaw for cluster 11 application.
 
 End of day. Path forward clear.
+
+## [2026-05-05] Charlie Overhaul — N8N_WORKFLOW_INDEX.md Cross-cutting + Token Refresh cluster documented
+
+Cluster 8 of 11. Cross-cutting + Token Refresh cluster (3 workflows: Gutful GHL refresher, Morning Light GHL refresher, abandoned-scaffold archive candidate). Format conventions from prior 7 clusters applied cleanly.
+
+Notable findings during cluster review:
+- 0/3 of cluster has heartbeat + errorWorkflow pattern. All 3 use legacy n8n `cron` node with interval-based scheduling (every 12h), so no contribution to schedule-timezone cluster-sweep work-list item 7.
+- Both functional refreshers share a single Postgres credential (`qGUxEHfEZkZGdAcZ` "Supabase Postgres DB") writing to a shared `highlevel_tokens` table. Confirmed intentional by Tyson 2026-05-05 — same purpose (GHL OAuth refresh), one shared table, different keys per domain (Gutful keyed by `location_id`, Morning Light keyed by `id`).
+- Workflow age timeline supports the archive recommendation for `N3VF1VKlekDdhxGU`: created 2025-10-04 (oldest, abandoned with empty cron params), Morning Light refresher 2025-10-05 (one day later — successful second attempt), Gutful refresher 2025-10-14 (10 days later — copy-and-modify of Morning Light).
+- Cross-workflow Execute reference search came up empty for `N3VF1VKlekDdhxGU` across all 75 active+inactive workflows — strong archive signal. Tyson approved archive 2026-05-05.
+
+**Naming convention renames confirmed by Tyson 2026-05-05:**
+- `b36b4MKe1p6wQbTQ` → **`Flow OS Client — Gutful — GHL OAuth Refresh`**
+- `02Dob9FCEkXZFDAs` → **`Flow OS Client — Morning Light — GHL OAuth Refresh`**
+
+Don't rename in n8n now — bundle with V1/V2/V3 cleanup dispatch (work-list item 9). Convention pattern locked: `<business unit> — <client> — <purpose>`.
+
+**Item 19 escalated from "investigate" to "blocker on Phase 4 Slice 1":** discovery audit yesterday (2026-05-04) reported 13 execs/7d for both functional refreshers. Today's probe (2026-05-05) reports 0 in 7d AND 0 in entire 100-row API window. Same workflows, same API endpoint, 24h gap, no workflow update in between. This is the executions-history API unreliability hitting actively-running infrastructure in real time — not just retrospective stale data on dormant workflows. Charlie 2.0's bootstrap probe (Phase 3 Component 1 Layer 5) cannot launch on top of an unreliable execution-data primitive. Item 19 must resolve before Phase 4 Slice 1 begins.
+
+Work list addition:
+
+22. **Postgres credential audit — `qGUxEHfEZkZGdAcZ` "Supabase Postgres DB" target verification.** Both Cross-cutting cluster refreshers use this credential. Cluster 7's Morning Light entry described its main-workflow Postgres node as "n8n internal" per Tyson 2026-05-04, but the refresher workflows use a credential named "Supabase Postgres DB". Need to confirm whether this credential ID resolves to external Supabase (matching the credential name) or n8n's internal Postgres (matching cluster 7's note). `LOCATIONS.md` clarification dependent on this audit — current entry says "n8n internal Postgres database" is a hidden architectural dependency, but if `qGUxEHfEZkZGdAcZ` is also used by the refreshers and points to external Supabase, the LOCATIONS entry needs nuance. Small probe: open the credential in n8n UI, confirm the connection string host. Bundle with the V1/V2/V3 cleanup dispatch.
+
+Pre-slice progress: N8N_WORKFLOW_INDEX.md cluster 8 of 11 complete. 3 clusters remain.
