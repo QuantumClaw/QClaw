@@ -1,0 +1,406 @@
+{
+  "id": "Awo65rdSe5BvDHtC",
+  "name": "GHL Marketing: Content Generator",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1,3,5"
+            }
+          ]
+        }
+      },
+      "id": "a1000001-0001-4000-8000-000000000001",
+      "name": "Cron MWF 07:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const dayOfWeek = new Date().getDay();\nconst postTypes = { 1: 'pain-led', 3: 'value-led', 5: 'offer-led' };\nconst postType = postTypes[dayOfWeek] || 'value-led';\nreturn [{ json: { postType, date: new Date().toISOString().split('T')[0] } }];"
+      },
+      "id": "a1000001-0001-4000-8000-000000000002",
+      "name": "Determine Post Type",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://fdabygmromuqtysitodp.supabase.co/rest/v1/marketing_drafts?select=hooks_used,instagram_hook_text&status=eq.published&order=created_at.desc&limit=10",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "a1000001-0001-4000-8000-000000000003",
+      "name": "Fetch Recent Hooks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const postType = $('Determine Post Type').first().json.postType;\nconst recentRows = $input.first().json;\nlet recentHooks = [];\nif (Array.isArray(recentRows)) {\n  recentRows.forEach(r => {\n    if (r.instagram_hook_text) recentHooks.push(r.instagram_hook_text);\n    if (Array.isArray(r.hooks_used)) recentHooks.push(...r.hooks_used);\n  });\n}\nrecentHooks = [...new Set(recentHooks)];\nreturn [{ json: { postType, recentHooks: recentHooks.join(', ') || 'none' } }];"
+      },
+      "id": "a1000001-0001-4000-8000-000000000004",
+      "name": "Prepare Prompt Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, system: \"You are a marketing copywriter for GHL Support Specialist. Product: AI-powered 24/7 support for GoHighLevel users. URL: support.flowos.tech/ghl/landing. Price: $29/month or $290/year. Founders Offer: first 50 members get 3 months free with code GHLPOWER50.\\n\\nTone: Direct, practical, slightly irreverent. Speak like a GHL power user. No corporate language. Short sentences. No em dashes. No hashtags in body copy (Instagram hashtags go in a separate block).\\n\\nNever say: game-changer, revolutionary, unlock your potential, or generic SaaS language.\\n\\nThree pain points to rotate:\\n1. Time lost \\u2014 hours in YouTube, Facebook groups, help docs\\n2. Support frustration \\u2014 tickets take days, group answers unreliable\\n3. Confidence gap \\u2014 'I know GHL can do this, I just don't know how'\\n\\nOne promise: Ask it anything about GHL. Get an expert answer in seconds.\\n\\nUse specific GHL terms: workflows, automations, pipelines, funnels, SaaS mode, merge fields, calendars, triggers, actions.\", messages: [{ role: 'user', content: 'Generate a ' + $json.postType + ' organic post for GHL Support Specialist. Today is ' + new Date().toLocaleDateString('en-US', {weekday:'long',month:'long',day:'numeric'}) + '.\\n\\nProvide output as JSON with these exact keys:\\n- facebook_post (plain text, no hashtags, 100-200 words)\\n- linkedin_post (plain text, no hashtags, 80-150 words)\\n- instagram_caption (with hashtag block at end, 60-120 words before hashtags)\\n- instagram_hook_text (5-8 words, overlay text for image)\\n- ad_headline (under 10 words)\\n- ad_body (80-120 words, includes pain point + solution + Founders Offer + URL with UTMs: support.flowos.tech/ghl/landing?utm_source=facebook&utm_medium=paid_social&utm_campaign=founders_offer)\\n- ad_cta (3-4 words for button text)\\n- retargeting_copy (60-100 words, acknowledges they visited, restates value, urgency)\\n\\nDo NOT repeat any of these recently used hooks: ' + $json.recentHooks + '\\n\\nReturn ONLY valid JSON. No markdown fences. No explanation.' }] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "a1000001-0001-4000-8000-000000000005",
+      "name": "Generate Content (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1080,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "V9YcuDfp9lqydyDH",
+          "name": "Anthropic Header Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst content = response.content?.[0]?.text;\nif (!content) throw new Error('No content in Claude response: ' + JSON.stringify(response).substring(0, 500));\n\nlet parsed;\ntry {\n  const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  throw new Error('Failed to parse Claude response: ' + e.message + '\\nRaw: ' + content.substring(0, 500));\n}\n\nreturn [{\n  json: {\n    ...parsed,\n    post_type: $('Determine Post Type').first().json.postType,\n    status: 'pending_approval'\n  }\n}];"
+      },
+      "id": "a1000001-0001-4000-8000-000000000006",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fdabygmromuqtysitodp.supabase.co/rest/v1/marketing_drafts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ post_type: $json.post_type, status: 'pending_approval', facebook_post: $json.facebook_post, linkedin_post: $json.linkedin_post, instagram_caption: $json.instagram_caption, instagram_hook_text: $json.instagram_hook_text, ad_headline: $json.ad_headline, ad_body: $json.ad_body, ad_cta: $json.ad_cta, retargeting_copy: $json.retargeting_copy, hooks_used: [$json.instagram_hook_text], image_url: $json.image_url }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "a1000001-0001-4000-8000-000000000007",
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "1375806243",
+        "text": "=\ud83d\udce3 <b>New GHL marketing draft ready for review</b>\nType: {{ $('Parse Response').first().json.post_type }}\nDraft ID: <code>{{ $json[0].id }}</code>\n\nReview at https://agentboardroom.flowos.tech (GHL Marketing tab).",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "a1000001-0001-4000-8000-000000000008",
+      "name": "Send to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1740,
+        300
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Map post_type -> R2 template URL; rotation for Mon/Wed/Fri.\nconst BASE = 'https://pub-1fa192ebc8ff40dba2b9a0f1890e6f7a.r2.dev/marketing-templates';\nconst IMAGE_MAP = {\n  'pain-led':  BASE + '/ghl-template-pain-led.jpg',\n  'value-led': BASE + '/ghl-template-value-led.jpg',\n  'offer-led': BASE + '/ghl-template-offer-led.jpg'\n};\nconst draft = $input.first().json;\nconst image_url = IMAGE_MAP[draft.post_type] || IMAGE_MAP['value-led'];\nreturn [{ json: { ...draft, image_url } }];"
+      },
+      "id": "a1000001-0001-4000-8000-000000000009",
+      "name": "Assign Image URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1410,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'GHL Marketing: Content Generator'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        400,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "66497534-563c-4884-a001-87c1125f6b07"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'GHL Marketing: Content Generator'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1990,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "b42f1173-aba3-4e18-8688-234a00bd876d"
+    }
+  ],
+  "connections": {
+    "Cron MWF 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determine Post Type": {
+      "main": [
+        [
+          {
+            "node": "Fetch Recent Hooks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Recent Hooks": {
+      "main": [
+        [
+          {
+            "node": "Prepare Prompt Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Prompt Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Content (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Content (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Parse Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Response": {
+      "main": [
+        [
+          {
+            "node": "Assign Image URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Send to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign Image URL": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        [
+          {
+            "node": "Determine Post Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Telegram": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  }
+}

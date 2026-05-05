@@ -1,0 +1,551 @@
+{
+  "id": "fonuRTyqepxdyIdf",
+  "name": "GHL Marketing: Publisher",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ghl-marketing-publish",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "p0000001-0001-4000-8000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        32,
+        464
+      ],
+      "webhookId": "ghl-marketing-publish"
+    },
+    {
+      "parameters": {
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/marketing_drafts?id=eq.{{ $json.body.draftId }}&select=*",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_ANON_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "p0000001-0001-4000-8000-000000000002",
+      "name": "Fetch Draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.first().json;\nconst draft = Array.isArray(rows) ? rows[0] : rows;\nif (!draft || !draft.id) throw new Error('Draft not found');\n\nconst DEFAULT_IMAGE = $env.GHL_DEFAULT_IMAGE_URL\n  || 'https://pub-1fa192ebc8ff40dba2b9a0f1890e6f7a.r2.dev/marketing-templates/ghl-template-value-led.jpg';\nconst effective_image_url = draft.image_url || DEFAULT_IMAGE;\n\nreturn [{\n  json: {\n    ...draft,\n    effective_image_url,\n    published_platforms: [],\n    publish_errors: {},\n  }\n}];"
+      },
+      "id": "p0000001-0001-4000-8000-000000000003",
+      "name": "Prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/marketing_drafts?published_platforms=cs.%5B%22linkedin%22%5D&published_at=gte.{{ new Date(Date.now()-4*3600*1000).toISOString() }}&select=id,published_at&order=published_at.desc&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_ANON_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "p0000001-0001-4000-8000-000000000004",
+      "name": "LI Guard Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        624,
+        464
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Read recent LinkedIn publish history; block if within 4 hours.\nconst prep = $('Prepare').first().json;\nconst rows = $input.first().json;\nconst recent = Array.isArray(rows) ? rows : [];\nconst skip_linkedin = recent.length > 0;\nconst linkedin_skip_reason = skip_linkedin\n  ? `4h-guard: last LinkedIn post at ${recent[0]?.published_at || 'unknown'}`\n  : null;\nreturn [{ json: { ...prep, skip_linkedin, linkedin_skip_reason } }];\n"
+      },
+      "id": "p0000001-0001-4000-8000-000000000005",
+      "name": "LI Guard Apply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{$env.FLOWOS_META_PAGE_ID}}/photos",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": {{ JSON.stringify($json.effective_image_url) }},\n  \"caption\": {{ JSON.stringify($json.facebook_post || \"\") }},\n  \"access_token\": \"{{$env.FLOWOS_META_PAGE_ACCESS_TOKEN}}\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "p0000001-0001-4000-8000-000000000006",
+      "name": "Facebook Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1024,
+        464
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "skip-li-cond",
+              "leftValue": "={{ $('LI Guard Apply').item.json.skip_linkedin }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "p0000001-0001-4000-8000-000000000009",
+      "name": "Skip LinkedIn?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1856,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "platform": "linkedin",
+        "accountId": {
+          "__rl": true,
+          "value": "11109",
+          "mode": "list",
+          "cachedResultName": "Tyson Venables",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/11109"
+        },
+        "postContentText": "={{ $('Prepare').item.json.linkedin_post || '' }}",
+        "options": {}
+      },
+      "id": "p0000001-0001-4000-8000-00000000000a",
+      "name": "LinkedIn Post (Blotato)",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        688
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "blotatoApi": {
+          "id": "Bs2TEAOA9mVKfcR3",
+          "name": "Blotato account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Inspect every platform node's run result and assemble final publish state.\nconst prep = $('Prepare').first().json;\nconst guard = $('LI Guard Apply').first().json;\n\nconst published = [];\nconst errors = {};\n\nconst readNode = (name) => {\n  try { return $(name).first()?.json; } catch { return undefined; }\n};\n\n// Facebook: Graph API returns { id: '...' } on success; error has { error: {...} }.\nconst fb = readNode('Facebook Post');\nif (fb && fb.id && !fb.error) published.push('facebook');\nelse errors.facebook = fb?.error?.message || fb?.error?.error_user_msg || fb?.message || 'unknown error';\n\n// Instagram via Blotato.\nconst igB = readNode('IG Post (Blotato)');\nif (igB && !igB.error) {\n  published.push('instagram');\n} else {\n  errors.instagram = igB?.error?.message\n    || igB?.error\n    || igB?.message\n    || 'unknown Blotato IG error';\n}\n\n// LinkedIn: skipped (4h guard) OR Blotato success.\nif (guard.skip_linkedin) {\n  errors.linkedin = guard.linkedin_skip_reason || 'skipped by 4h guard';\n} else {\n  const li = readNode('LinkedIn Post (Blotato)');\n  if (li && !li.error) published.push('linkedin');\n  else errors.linkedin = li?.error?.message || li?.message || 'unknown LinkedIn error';\n}\n\nconst all_ok = Object.keys(errors).length === 0;\nconst status = all_ok ? 'published' : 'partially_published';\n\nreturn [{\n  json: {\n    ...prep,\n    published_platforms: published,\n    publish_errors: errors,\n    final_status: status,\n    now_iso: new Date().toISOString(),\n  }\n}];"
+      },
+      "id": "p0000001-0001-4000-8000-00000000000b",
+      "name": "Compute Final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2336,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/marketing_drafts?id=eq.{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_ANON_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  status: $json.final_status,\n  published_at: $json.now_iso,\n  updated_at: $json.now_iso,\n  published_platforms: $json.published_platforms,\n  publish_errors: Object.keys($json.publish_errors).length ? $json.publish_errors : null\n}) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "p0000001-0001-4000-8000-00000000000c",
+      "name": "Update Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2528,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  chat_id: 1375806243,\n  text: (function() {\n    const f = $('Compute Final').item.json;\n    const ok = f.published_platforms || [];\n    const errs = f.publish_errors || {};\n    const lines = ['<b>GHL Marketing \u2014 publish result</b>'];\n    lines.push('Draft: <code>' + f.id + '</code>');\n    lines.push('Status: <b>' + f.final_status + '</b>');\n    if (ok.length) lines.push('\u2705 Published: ' + ok.join(', '));\n    Object.entries(errs).forEach(([k,v]) => lines.push('\u274c ' + k + ': ' + v));\n    return lines.join('\\n');\n  })(),\n  parse_mode: 'HTML'\n}) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "p0000001-0001-4000-8000-00000000000d",
+      "name": "Telegram Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2736,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  ok: true,\n  draftId: $('Compute Final').item.json.id,\n  status: $('Compute Final').item.json.final_status,\n  published_platforms: $('Compute Final').item.json.published_platforms,\n  publish_errors: $('Compute Final').item.json.publish_errors\n}) }}",
+        "options": {}
+      },
+      "id": "p0000001-0001-4000-8000-00000000000e",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2928,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "accountId": {
+          "__rl": true,
+          "value": "27064",
+          "mode": "list",
+          "cachedResultName": "flow_os",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/27064"
+        },
+        "postContentText": "={{ $('Prepare').item.json.instagram_caption || '' }}",
+        "postContentMediaUrls": "={{ $('Prepare').item.json.effective_image_url }}",
+        "options": {}
+      },
+      "id": "p0000001-0001-4000-8000-0000000blot01",
+      "name": "IG Post (Blotato)",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        464
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "blotatoApi": {
+          "id": "Bs2TEAOA9mVKfcR3",
+          "name": "Blotato account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'GHL Marketing: Publisher'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        232,
+        464
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "2a8350e4-db4c-4f57-adb4-8d24463135dd"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'GHL Marketing: Publisher'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2778,
+        448
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "a2fd6542-0cb7-4428-ac45-11a4c66aa0b8"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Draft": {
+      "main": [
+        [
+          {
+            "node": "Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare": {
+      "main": [
+        [
+          {
+            "node": "LI Guard Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LI Guard Check": {
+      "main": [
+        [
+          {
+            "node": "LI Guard Apply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LI Guard Apply": {
+      "main": [
+        [
+          {
+            "node": "Facebook Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facebook Post": {
+      "main": [
+        [
+          {
+            "node": "IG Post (Blotato)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip LinkedIn?": {
+      "main": [
+        [
+          {
+            "node": "Compute Final",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LinkedIn Post (Blotato)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn Post (Blotato)": {
+      "main": [
+        [
+          {
+            "node": "Compute Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Final": {
+      "main": [
+        [
+          {
+            "node": "Update Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Supabase": {
+      "main": [
+        [
+          {
+            "node": "Telegram Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Notify": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IG Post (Blotato)": {
+      "main": [
+        [
+          {
+            "node": "Skip LinkedIn?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        [
+          {
+            "node": "Fetch Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Success": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  }
+}

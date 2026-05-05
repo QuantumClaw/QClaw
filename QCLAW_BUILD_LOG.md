@@ -3624,3 +3624,85 @@ generate or read n8n syntax.
   but if Tyson misses the per-fire confirmation, easy to re-add a
   branch off `Heartbeat: Success` to a Telegram node.
 
+---
+
+## 2026-05-05 — Phase 4 Slice 0 Sub-project B Batch 2: GHL Marketing heartbeats
+
+Instrumented 5 GHL Marketing workflows. None had existing heartbeats —
+fresh adds per HEARTBEAT_PATTERN.md (Postgres-node variant). 12 new
+heartbeat nodes total.
+
+| Workflow ID | Slug | Trigger(s) | Heartbeat nodes added |
+|---|---|---|---|
+| `dHceOMijUOcnEowO` | ghl-marketing-scheduled-publisher | every 15 min | Start, Success |
+| `Awo65rdSe5BvDHtC` | ghl-marketing-content-generator | Cron MWF 07:00 UTC | Start, Success |
+| `fonuRTyqepxdyIdf` | ghl-marketing-publisher | Webhook | Start, Success (interposed before `Respond`) |
+| `ptHK2TZq5XppKOOg` | ghl-marketing-approval-handler | Telegram + Webhook (2 triggers) | Start (Telegram), Start (Dashboard), Success (Approve), Success (Revise) |
+| `jRiiOsWneQAtfVPD` | ghl-marketing-weekly-report | Sunday 20:00 UTC | Start, Success |
+
+Notable patterns:
+
+- **Two triggers, two start heartbeats.** `ghl-approval` has both a
+  Telegram Trigger and a Dashboard Regenerate Webhook entry. n8n
+  treats each trigger as a separate execution path with its own
+  `execution_id`, so the upserts are correctly partitioned per
+  fire. Used distinct node names per path to keep the graph readable
+  (`Heartbeat: Start (Telegram)` vs `Heartbeat: Start (Dashboard)`).
+- **Two terminals, two success heartbeats.** Same workflow has two
+  outcome paths (`Confirm Approval` for approval flow, `Send Revised
+  to Telegram` for content-revision flow). Each terminal gets its own
+  Success heartbeat so the upsert reflects the actual path taken.
+- **Interpose-before-Respond pattern** for webhook workflows. On
+  `ghl-pub`, the Heartbeat: Success was inserted between the last
+  business node (`Telegram Notify`) and the `Respond` node, so the
+  HTTP response to the webhook caller still happens last but after
+  the heartbeat is recorded.
+
+**Process improvements landed in this batch:**
+
+- **`b_common.py` shared helpers.** Refactored Batch-1's build-script
+  helpers (`_q`, `heartbeat_node`, `replace_node`, `insert_after`,
+  `append_after`, `validate_no_orphans`, `validate_no_brace_collapse`,
+  `trim_for_put`) into a shared module under `/tmp/n8n_inv/`. Future
+  batches (3-5) import from it. Adds the pattern Tyson flagged in
+  Batch-1 confirmation about the typed SQL generator — this is the
+  v0.5 of that idea (concrete helpers, not yet a typed API).
+- **Pre-PUT validators.** `validate_no_brace_collapse(wf)` checks
+  every Postgres heartbeat node's SQL contains `{{ $workflow.id }}`
+  and `{{ $execution.id }}` literally (catches the Batch 1 bug
+  before PUT). `validate_no_orphans(wf)` walks the connections
+  graph. Both run in `build_batch2.py` before serialising.
+
+**Verification:**
+
+- 5 PUTs returned 200, all `active=true`. Post-PUT GET for each
+  confirms 2-4 heartbeat nodes per workflow with correct double-brace
+  SQL syntax (no Batch 1 brace collapse).
+- Natural fires expected (UTC):
+  - `ghl-sched`: every 15 min — next at 16:45 UTC (~14 min)
+  - `ghl-approval`: ad-hoc when an approval flow runs in Telegram
+  - `ghl-pub`: webhook — fires when an approval message is sent
+  - `ghl-content`: cron MWF 07:00 UTC — next 2026-05-06 (Wed)
+  - `ghl-weekly`: Sun 20:00 UTC — next 2026-05-10
+- Per Tyson's "defer testing for mutating workflows" rule, no manual
+  fires.
+
+**Files added (5 canonical post-PUT JSONs):**
+
+- `n8n-workflows/dHceOMijUOcnEowO-ghl-marketing-scheduled-publisher.json`
+- `n8n-workflows/Awo65rdSe5BvDHtC-ghl-marketing-content-generator.json`
+- `n8n-workflows/fonuRTyqepxdyIdf-ghl-marketing-publisher.json`
+- `n8n-workflows/ptHK2TZq5XppKOOg-ghl-marketing-approval-handler.json`
+- `n8n-workflows/jRiiOsWneQAtfVPD-ghl-marketing-weekly-report.json`
+
+**Out of scope (deferred):**
+
+- Batches 3-5 (5 mission-critical, 4 misc, 4 dormants).
+- Slug-only file rationalisation across the whole `n8n-workflows/`
+  dir (one sweep after Batch 5).
+- Error-branch heartbeats on `ghl-pub` (the workflow has implicit
+  error paths that aren't separately wired). Pattern-wise, when a
+  workflow has no explicit error branch, n8n's settings.errorWorkflow
+  is the right hook — out of scope for Sub-project B; bundle with
+  the heartbeat + errorWorkflow sweep (work-list item 3).
+

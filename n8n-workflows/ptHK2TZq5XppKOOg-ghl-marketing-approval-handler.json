@@ -1,0 +1,779 @@
+{
+  "id": "ptHK2TZq5XppKOOg",
+  "name": "GHL Marketing: Approval Handler",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "b2000001-0001-4000-8000-000000000001",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "ghl-approval-trigger",
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $input.first().json.message;\nconst chatId = msg?.chat?.id;\n\nif (chatId !== 1375806243) {\n  return [{ json: { action: 'ignore', reason: 'Wrong chat ID: ' + chatId } }];\n}\n\nconst text = (msg.text || '').toLowerCase().trim();\nconst replyTo = msg.reply_to_message?.text || '';\n\nconst draftIdMatch = replyTo.match(/Draft ID:\\s*([a-f0-9-]+)/);\nconst draftId = draftIdMatch ? draftIdMatch[1] : null;\n\nif (!draftId) {\n  return [{ json: { action: 'ignore', reason: 'Not a reply to a draft message' } }];\n}\n\nconst isApproval = ['go', 'approved', 'approve'].includes(text);\n\nreturn [{\n  json: {\n    action: isApproval ? 'approve' : 'feedback',\n    draftId,\n    feedback: isApproval ? null : msg.text\n  }\n}];"
+      },
+      "id": "b2000001-0001-4000-8000-000000000002",
+      "name": "Parse Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "approve",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "approve"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "feedback",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "feedback"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "ignore",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ignore"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2000001-0001-4000-8000-000000000003",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/marketing_drafts?id=eq.{{ $('Parse Reply').first().json.draftId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'approved', updated_at: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "b2000001-0001-4000-8000-000000000004",
+      "name": "Approve in Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.flowos.tech/webhook/ghl-marketing-publish",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ draftId: $('Parse Reply').first().json.draftId }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "b2000001-0001-4000-8000-000000000005",
+      "name": "Trigger Publisher",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "1375806243",
+        "text": "Approved. Scheduling posts now.",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "b2000001-0001-4000-8000-000000000006",
+      "name": "Confirm Approval",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1340,
+        100
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/marketing_drafts?id=eq.{{ $('Normalize Trigger').first().json.draftId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'rejected', feedback: $('Normalize Trigger').first().json.feedback, updated_at: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "b2000001-0001-4000-8000-000000000007",
+      "name": "Save Feedback to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        500
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/marketing_drafts?id=eq.{{ $('Normalize Trigger').first().json.draftId }}&select=*",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "b2000001-0001-4000-8000-000000000008",
+      "name": "Fetch Original Draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        500
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, system: \"You are a marketing copywriter for GHL Support Specialist. Product: AI-powered 24/7 support for GoHighLevel users. URL: support.flowos.tech/ghl/landing. Price: $29/month or $290/year. Founders Offer: first 50 members get 3 months free with code GHLPOWER50. Tone: Direct, practical, slightly irreverent. Speak like a GHL power user. No corporate language. Short sentences. No em dashes. No hashtags in body copy. Never say: game-changer, revolutionary, unlock your potential. Use specific GHL terms: workflows, automations, pipelines, funnels, SaaS mode, merge fields, calendars, triggers, actions.\", messages: [{ role: 'user', content: 'Generate a ' + ($input.first().json[0]?.post_type || 'value-led') + ' organic post for GHL Support Specialist. The previous draft was rejected. Feedback: ' + ($('Normalize Trigger').first().json.feedback ?? $('Normalize Trigger').first().json.feedback) + '. Generate a new version addressing this feedback. Provide output as JSON with these exact keys: facebook_post (plain text, no hashtags, 100-200 words), linkedin_post (plain text, no hashtags, 80-150 words), instagram_caption (with hashtag block at end, 60-120 words before hashtags), instagram_hook_text (5-8 words, overlay text for image), ad_headline (under 10 words), ad_body (80-120 words, includes pain point + solution + Founders Offer + URL with UTMs: support.flowos.tech/ghl/landing?utm_source=facebook&utm_medium=paid_social&utm_campaign=founders_offer), ad_cta (3-4 words for button text), retargeting_copy (60-100 words, acknowledges they visited, restates value, urgency). Return ONLY valid JSON. No markdown fences. No explanation.' }] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "b2000001-0001-4000-8000-000000000009",
+      "name": "Regenerate Content (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        500
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "V9YcuDfp9lqydyDH",
+          "name": "Anthropic Header Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst content = response.content?.[0]?.text;\nif (!content) throw new Error('No content in Claude response');\n\nlet parsed;\ntry {\n  const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  throw new Error('Failed to parse: ' + e.message);\n}\n\nconst originalDraft = $('Fetch Original Draft').first().json;\nconst postType = Array.isArray(originalDraft) ? originalDraft[0]?.post_type : originalDraft?.post_type;\nconst draftId = $('Normalize Trigger').first().json.draftId;\n\nreturn [{\n  json: {\n    ...parsed,\n    post_type: postType || 'value-led',\n    status: 'pending_approval',\n    draftId\n  }\n}];"
+      },
+      "id": "b2000001-0001-4000-8000-000000000010",
+      "name": "Parse Regenerated",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fdabygmromuqtysitodp.supabase.co/rest/v1/marketing_drafts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ post_type: $json.post_type, status: 'pending_approval', facebook_post: $json.facebook_post, linkedin_post: $json.linkedin_post, instagram_caption: $json.instagram_caption, instagram_hook_text: $json.instagram_hook_text, ad_headline: $json.ad_headline, ad_body: $json.ad_body, ad_cta: $json.ad_cta, retargeting_copy: $json.retargeting_copy, hooks_used: [$json.instagram_hook_text] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "b2000001-0001-4000-8000-000000000011",
+      "name": "Save New Draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1780,
+        500
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "1375806243",
+        "text": "=Revised {{ $('Parse Regenerated').first().json.post_type }} draft ready.\n\n<b>FACEBOOK:</b>\n{{ $('Parse Regenerated').first().json.facebook_post }}\n\n<b>LINKEDIN:</b>\n{{ $('Parse Regenerated').first().json.linkedin_post }}\n\n<b>INSTAGRAM:</b>\n{{ $('Parse Regenerated').first().json.instagram_caption }}\nHook: {{ $('Parse Regenerated').first().json.instagram_hook_text }}\n\n<b>PAID AD:</b>\nHeadline: {{ $('Parse Regenerated').first().json.ad_headline }}\nBody: {{ $('Parse Regenerated').first().json.ad_body }}\nCTA: {{ $('Parse Regenerated').first().json.ad_cta }}\n\n<b>RETARGETING:</b>\n{{ $('Parse Regenerated').first().json.retargeting_copy }}\n\nReply \"go\" to approve and schedule.\nReply with feedback to regenerate.\nDraft ID: {{ $json[0].id }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "b2000001-0001-4000-8000-000000000012",
+      "name": "Send Revised to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2000,
+        500
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ghl-marketing-regenerate",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "b2000001-0001-4000-8000-00000000000d",
+      "name": "Dashboard Regenerate Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        700
+      ],
+      "webhookId": "ghl-marketing-regenerate"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst draftId = body.draftId || body.draft_id;\nconst feedback = body.feedback || '';\nif (!draftId) throw new Error('draftId required');\nreturn [{ json: { action: 'feedback', draftId, feedback } }];"
+      },
+      "id": "b2000001-0001-4000-8000-00000000000e",
+      "name": "Parse Dashboard Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first().json;\nreturn [{ json: { draftId: j.draftId, feedback: j.feedback || null, action: 'feedback' } }];"
+      },
+      "id": "b2000001-0001-4000-8000-00000000000f",
+      "name": "Normalize Trigger",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        770,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'GHL Marketing: Approval Handler'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start (Telegram)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        400,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "aff6f38e-a643-42ab-8dd4-c00377224936"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'GHL Marketing: Approval Handler'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start (Dashboard)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        400,
+        700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "092b9bf2-910f-4870-bae4-f0b630bb5955"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'GHL Marketing: Approval Handler'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success (Approve)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1590,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "4401a818-ec4e-4ca0-8d36-7e8301b23bea"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'GHL Marketing: Approval Handler'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success (Revise)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2250,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "da20b06e-da0b-488e-b2c1-de001762bd04"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Reply": {
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Approve in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Approve in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Trigger Publisher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Publisher": {
+      "main": [
+        [
+          {
+            "node": "Confirm Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Feedback to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Fetch Original Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Original Draft": {
+      "main": [
+        [
+          {
+            "node": "Regenerate Content (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Regenerate Content (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Parse Regenerated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Regenerated": {
+      "main": [
+        [
+          {
+            "node": "Save New Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save New Draft": {
+      "main": [
+        [
+          {
+            "node": "Send Revised to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dashboard Regenerate Webhook": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start (Dashboard)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Dashboard Input": {
+      "main": [
+        [
+          {
+            "node": "Normalize Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Trigger": {
+      "main": [
+        [
+          {
+            "node": "Save Feedback to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start (Telegram)": {
+      "main": [
+        [
+          {
+            "node": "Parse Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start (Dashboard)": {
+      "main": [
+        [
+          {
+            "node": "Parse Dashboard Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm Approval": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success (Approve)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Revised to Telegram": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success (Revise)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  }
+}

@@ -1,0 +1,319 @@
+{
+  "id": "jRiiOsWneQAtfVPD",
+  "name": "GHL Marketing: Weekly Report",
+  "description": null,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 20 * * 0"
+            }
+          ]
+        }
+      },
+      "id": "d4000001-0001-4000-8000-000000000001",
+      "name": "Sunday 20:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();\nreturn [{ json: { since: sevenDaysAgo, sinceUnix: Math.floor((Date.now() - 7 * 86400000) / 1000) } }];"
+      },
+      "id": "d4000001-0001-4000-8000-000000000002",
+      "name": "Calculate Date Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/marketing_drafts?created_at=gte.{{ $json.since }}&select=*",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_ANON_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_ANON_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "d4000001-0001-4000-8000-000000000003",
+      "name": "Fetch Marketing Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const drafts = $input.first().json;\nconst rows = Array.isArray(drafts) ? drafts : [];\n\nconst stats = {\n  total: rows.length,\n  published: rows.filter(r => r.status === 'published').length,\n  approved: rows.filter(r => r.status === 'approved').length,\n  rejected: rows.filter(r => r.status === 'rejected').length,\n  pending: rows.filter(r => r.status === 'pending_approval').length,\n  postTypes: {}\n};\n\nrows.forEach(r => {\n  stats.postTypes[r.post_type] = (stats.postTypes[r.post_type] || 0) + 1;\n});\n\nreturn [{ json: { stats, weekStart: $('Calculate Date Range').first().json.since } }];"
+      },
+      "id": "d4000001-0001-4000-8000-000000000004",
+      "name": "Aggregate Stats",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 500, messages: [{ role: 'user', content: 'Summarize this week\\'s GHL Support Specialist marketing performance. Data: ' + JSON.stringify($json.stats) + '. Flag any concerns. Recommend next week\\'s focus. Keep it under 200 words. Format for Telegram (plain text, use line breaks).' }] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "d4000001-0001-4000-8000-000000000005",
+      "name": "Generate Report (Claude Haiku)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1080,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "V9YcuDfp9lqydyDH",
+          "name": "Anthropic Header Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst report = response.content?.[0]?.text || 'Failed to generate report';\nconst stats = $('Aggregate Stats').first().json.stats;\n\nconst message = `\ud83d\udcca <b>GHL Marketing \u2014 Weekly Report</b>\\n` +\n  `Week ending ${new Date().toLocaleDateString('en-AU', {weekday:'long',day:'numeric',month:'long',year:'numeric'})}\\n\\n` +\n  `<b>Stats:</b>\\n` +\n  `\u2022 Total drafts: ${stats.total}\\n` +\n  `\u2022 Published: ${stats.published}\\n` +\n  `\u2022 Approved: ${stats.approved}\\n` +\n  `\u2022 Rejected: ${stats.rejected}\\n` +\n  `\u2022 Pending: ${stats.pending}\\n\\n` +\n  `<b>AI Summary:</b>\\n${report}`;\n\nreturn [{ json: { message } }];"
+      },
+      "id": "d4000001-0001-4000-8000-000000000006",
+      "name": "Format Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "1375806243",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "d4000001-0001-4000-8000-000000000007",
+      "name": "Send Report to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1520,
+        300
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "UR6xX8CchGBKaP3h",
+          "name": "Flow States Ads Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'GHL Marketing: Weekly Report'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        400,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "63a244d2-48fc-4ec4-bcfe-525b54df7296"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'GHL Marketing: Weekly Report'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1770,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "0bc4a00c-abc9-42fe-a478-c2156318721c"
+    }
+  ],
+  "connections": {
+    "Sunday 20:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Date Range": {
+      "main": [
+        [
+          {
+            "node": "Fetch Marketing Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Marketing Stats": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Stats": {
+      "main": [
+        [
+          {
+            "node": "Generate Report (Claude Haiku)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Report (Claude Haiku)": {
+      "main": [
+        [
+          {
+            "node": "Format Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Report": {
+      "main": [
+        [
+          {
+            "node": "Send Report to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        [
+          {
+            "node": "Calculate Date Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Report to Telegram": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  }
+}
