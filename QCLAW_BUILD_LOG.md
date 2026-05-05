@@ -3472,3 +3472,20 @@ alerter works. Noise self-resolves as each batch lands.
   bug (heartbeat failure could fail the workflow) is fixed
   automatically.
 
+**New work-list item captured this session:**
+
+26. **Morning Light heartbeat retention — 14-day partition.** Per
+    Tyson's Sequence Y decision: while the global heartbeat retention
+    target is 30 days (per HEARTBEAT_PATTERN.md), `TikJkWLzpreI6iTa`
+    "Morning Light WL→HL" alone will produce ~24,000 executions/day
+    × 2 heartbeats = ~48k rows/day = ~1.4M rows/month. To keep
+    storage bounded, Morning Light heartbeats specifically should
+    retain only 14 days. Implementation: partial cleanup logic in
+    the heartbeats archive job (the deferred sub-A archive item) —
+    e.g. nightly `delete from public.workflow_heartbeats where
+    workflow_id = 'TikJkWLzpreI6iTa' and started_at < now() - interval
+    '14 days'`. Bundle with the heartbeats archive job dispatch.
+    Estimated impact: ~700k rows/month at 14d vs ~1.4M at 30d, ~150
+    MB DB savings. Defer until Sub-project C lands and real volume
+    can be measured.
+
