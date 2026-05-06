@@ -69,6 +69,14 @@ This section captures the locked design for Charlie 2.0 across six components. P
 
 **Migration path:** File-based logs and in-memory cache for v1. Supabase migration when needed, transparent to consumers via interface.
 
+**Slice 1 design lock (2026-05-06):**
+
+Three decisions resolved at Slice 1 kickoff, captured here as the canonical record.
+
+- *Runtime confirmed.* Node.js, in-process inside QClaw, at `src/agents/bootstrap.js`. External Python script and n8n-orchestrated alternatives considered and rejected — both add a serialisation boundary and break the in-memory cache model.
+- *Layer 5 probe set finalised.* Five probes, parallel, 5s timeout each: n8n reachable, heartbeat freshness summary (raw read from `workflow_heartbeats`, not via the dormancy alerter cadence list), PM2 process roll-call (quantumclaw, trading-worker, clipper-worker, charlie-watcher), Supabase reachable, memory layer reachable. Deferred for v2: Charlie task queue depth, recent error-workflow fires, per-workflow execution counts.
+- *Output format confirmed both.* Structured `BootstrapResult` JSON for `_buildSystemPrompt`; human-readable markdown summary appended to `~/.quantumclaw/bootstrap.log`; `/bootstrap-status` Telegram command returns the markdown summary on demand.
+
 ### Component 2 — Canonical doc loading
 
 **Purpose:** Collapse the dual-reality problem (docs describe a system that doesn't run). Locks single sources of truth across business state.
