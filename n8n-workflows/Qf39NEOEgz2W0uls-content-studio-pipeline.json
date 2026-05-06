@@ -378,7 +378,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ wordpress_post_url: $json.link }) }}",
+        "jsonBody": "={{ JSON.stringify({ wordpress_post_url: $json.link, wordpress_post_id: String($json.id), wordpress_slug: $json.slug, wordpress_status: $json.status }) }}",
         "options": {}
       },
       "id": "save-wp-url",
@@ -495,7 +495,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ status: 'a_complete', substack_draft: $('Generate Substack Draft').first().json.content[0].text, linkedin_post: $('Generate LinkedIn Post').first().json.content[0].text, transcript_text: $('Poll AssemblyAI').first().json.text.substring(0, 10000), blog_post: $('Generate Blog Post').first().json.content[0].text, youtube_url: 'https://youtu.be/' + ($('Upload to YouTube').first().json.id || '') }) }}",
+        "jsonBody": "={{ JSON.stringify({ status: 'a_complete', transcript_text: $('Poll AssemblyAI').first().json.text.substring(0, 10000) }) }}",
         "options": {}
       },
       "id": "update-job-record",
@@ -1097,6 +1097,114 @@
         }
       },
       "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/content_studio_jobs?id=eq.{{ $('Generate R2 Presigned URL').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ blog_post: $('Generate Blog Post').first().json.content[0].text }) }}",
+        "options": {}
+      },
+      "id": "patch-blog-body",
+      "name": "Patch: Blog Body",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2848,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/content_studio_jobs?id=eq.{{ $('Generate R2 Presigned URL').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ substack_draft: $('Generate Substack Draft').first().json.content[0].text }) }}",
+        "options": {}
+      },
+      "id": "patch-substack-body",
+      "name": "Patch: Substack Body",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3744,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/content_studio_jobs?id=eq.{{ $('Generate R2 Presigned URL').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ youtube_video_id: $('Upload to YouTube').first().json.id, youtube_url: 'https://youtu.be/' + ($('Upload to YouTube').first().json.id || '') }) }}",
+        "options": {}
+      },
+      "id": "patch-youtube",
+      "name": "Patch: YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5584,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Nd2uuX5t9KEwbQPv",
+          "name": "Supabase FSC"
+        }
+      },
+      "continueOnFail": true
     }
   ],
   "connections": {
@@ -1240,6 +1348,11 @@
             "node": "Convert to HTML",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Patch: Blog Body",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -1271,6 +1384,11 @@
         [
           {
             "node": "Wait 3s",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Patch: Substack Body",
             "type": "main",
             "index": 0
           }
@@ -1374,6 +1492,11 @@
         [
           {
             "node": "Merge Before Notify",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Patch: YouTube",
             "type": "main",
             "index": 0
           }
@@ -1558,6 +1681,21 @@
       ]
     },
     "Patch: LinkedIn Text": {
+      "main": [
+        []
+      ]
+    },
+    "Patch: Blog Body": {
+      "main": [
+        []
+      ]
+    },
+    "Patch: Substack Body": {
+      "main": [
+        []
+      ]
+    },
+    "Patch: YouTube": {
       "main": [
         []
       ]
