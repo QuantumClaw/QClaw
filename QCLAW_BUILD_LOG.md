@@ -4976,3 +4976,285 @@ Three followups captured below.
 3. FLOW_OS_STATE.md reports memory layer DEGRADED but live bootstrap
    shows Cognee returning 12-14 entries cleanly per fire. State doc
    is stale on this dimension. Update at next state-doc sweep.
+
+
+---
+
+## 2026-05-06 — Content Studio Workflow A decouple (PUT 1 + 1b + RLS rollback + PUT 2); four brief-conflicts caught
+
+End-to-end Workflow A (`Qf39NEOEgz2W0uls` Content Studio Pipeline)
+decouple from synchronous clipper polling and from Workflow A's
+own LinkedIn publish path, plus a corrective rollback of an
+incidental RLS regression. The session ran two of three planned
+PUTs (PUT 1 — clipper decouple; PUT 2 — LinkedIn defer + EP67
+audio_url fix). PUT 3 deferred to a separate dispatch.
+
+The session's load-bearing finding is meta: **four distinct brief
+conflicts surfaced during dispatch execution, each caught by the
+audit-first reflex before damage spread**. They are listed and
+generalised at the end of this entry.
+
+### Commits landed (all on main, all on origin)
+
+```
+14dda10  feat(content-studio): disable LinkedIn publish, defer to Workflow C (PUT 2/3)
+3bda7f2  fix(db): rollback RLS on clip_jobs (clipper-worker uses anon key)
+79ff75c  fix(content-studio): Create Job Record writes status='pending' not 'processing'
+a5a2f6e  feat(content-studio): decouple clipper polling from Workflow A (PUT 1/3)
+0af8b83  feat(db): incremental write cols + RLS on clip_jobs/charlie_tasks
+457d120  fix(clipper): re-encode audio to AAC 128k stereo for vertical crop (closes EP66+EP67 exit-8)
+```
+
+`a5d0d84` (Charlie 2.0 Slice 1 bootstrap) was authored by a parallel
+session on a feature branch. PUT 1's commit was inadvertently stacked
+on that branch first; cherry-picked clean to main as `a5a2f6e`. The
+parallel session's PR #5 later merged to main as `fc02738`+`7cd9b61`,
+absorbing the cherry-pick + the PUT 1b fix without conflict.
+
+### Workflow A end-state (after PUT 2)
+
+42 nodes, with 8 disabled (5 from PUT 1's clip-poll tail, 3 from
+PUT 2's LinkedIn publish chain), and 2 new Postgres/HTTP nodes:
+
+- **Patch: Clipper Pending** (Postgres node, qGUxEHfEZkZGdAcZ "Supabase
+  Postgres DB" credential) — fires after Generate Clips, writes
+  `clip_job_id` + `status='clipper_pending'` to content_studio_jobs.
+  Routed into Merge Before Notify input 1, replacing the old polling
+  tail.
+- **Patch: LinkedIn Text** (HTTP PATCH, Nd2uuX5t9KEwbQPv "Supabase
+  FSC" credential) — parallel sink off Generate LinkedIn Post, writes
+  `linkedin_post` text to content_studio_jobs immediately as a
+  defensive checkpoint. Update Job Record still writes the same field
+  at the end as belt-and-braces.
+
+The connection topology now fans out off Generate LinkedIn Post
+into both `YouTube Init Upload` (main path) and `Patch: LinkedIn
+Text` (sink), mirroring the Heartbeat: Start parallel-branch
+pattern. This was the second use of the parallel-branch shape in
+this workflow this session — the Heartbeat: Start rule generalises
+to any side-effect node that must not block the main path nor have
+its output replace the trigger payload.
+
+### PUT 1 — clipper decouple (verified GREEN end-to-end)
+
+PUT 1's stated goal was: stop Workflow A from deadlocking on
+clipper failures. After PUT 1 + PUT 1b, Workflow A terminates
+cleanly when Generate Clips returns a job_id, and clipper polling
+becomes Workflow B's responsibility.
+
+Verified live 2026-05-06 13:21 UTC, exec 777526 (1m 38.6s), all 9
+acceptance criteria green. content_studio_jobs row
+`1d14694f-3f9d-40bc-9300-0e5bd56e66bd` reached status='a_complete'
+with clip_job_id, buzzsprout_episode_id, wordpress_post_url,
+youtube_url, blog_post (6600c), substack_draft (3893c),
+linkedin_post (1004c), and transcript_text (43c) all populated.
+Heartbeat rows landed for both `started` and `success` states.
+Telegram message arrived in chat 1375806243 with the new
+"Workflow A Complete" wording and the "Clipper queued" line.
+
+The clip_jobs row that was created (3479b4c0-…) ended at
+status='error' because the clipper-worker hit the same R2
+bucket-mismatch that Buzzsprout originally hit (clipper-worker
+hardcodes the production bucket prefix; the test file lives in
+a different bucket). **The decouple goal is satisfied**: Workflow
+A no longer cares — async clipper failure no longer blocks
+Workflow A's terminal Telegram notification.
+
+### PUT 2 — LinkedIn publish deferred to Workflow C
+
+PUT 2's stated goal was: stop publishing LinkedIn from Workflow A,
+defer to Workflow C (which fires post-Buzzsprout-publish). Generate
+LinkedIn Post still runs and writes its text to
+`csj.linkedin_post`; Workflow C will reuse that text at publish-time.
+
+Also fixed the EP67 cosmetic bug: the Anthropic prompt body
+referenced `$('Upload to Buzzsprout').first().json.audio_url`
+(a raw .mp3 link) instead of `.url` (the episode page).
+
+Verified live 2026-05-06 14:22 UTC, exec 779814 (1m 35.5s — 3.1s
+faster than PUT 1, parallel Patch added no measurable latency).
+content_studio_jobs row `e631f72e-6276-44bb-a2d0-a5ab0acf9595`
+reached status='a_complete'. Telegram message arrived with the
+new LinkedIn line:
+
+```
+📧 LinkedIn: Draft ready (deferred until Buzzsprout publish — Workflow C)
+```
+
+7 of 8 acceptance criteria green; criterion #7 RED for an
+expected-intermediate-state reason — see "Brief conflict 4" below
+and the Workflow C design constraint section.
+
+### RLS rollback on clip_jobs + charlie_tasks
+
+The earlier migration `2026_05_06_content_studio_jobs_incremental_writes.sql`
+(committed `0af8b83`) enabled RLS on both `clip_jobs` and
+`charlie_tasks` under the assertion: *"service_role bypasses RLS
+by default; n8n + clipper-worker continue working. Anon loses
+access — correct."*
+
+The assertion was wrong. Two production-active consumers use
+SUPABASE_ANON_KEY directly, not service_role:
+
+1. **clipper-worker** at `src/clipper/main.py:81-82` hardcodes
+   `SUPABASE_ANON_KEY` for all `clip_jobs` POST/PATCH/GET. With
+   RLS-enabled-no-policy, all writes returned 401 → the
+   FastAPI `/clip` endpoint surfaced 500 → Generate Clips errored
+   → workflow blocked at the clipper handoff.
+
+2. **Charlie - Task Handler** workflow (`dHoqL8Ph8kmFHwyx`, active
+   in production) uses inline `$env.SUPABASE_ANON_KEY` for the
+   `charlie_tasks` POST/PATCH/GET in two near-identical jsCode
+   blocks. /task, /tasks, /done, /run Telegram commands would
+   all 401 with RLS on.
+
+Rollback migration `2026_05_06_rollback_rls_clip_jobs.sql`
+(commit `3bda7f2`) disables RLS on both. The proper fix
+(switch consumers to service_role and re-enable RLS) is tracked
+as a separate dispatch.
+
+content_studio_jobs RLS was already enabled before this session;
+that one is left alone — its consumers (Charlie + the n8n
+workflow) use a service-role-equivalent path or the
+authenticated-role policies that already exist.
+
+### PUT 1b corrective sub-PUT (status='processing' → 'pending')
+
+The first PUT 1 test fire hit constraint violation at Create Job
+Record: `new row for relation "content_studio_jobs" violates
+check constraint "content_studio_jobs_status_check"`. The
+incremental-writes migration retired `'processing'` from the
+status enum, but Workflow A's Create Job Record still wrote
+`status: 'processing'` as the initial insert value. PUT 1b
+(commit `79ff75c`) changed the literal `'processing'` →
+`'pending'` in that node's jsonBody and re-fired. One-line
+diff; PUT 200; validators clean; downstream test fires worked.
+
+### Workflow C design constraint (captured)
+
+**Workflow C must reconcile the placeholder LinkedIn URL at
+publish-time.** PUT 2 generates the LinkedIn post text at draft
+time, when Buzzsprout's `.url` field is null. The text ends with
+`"🎧 Listen here:"` (no URL). Workflow C, which fires post-
+Buzzsprout-publish, has two implementation choices:
+
+- **(a)** Re-run the Generate LinkedIn Post Anthropic prompt with
+  the now-populated `.url`. Costs another Haiku call (~1k tokens
+  out per episode — negligible at current volume) but produces
+  freshly-tailored copy if Workflow C wants to vary tone for
+  publish-time distribution.
+
+- **(b)** String-replace the trailing `"🎧 Listen here:"` (or the
+  empty-URL fallback) with `"🎧 Listen here: <url>"` before posting
+  via Blotato. Cheaper, deterministic, no Haiku re-call. The
+  workflow is straight transformation, no AI.
+
+**Recommendation: (b)** for v1. (a) is reserved for cases where
+Workflow C wants different framing (e.g. retroactive promotion
+of an older episode, or A/B testing). Track on the Workflow C
+design doc.
+
+### Four brief conflicts caught in this session
+
+Each was a different shape of "the brief asserts something about
+production reality that the brief author had not verified". All
+four were caught at PUT or test-fire time before damage spread.
+Pattern is consistent: STOP and surface, not silently work around.
+
+1. **`status='processing'` vs new enum.** Migration brief defined
+   the enum without `'processing'` and instructed reconciliation
+   of existing rows away. The PUT 1 brief's test-fire criterion
+   then assumed `'processing'` was still the start status. Caught
+   at the first PUT 1 test fire by the constraint check that the
+   migration itself had added. Fix: PUT 1b (single-token edit
+   `'processing'` → `'pending'`).
+
+2. **`r2Url` payload field missing from test fire spec.** The
+   PUT 1 test brief gave a `TEST_URL` from a different R2 bucket
+   than the workflow's hardcoded production bucket prefix, but
+   the curl payload it specified did not include the `r2Url`
+   override. Generate R2 Presigned URL fell back to the production
+   bucket prefix and produced a 404 URL; Buzzsprout responded
+   "is not reachable". Caught at the second PUT 1 test fire by
+   inspecting Buzzsprout's error context.
+
+3. **RLS on `clip_jobs` and `charlie_tasks` blocked anon writers.**
+   Migration brief asserted "clipper-worker continues working"
+   because service_role bypasses RLS — but neither active
+   consumer uses service_role. Caught at the third PUT 1 test
+   fire (clipper-worker 500 from `/clip`); the audit found a
+   parallel regression on `charlie_tasks` via the active Charlie
+   - Task Handler workflow using `SUPABASE_ANON_KEY` inline.
+   Fix: rollback migration disabling RLS on both tables.
+
+4. **Buzzsprout `.url` is null on draft.** The PUT 2 brief
+   specified the EP67 fix as `audio_url → url` and asserted the
+   generated LinkedIn text would contain `"Listen here:
+   https://www.buzzsprout.com..."`. In reality, Buzzsprout sets
+   `.url` only on **publish**, not on draft creation. Caught at
+   PUT 2 verification: `Buzzsprout response url: None` for the
+   draft, and `csj.linkedin_post` ends with a bare
+   `"🎧 Listen here:"`. Resolution: accept as the expected
+   intermediate state — Workflow C is being designed precisely
+   to fill the URL slot at publish-time. Criterion #7 downgraded
+   from RED to "expected intermediate state per Workflow C
+   handoff design".
+
+### Updated lesson (sibling to the prior session's "rules-as-code" lesson)
+
+> *Acceptance criteria for migration and workflow briefs must be
+> written against verified API responses, not inferred ones.
+> Verify the actual shape of upstream API outputs (Buzzsprout,
+> WordPress, etc.) at every relevant lifecycle state — draft,
+> published, error — before specifying criteria that depend on
+> field values.*
+
+The prior session's lesson ("documented patterns need lint
+enforcement") is unchanged and still applies — `b_common.py`'s
+three pre-PUT validators saved this session three times across
+PUT 1 + PUT 1b + PUT 2. The new lesson is its sibling, applied
+to API-shape assumptions instead of code-shape assumptions.
+
+Both lessons go into Phase 4 Slice 1+ design notes for Charlie
+2.0's bootstrap probe and dispatcher: any future briefing that
+*asserts* something about a downstream system must include a
+verification step (a Supabase query, a curl probe, an n8n GET)
+that *demonstrates* the assertion before downstream criteria are
+specified.
+
+### Followups captured for next session
+
+- **PUT 3** (Workflow A → final): pending separate dispatch.
+- **(ζ) Switch clipper-worker + Charlie - Task Handler to
+  `SUPABASE_SERVICE_ROLE_KEY`**, then re-enable RLS on
+  `clip_jobs` + `charlie_tasks`. Multi-file change spanning
+  `src/clipper/main.py`, the `charlie-task-handler.json` jsCode
+  blocks (×2), env var addition on n8n + qclaw.
+- **Clipper-worker R2 bucket prefix override.** Add an `r2_bucket`
+  or `r2_public_url` parameter to the `/clip` request body so
+  cross-bucket test files (and future multi-tenant episodes)
+  don't 404 inside the clipper. Mirrors the `r2Url` escape hatch
+  Generate R2 Presigned URL already has. Lower priority — affects
+  test fires, not real episodes.
+- **Workflow C URL substitution.** Per the design constraint
+  section above, choose (a) re-prompt or (b) string-replace at
+  Workflow C build time. (b) is the recommended default.
+- **Carry-over from earlier dispatches:**
+  `.claude-code-session.lock` not in `.gitignore` (Operating Rule 2
+  expects gitignored); `src/clipper/__pycache__/main.cpython-312.pyc`
+  is tracked and dirties the working tree on every PM2 restart.
+  Both are out-of-scope nits for any current dispatch.
+
+### Phase 4 Slice 0 → Slice 1 → Content Studio coupling
+
+This Content Studio work doesn't block Phase 4 Slice 1's bootstrap
+mechanism — they were running in parallel in two sessions on the
+same repo and merged cleanly. But it does sharpen one Slice 1+
+design choice: Charlie's bootstrap probe currently reads the n8n
+executions API for workflow health. With Workflow A now fanning
+out asynchronously into Workflow B (clipper) and eventually
+Workflow C (publisher), single-execution health is no longer a
+sufficient signal for "did the Content Studio fire succeed".
+Bootstrap will need a join-style health view across the three
+workflows once B and C land. Capture in CHARLIE_OVERHAUL.md when
+revisiting probe design for Slice 2.
