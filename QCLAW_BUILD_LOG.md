@@ -2,7 +2,7 @@
 
 **Project:** QClaw — Self-hosted Claude agent runtime (Fork of QuantumClaw/QClaw)
 **Owner:** Tyson Venables / Flow OS
-**Last updated:** 21 April 2026
+**Last updated:** 7 May 2026
 **Repo:** https://github.com/tysonven/QClaw
 
 ---
@@ -4476,7 +4476,6 @@ resolved through this Slice 0 work — Charlie 2.0 reads
 
 End of session 2026-05-05.
 
-
 ---
 
 ## 2026-05-05 — Content Studio EP67 second live run; n8n stop-flush gotcha; LinkedIn URL bug isolated
@@ -5541,3 +5540,191 @@ cleanly to Workflow C; the Anthropic prompt no longer references a
 field (Buzzsprout `.audio_url`) that produces a broken raw-mp3 link.
 
 End of session 2026-05-06 (Content Studio thread).
+
+## 2026-05-07 — INCIDENT + FIX: Supavisor session-mode pool exhaustion (`EMAXCONNSESSION`) on 25 n8n workflows; credential `qGUxEHfEZkZGdAcZ` flipped to transaction mode
+
+### Incident
+
+Morning Light WL→HL workflow `TikJkWLzpreI6iTa` failing on its first
+Postgres node ("Execute a SQL query"). Retries from the n8n UI all
+returned the same error. 16 errored executions in the prior 2 hours;
+several timestamp-clustered (5 concurrent runs at 03:52:02 UTC,
+2 at 04:11:29, 2 at 04:06:42), indicating burst-driven, not query-
+driven, failure.
+
+Raw error from the n8n execution view (verbatim):
+
+```
+{
+  "errorMessage": "(EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15",
+  "errorDescription": "Failed query: SELECT access_token, refresh_token FROM highlevel_tokens WHERE id = 1 ORDER BY updated_at DESC LIMIT 1;",
+  "errorDetails": {},
+  "n8nDetails": {
+    "nodeName": "Execute a SQL query",
+    "nodeType": "n8n-nodes-base.postgres",
+    "nodeVersion": 2.6,
+    "resource": "database",
+    "operation": "executeQuery",
+    "time": "7/5/2026, 7:30:58 am",
+    "n8nVersion": "2.4.8 (Self Hosted)",
+    "binaryDataMode": "filesystem",
+    "stackTrace": [
+      "NodeOperationError: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15",
+      "    at parsePostgresError (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/nodes/Postgres/v2/helpers/utils.ts:123:9)",
+      "    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/nodes/Postgres/v2/helpers/utils.ts:278:19",
+      "    at processTicksAndRejections (node:internal/process/task_queues:105:5)",
+      "    at ExecuteContext.execute (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/nodes/Postgres/v2/actions/database/executeQuery.operation.ts:149:9)",
+      "    at ExecuteContext.router (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/nodes/Postgres/v2/actions/router.ts:41:17)",
+      "    at ExecuteContext.execute (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/nodes/Postgres/v2/PostgresV2.node.ts:26:10)",
+      "    at WorkflowExecute.executeNode (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+sdk-trace-base@1.30_ec37920eb95917b28efaa783206b20f3/node_modules/n8n-core/src/execution-engine/workflow-execute.ts:1045:8)",
+      "    at WorkflowExecute.runNode (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+sdk-trace-base@1.30_ec37920eb95917b28efaa783206b20f3/node_modules/n8n-core/src/execution-engine/workflow-execute.ts:1226:11)",
+      "    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+sdk-trace-base@1.30_ec37920eb95917b28efaa783206b20f3/node_modules/n8n-core/src/execution-engine/workflow-execute.ts:1662:27",
+      "    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+sdk-trace-base@1.30_ec37920eb95917b28efaa783206b20f3/node_modules/n8n-core/src/execution-engine/workflow-execute.ts:2297:11"
+    ]
+  }
+}
+```
+
+### Root cause
+
+`EMAXCONNSESSION` is a Supavisor (Supabase pooler) error, not a Postgres
+error. The pooler enforces a per-tenant client cap when running in
+session mode; on this project the cap is `pool_size: 15`.
+
+The credential used by the failing node is `qGUxEHfEZkZGdAcZ`
+("Supabase Postgres DB") with:
+
+- host: `aws-1-ap-southeast-2.pooler.supabase.com`
+- user: `postgres.fdabygmromuqtysitodp` (project `fdabygmromuqtysitodp`)
+- port: unset → defaults to **5432 = session mode**
+
+Twenty-five active workflows share this single credential — Trading
+Market Scanner / Position Monitor / Weekly Analyst, every GHL
+Marketing workflow, every Crete pipeline, Content Studio Pipeline,
+Workflow Dormancy Alerter, IG Trial Reels, Meta Ads Optimisation
+Agent, Gutful Shopify→Flow OS V3, both HL refresh-token writers, and
+the Morning Light bridge itself. Each workflow execution holds at
+least one session-mode pooler slot for the duration of its Postgres
+nodes; bursts of concurrent runs across these 25 workflows exhaust
+the 15-client cap and any further connection attempt fails fast with
+`EMAXCONNSESSION`.
+
+Postgres itself was not saturated. `pg_stat_activity` at the time of
+diagnosis showed 8 backend connections total, none of them n8n —
+confirming the cap was being enforced inside Supavisor rather than at
+the database.
+
+### Audit (transaction-mode safety)
+
+Before changing the credential, all 25 workflows were scanned for
+features that transaction-mode pooling does not support. Results:
+
+| Risky pattern | Hits |
+|---|---|
+| Postgres Trigger node (LISTEN/NOTIFY) | 0 |
+| `LISTEN` / `NOTIFY` SQL | 0 |
+| `PREPARE` / `DEALLOCATE` | 0 |
+| `pg_advisory_lock` (session-scoped) | 0 |
+| `SET LOCAL` / `SET SESSION` | 0 |
+| `TEMP TABLE` / `TEMPORARY TABLE` | 0 |
+| `DECLARE … CURSOR` | 0 |
+
+Every Postgres node across the 25 workflows is a single-statement,
+autocommit-safe operation: `record_heartbeat()` RPCs, single SELECTs
+against `highlevel_tokens`, single UPDATEs on
+`content_studio_jobs`, n8n `upsert` ops, and one aggregate SELECT
+in Workflow Dormancy Alerter. n8n's Postgres node v2 uses unnamed
+parameterised queries (no named server-side prepared statements),
+which Supavisor transaction mode supports.
+
+### Fix
+
+Edited credential `qGUxEHfEZkZGdAcZ` on the n8n host to add
+`port: 6543` (transaction mode). Host/user/password unchanged.
+
+Steps executed on `ssh n8n`:
+
+1. Encrypted credential row backed up:
+   `/tmp/cred-encrypted-backup.json` on the n8n host.
+2. Decrypted via `n8n export:credentials --decrypted` inside the
+   `n8n-project-n8n-1` container.
+3. Modified the JSON to add `"port": 6543`.
+4. Re-imported with `n8n import:credentials --input=/tmp/cred-new.json`
+   — n8n re-encrypts and updates by ID. Result:
+   `Successfully imported 1 credential.`
+5. Decrypted re-export confirmed `port: 6543` persisted.
+6. Encrypted ciphertext in `credentials_entity` confirmed changed
+   (new salt prefix; longer payload).
+7. Decrypted JSONs scrubbed from inside the container.
+
+n8n loads credentials at execution time (no in-memory cache), so the
+change takes effect for the next execution of any of the 25 workflows.
+No n8n restart was required.
+
+Workflows themselves were not modified. They reference the credential
+by ID (`qGUxEHfEZkZGdAcZ`), so the port change propagates
+automatically.
+
+### Verification (live)
+
+Pre-flip — transaction-mode pooler reachability and query support:
+
+- `psql … -p 6543 -c "SELECT 1, current_setting('server_version_num')"`
+  → `1 | 170006` (Postgres 17.6).
+- Same workflow query under transaction mode:
+  `SELECT (access_token IS NOT NULL), (refresh_token IS NOT NULL)
+   FROM highlevel_tokens WHERE id = 1 ORDER BY updated_at DESC LIMIT 1;`
+  → `t | t`.
+- Heartbeat RPC under transaction mode:
+  `SELECT public.record_heartbeat('TikJkWLzpreI6iTa', 'started',
+   'cred-port-flip-validation', 'verify-tx-mode');`
+  → returned UUID `0c707b28-5c71-49d5-a102-e268f3c97bd6`. (This row
+  is a synthetic validation entry — safe to delete from
+  `workflow_heartbeats` if dashboard hygiene matters.)
+
+Post-flip natural traffic to validate (next Morning Light fire and
+the next scheduled run of any of the other 24) will confirm
+end-to-end through the n8n Postgres node. No further action expected
+unless `workflow_heartbeats` shows another error class.
+
+### Architectural note
+
+This is a single-credential blast-radius issue. One credential row
+gates Postgres access for 25 workflows. The pooler-mode setting
+(session vs transaction) is invisible at the workflow level because
+the port lives in the credential record, not the node. A failure
+that looks workflow-local — Morning Light's first SQL node — is
+actually a shared-resource exhaustion driven by unrelated workflows
+running concurrently on the same pooler tenant.
+
+Two structural follow-ups dropped out of this:
+
+1. **`N8N_WORKFLOW_INDEX.md` (LOCATIONS.md line 26, still PENDING)**
+   gains urgency. Diagnosis required scanning 25 workflow JSONs from
+   the n8n internal DB to figure out which business units shared the
+   credential and which queries they ran. A canonical index keyed by
+   business unit + credential + criticality would have collapsed that
+   to a lookup. Raise for next session.
+2. The Postgres credential password lives in the n8n internal DB
+   encrypted at rest, but the `n8n export:credentials --decrypted`
+   path emits cleartext to disk. The cleartext file was scrubbed
+   immediately, but any future credential edit via this CLI path
+   should keep the file inside the container and remove it in the
+   same shell as the import.
+
+### Open items for next session
+
+- **`N8N_WORKFLOW_INDEX.md` build** — promote LOCATIONS.md line 26
+  PENDING to active. This incident is the concrete justification.
+  Index per workflow: id, name, business unit (Flow OS / FSC /
+  SproutCode / Crete / Personal / QClaw infra), trigger type, shared
+  credentials, criticality, owning operator.
+- **Synthetic heartbeat row cleanup**: optionally delete
+  `workflow_heartbeats` row id `0c707b28-5c71-49d5-a102-e268f3c97bd6`
+  (action `cred-port-flip-validation`).
+- **Recheck after 24h** that no `EMAXCONNSESSION` recurs in any of
+  the 25 workflows' executions; if it does, the next move is to
+  audit per-execution connection lifetime in n8n's PG node, not to
+  raise the pool size.
+
+End of session 2026-05-07.
