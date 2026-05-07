@@ -17,9 +17,29 @@ This file is the second thing every agent reads at session start, after its iden
 - `CHARLIE_ROLE.md` — Charlie's role spec
 - `CHARLIE_OVERHAUL.md` — running architecture doc for Charlie 2.0
 - `LOCATIONS.md` — this file
-- Per-agent SOUL: `<config dir>/workspace/agents/<agent>/SOUL.md` (runtime, ~/.quantumclaw/workspace/agents/charlie/SOUL.md in production)
-- Trust kernel VALUES: `<config dir>/VALUES.md` (~/.quantumclaw/VALUES.md in production), loaded by `TrustKernel`
-- Repo-tracked workspace seeds: `workspace/IDENTITY.md`, `workspace/VALUES.md`, `workspace/agents/<agent>/SOUL.md` (snapshots used by `qclaw onboard`)
+
+### Charlie identity files — repo-canonical, runtime via symlink
+
+The repo at `/root/QClaw/workspace/...` is the canonical source for Charlie's
+identity. Runtime paths are symlinks pointing into the repo. Edits go through
+git, not via runtime mutation. Enforced by:
+- `src/dashboard/server.js` PUT /api/agents/:name/soul refuses 409 when target is a symlink
+- `src/security/trust-kernel.js` load() refuses default-write when target is a symlink
+
+| Layer | Canonical (repo) | Runtime (symlink) |
+|---|---|---|
+| SOUL  | `workspace/agents/charlie/SOUL.md`     | `~/.quantumclaw/workspace/agents/charlie/SOUL.md` → repo |
+| VALUES | `workspace/VALUES.md`                  | `~/.quantumclaw/VALUES.md` → repo |
+| IDENTITY | `workspace/agents/charlie/IDENTITY.md` | `~/.quantumclaw/workspace/agents/charlie/IDENTITY.md` → repo |
+
+For sub-agents that aren't yet repo-canonicalized (`echo`, `dispatch-zeta`,
+`patcher`, `n8n-workflow-fixer`, `claude-code-ig-fix`, `post-auditor`),
+runtime files at `~/.quantumclaw/workspace/agents/<name>/` remain regular
+files and are still mutable via the dashboard. Reconciliation TBD.
+
+- Repo-tracked workspace seeds (consumed by `qclaw onboard` for fresh
+  installs): `workspace/agents/charlie/SOUL.md`, `workspace/VALUES.md`,
+  `workspace/agents/charlie/IDENTITY.md`
 
 ## State layer (Charlie writes routine, Tyson approves significant)
 

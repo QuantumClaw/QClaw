@@ -947,10 +947,15 @@ ${error ? '<p class="err">Invalid token. Please try again.</p>' : ''}
         const name = req.params.name;
         const { content } = req.body;
         if (!content) return res.status(400).json({ error: 'content required' });
-        const { writeFileSync, existsSync } = await import('fs');
+        const { writeFileSync, existsSync, lstatSync } = await import('fs');
         const soulPath = join(this.qclaw.config._dir, 'workspace', 'agents', name, 'SOUL.md');
         if (!existsSync(join(this.qclaw.config._dir, 'workspace', 'agents', name))) {
           return res.status(404).json({ error: 'Agent not found' });
+        }
+        // Refuse to write through a symlink — those targets are canonicalized to the repo.
+        const lstat = lstatSync(soulPath, { throwIfNoEntry: false });
+        if (lstat?.isSymbolicLink()) {
+          return res.status(409).json({ error: 'This identity file is canonicalized to the repo. Edit via git.' });
         }
         writeFileSync(soulPath, content);
         res.json({ ok: true, message: 'SOUL.md updated. Restart agent to apply.' });

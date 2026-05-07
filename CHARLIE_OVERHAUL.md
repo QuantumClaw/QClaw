@@ -104,6 +104,8 @@ Three decisions resolved at Slice 1 kickoff, captured here as the canonical reco
 - Charlie surfaces for Tyson approval before writing: trust gradient changes, new specialists, workflow index changes, identity-layer edits
 - Tyson edits directly (with Claude help): `CEO_OPERATING_MODEL.md`, `CHARLIE_ROLE.md`, high-level direction in state doc
 
+**Identity-layer canonical-source pattern (added 2026-05-07):** Charlie's three runtime identity files (SOUL, VALUES, IDENTITY) at `~/.quantumclaw/...` are symlinks pointing at the repo at `/root/QClaw/workspace/...`. The repo is canonical. Edits go through git, not via runtime mutation. Two enforcement points block runtime writes through the symlinks: the dashboard PUT /api/agents/:name/soul handler returns 409 when its target lstats as a symlink, and `TrustKernel.load()` refuses to materialise its DEFAULT_VALUES through a symlinked path. See `LOCATIONS.md` "Identity layer" for the full mapping. Sub-agents that aren't yet repo-canonicalized remain mutable; reconciliation TBD.
+
 **Freshness thresholds:**
 - `FLOW_OS_STATE.md`: warn if >24h since update during business hours
 - `N8N_WORKFLOW_INDEX.md`: warn if any workflow's last-verified >7 days ago

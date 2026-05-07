@@ -15,7 +15,7 @@
     "diagnose": "node src/cli/index.js diagnose",
     "chat": "node src/cli/index.js chat",
     "dashboard": "node src/dashboard/server.js",
-    "test": "node tests/smoke.test.js && node tests/agent-mutex.test.js && node tests/approval-parser-handler.test.js && node tests/approval-gate-notifier.test.js && node tests/approvals.test.js && node tests/bootstrap.test.js && node tests/probes.test.js",
+    "test": "node tests/smoke.test.js && node tests/agent-mutex.test.js && node tests/approval-parser-handler.test.js && node tests/approval-gate-notifier.test.js && node tests/approvals.test.js && node tests/bootstrap.test.js && node tests/probes.test.js && node tests/identity-canonicalization.test.js",
     "lint": "eslint src/"
   },
   "engines": {

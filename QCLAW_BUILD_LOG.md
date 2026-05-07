@@ -5995,3 +5995,152 @@ count 928 → 928, entry count 25 → 25, zero delta — fix #9 working.
 80/80 tests passing. Slice 1 followups #2, #4, #9 closed. Followup
 #10 (no-detail probe failure mode) carried forward. Identity symlink
 dispatch (#6) next, brief drafted, parked.
+
+---
+
+## 2026-05-07 — Identity-layer symlink reconcile: Followup #6 closed
+
+Branch: `cc/identity-symlink-reconcile-20260507-1238`
+Audit: `/tmp/identity_symlink_audit.md` (406 lines)
+Files changed: `src/dashboard/server.js`, `src/security/trust-kernel.js`,
+`tests/identity-canonicalization.test.js` (new), `package.json`,
+`workspace/IDENTITY.md` → `workspace/agents/charlie/IDENTITY.md` (`git mv`),
+`LOCATIONS.md`, `CHARLIE_OVERHAUL.md`.
+Filesystem changes (not in git): 3 symlinks at runtime paths,
+3 backups at `~/.quantumclaw/<path>.bak.20260507-1243`.
+
+### Summary
+
+The repo at `/root/QClaw/workspace/...` is now the canonical source for
+Charlie's identity-layer files (SOUL, VALUES, IDENTITY). Runtime paths
+under `~/.quantumclaw/...` are symlinks pointing at the repo. Edits to
+identity content henceforth go through git, not via runtime mutation.
+Two enforcement points block any remaining runtime-write paths.
+
+### Tyson decisions (per dispatch brief)
+
+1. **SOUL authoritative:** repo (3937B). Runtime was a stale 979B Hatchling
+   boilerplate. Charlie has been reading the stale runtime SOUL on every
+   bootstrap; post-symlink, next bootstrap reads the 3937B canonical version.
+2. **IDENTITY authoritative:** repo (1388B). Runtime was a 1037B
+   pre-customisation file.
+3. **IDENTITY canonical path:** agent-scoped (`workspace/agents/charlie/IDENTITY.md`).
+   Repo file moved from `workspace/IDENTITY.md` via `git mv`.
+4. **Dashboard PUT gate:** lstat target; if symlink, return 409 with body
+   `{"error": "This identity file is canonicalized to the repo. Edit via git."}`.
+5. **TrustKernel default-write hardening:** folded in (not deferred). lstat
+   target; if symlink, log warn `"VALUES is canonicalized — refusing default write"`,
+   skip write. Avoids leaving an unprotected runtime-mutation path between
+   this dispatch and a deferred one.
+
+### Filesystem operations executed
+
+```
+$ git mv /root/QClaw/workspace/IDENTITY.md /root/QClaw/workspace/agents/charlie/IDENTITY.md
+
+$ TS=20260507-1243
+$ sudo cp -p /root/.quantumclaw/VALUES.md                                /root/.quantumclaw/VALUES.md.bak.$TS
+$ sudo cp -p /root/.quantumclaw/workspace/agents/charlie/SOUL.md         /root/.quantumclaw/workspace/agents/charlie/SOUL.md.bak.$TS
+$ sudo cp -p /root/.quantumclaw/workspace/agents/charlie/IDENTITY.md     /root/.quantumclaw/workspace/agents/charlie/IDENTITY.md.bak.$TS
+
+$ sudo rm /root/.quantumclaw/VALUES.md
+$ sudo ln -s /root/QClaw/workspace/VALUES.md /root/.quantumclaw/VALUES.md
+
+$ sudo rm /root/.quantumclaw/workspace/agents/charlie/SOUL.md
+$ sudo ln -s /root/QClaw/workspace/agents/charlie/SOUL.md /root/.quantumclaw/workspace/agents/charlie/SOUL.md
+
+$ sudo rm /root/.quantumclaw/workspace/agents/charlie/IDENTITY.md
+$ sudo ln -s /root/QClaw/workspace/agents/charlie/IDENTITY.md /root/.quantumclaw/workspace/agents/charlie/IDENTITY.md
+```
+
+Symlink verification (`readlink -f` + `wc -c` via the link):
+
+```
+/root/.quantumclaw/VALUES.md                              -> /root/QClaw/workspace/VALUES.md                           (917  bytes via link)
+/root/.quantumclaw/workspace/agents/charlie/SOUL.md       -> /root/QClaw/workspace/agents/charlie/SOUL.md              (3937 bytes via link)
+/root/.quantumclaw/workspace/agents/charlie/IDENTITY.md   -> /root/QClaw/workspace/agents/charlie/IDENTITY.md          (1388 bytes via link)
+```
+
+### Acceptance verification
+
+```
+=== Test suite (Rule 5) ===
+$ cd /root/QClaw && sudo npm test
+... 90 passed, 0 failed
+  - existing: 80 (smoke + agent-mutex + 3× approval + bootstrap + probes)
+  - new:      10 (identity-canonicalization)
+
+=== bootstrap.log pollution (Slice 1 fix #9 still holding) ===
+post-symlink npm test: line count 928 → 928, zero delta
+
+=== Symlinks resolve correctly + repo content present ===
+all three symlinks lstat as symbolic links; readlink chases to expected
+repo paths; cat through link returns expected byte counts (917/3937/1388).
+
+=== Backups exist for rollback ===
+/root/.quantumclaw/VALUES.md.bak.20260507-1243                                (917B,  preserves orig mtime via cp -p)
+/root/.quantumclaw/workspace/agents/charlie/SOUL.md.bak.20260507-1243         (979B)
+/root/.quantumclaw/workspace/agents/charlie/IDENTITY.md.bak.20260507-1243     (1037B)
+```
+
+### Acceptance criteria (per dispatch brief + Tyson additions)
+
+- [x] Three symlinks exist at runtime paths, point at repo. (`ls -la`).
+- [x] Each runtime read returns repo content. (`cat | wc -c` matches repo size.)
+- [ ] **Pending Tyson live verification post-PM2-reload:** Telegram-fire
+      bootstrap shows Layer 1 char counts SOUL=3937, VALUES=917, IDENTITY=1388
+      (within ±2 for trailing-newline). Probes all green. **Not exercised
+      pre-merge — Tyson does the reload + Telegram fire.**
+- [x] Backups created at `<runtime path>.bak.20260507-1243`.
+- [x] `LOCATIONS.md` updated with the new symlink mapping.
+- [x] PM2 reload not performed by Claude Code in this dispatch.
+- [x] No identity-file content written to logs / commit messages / PR body
+      (Rule 8 honoured throughout).
+- [x] **Tyson addition:** Dashboard PUT against a charlie identity-file path
+      returns 409, no filesystem write occurs — verified via the
+      `Dashboard gate: symlinked SOUL → 409` test case AND the
+      `Dashboard gate: repo file unchanged (content / mtime)` assertions.
+      End-to-end curl verification deferred to Tyson post-reload.
+- [x] **Tyson addition:** TrustKernel default-write code path with a symlink
+      target produces a warning log entry, no filesystem write occurs —
+      verified by `TrustKernel: dangling symlink → repo target NOT recreated`
+      and the visible `⚠ VALUES is canonicalized — refusing default write`
+      log line during the test run.
+
+### Rollback (per file, atomic)
+
+```sh
+sudo rm /root/.quantumclaw/<path>
+sudo cp -p /root/.quantumclaw/<path>.bak.20260507-1243 /root/.quantumclaw/<path>
+```
+
+Backups retained until next slice closes — separate cleanup dispatch ~1 week
+post-merge per brief.
+
+### Updated followup queue
+
+| # | Status | Description |
+|---|---|---|
+| 1 | ✅ Closed | Ghost user-6666 — benign |
+| 2 | ✅ Closed | PM2 probe non-JSON parse hardening |
+| 3 | ✅ Closed | FLOW_OS_STATE.md Cognee Live |
+| 4 | ✅ Closed | agex-hub to expected PM2 process list |
+| 5 | ✅ Closed | Layer 5 wall-clock assertion already shipped |
+| 6 | ✅ Closed | Identity symlink reconcile (this entry) |
+| 7 | 📝 Future | n8n JWT rotation (~15 days runway, exp 2026-05-22) |
+| 8 | 📝 Future | Multi-session safety: git worktree migration |
+| 9 | ✅ Closed | BOOTSTRAP_LOG_PATH module-load caching |
+| 10 | 📝 Future | Probe "no detail" failure mode |
+| 11 | 📝 Future | Sub-agent canonical-source extension (echo, dispatch-zeta, patcher, n8n-workflow-fixer, claude-code-ig-fix, post-auditor — same canonical-source question, separate brief) |
+| 12 | 📝 Future | `.bak.20260507-1243` cleanup dispatch (~1 week post-merge) |
+
+### Out of scope (not actioned per brief Rule 4)
+
+- Sub-agent canonical-source extension → Followup #11. Six runtime-only
+  agents at `~/.quantumclaw/workspace/agents/<name>/SOUL.md` are NOT
+  symlinked and remain mutable via the dashboard. Distinct scope.
+- `.bak.20260507-1243` cleanup → Followup #12.
+- PM2 reload of `quantumclaw` — Tyson does this post-merge, then runs
+  the live Telegram-fire verification.
+
+Sequence next: this entry awaits Tyson's reload + live verify → Slice 2.

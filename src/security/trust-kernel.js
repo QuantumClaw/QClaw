@@ -5,7 +5,7 @@
  * Only the human owner can edit this file.
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, lstatSync } from 'fs';
 import { join } from 'path';
 import { log } from '../core/logger.js';
 
@@ -51,8 +51,16 @@ export class TrustKernel {
 
   async load() {
     if (!existsSync(this.file)) {
-      writeFileSync(this.file, DEFAULT_VALUES);
-      log.info('Trust Kernel (VALUES.md) created');
+      // Refuse to write through a symlink — those targets are canonicalized
+      // to the repo. A dangling symlink would otherwise materialise at the
+      // target path and clobber the canonical file with DEFAULT_VALUES.
+      const lstat = lstatSync(this.file, { throwIfNoEntry: false });
+      if (lstat?.isSymbolicLink()) {
+        log.warn('VALUES is canonicalized — refusing default write');
+      } else {
+        writeFileSync(this.file, DEFAULT_VALUES);
+        log.info('Trust Kernel (VALUES.md) created');
+      }
     }
 
     this.raw = readFileSync(this.file, 'utf-8');
