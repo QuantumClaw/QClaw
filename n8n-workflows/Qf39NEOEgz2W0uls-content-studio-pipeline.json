@@ -55,8 +55,8 @@
       "notesInFlow": true,
       "credentials": {
         "httpHeaderAuth": {
-          "id": "Nd2uuX5t9KEwbQPv",
-          "name": "Supabase FSC"
+          "id": "XTzNI4kxIpHcVjlB",
+          "name": "Supabase Main Service Role"
         }
       },
       "notes": "Supabase: Create job record. NEEDS: SUPABASE_ANON_KEY env var"
@@ -67,7 +67,7 @@
         "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ chat_id: $(\"Webhook Trigger\").first().json.body.chatId || 1375806243, text: \"\ud83c\udf99\ufe0f Content Studio started for: \" + $(\"Webhook Trigger\").first().json.body.episodeTitle + \"\\nProcessing your episode now. I will update you at each step.\", parse_mode: \"HTML\" }) }}",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $(\"Webhook Trigger\").first().json.body.chatId || 1375806243, text: \"🎙️ Content Studio started for: \" + $(\"Webhook Trigger\").first().json.body.episodeTitle + \"\\nProcessing your episode now. I will update you at each step.\", parse_mode: \"HTML\" }) }}",
         "options": {}
       },
       "id": "notify-start",
@@ -159,8 +159,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "Nd2uuX5t9KEwbQPv",
-          "name": "Supabase FSC"
+          "id": "XTzNI4kxIpHcVjlB",
+          "name": "Supabase Main Service Role"
         }
       }
     },
@@ -304,7 +304,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 4096, messages: [{ role: 'user', content: 'You are Emma Maidment writing a blog post for your website flowstatescollective.com. Write in first person as Emma. Use I, my, we (when referring to your community). Never write about Emma in third person. IMPORTANT: Never use em dashes. No hashtags. Write a detailed SEO blog post based on this podcast transcript.\\nEpisode title: ' + $('Generate R2 Presigned URL').first().json.episodeTitle + '\\nTranscript: ' + $('Poll AssemblyAI').first().json.text + '\\n\\nFormat as:\\n- Compelling intro paragraph\\n- 3-5 main sections with H2 headings\\n- Key takeaways section\\n- Call to action to listen to the full episode\\nKeep it 800-1200 words. Tone: warm, practical, empowering.\\n\\nAt the end of the blog post, include this section exactly:\\n\\n\ud83c\udfa7 Listen to the full episode: ' + ($('Upload to Buzzsprout').first().json.url || '') + '\\nFollow Emma on LinkedIn: https://www.linkedin.com/in/emmamaidment\\nSubscribe on Substack: https://emmamaidment.substack.com\\n\\nIMPORTANT: Never use em dashes (\\u2014) in the writing. Use commas, colons, or rewrite sentences instead.' }] }) }}",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 4096, messages: [{ role: 'user', content: 'You are Emma Maidment writing a blog post for your website flowstatescollective.com. Write in first person as Emma. Use I, my, we (when referring to your community). Never write about Emma in third person. IMPORTANT: Never use em dashes. No hashtags. Write a detailed SEO blog post based on this podcast transcript.\\nEpisode title: ' + $('Generate R2 Presigned URL').first().json.episodeTitle + '\\nTranscript: ' + $('Poll AssemblyAI').first().json.text + '\\n\\nFormat as:\\n- Compelling intro paragraph\\n- 3-5 main sections with H2 headings\\n- Key takeaways section\\n- Call to action to listen to the full episode\\nKeep it 800-1200 words. Tone: warm, practical, empowering.\\n\\nAt the end of the blog post, include this section exactly:\\n\\n🎧 Listen to the full episode: ' + ($('Upload to Buzzsprout').first().json.url || '') + '\\nFollow Emma on LinkedIn: https://www.linkedin.com/in/emmamaidment\\nSubscribe on Substack: https://emmamaidment.substack.com\\n\\nIMPORTANT: Never use em dashes (\\u2014) in the writing. Use commas, colons, or rewrite sentences instead.' }] }) }}",
         "options": {}
       },
       "id": "generate-blog",
@@ -391,8 +391,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "Nd2uuX5t9KEwbQPv",
-          "name": "Supabase FSC"
+          "id": "XTzNI4kxIpHcVjlB",
+          "name": "Supabase Main Service Role"
         }
       }
     },
@@ -417,7 +417,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 4096, messages: [{ role: 'user', content: 'You are Emma Maidment writing a personal newsletter post for your Substack. Write in first person as Emma, warm and conversational, like writing to a close friend. Use I, my, you (addressing the reader directly). Never write about Emma in third person. IMPORTANT: Never use em dashes. No hashtags. Write a Substack newsletter post based on this podcast episode.\\nEpisode title: ' + $('Generate R2 Presigned URL').first().json.episodeTitle + '\\nTranscript: ' + $('Poll AssemblyAI').first().json.text + '\\n\\nFormat as a personal, conversational newsletter post.\\nInclude: hook opener, 3 key insights from the episode, personal reflection, link to listen.\\nTone: warm, direct, like writing to a friend. 600-800 words.\\n\\nAt the end include:\\n\ud83c\udfa7 Listen to the full episode: ' + ($('Upload to Buzzsprout').first().json.url || '') + '\\n\ud83d\udcd6 Read the blog post: ' + ($('Post to WordPress').first().json.link || '') + '\\nFollow Emma on LinkedIn: https://www.linkedin.com/in/emmamaidment\\n\\nIMPORTANT: Never use em dashes (\\u2014) in the writing. Use commas, colons, or rewrite sentences instead.' }] }) }}",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 4096, messages: [{ role: 'user', content: 'You are Emma Maidment writing a personal newsletter post for your Substack. Write in first person as Emma, warm and conversational, like writing to a close friend. Use I, my, you (addressing the reader directly). Never write about Emma in third person. IMPORTANT: Never use em dashes. No hashtags. Write a Substack newsletter post based on this podcast episode.\\nEpisode title: ' + $('Generate R2 Presigned URL').first().json.episodeTitle + '\\nTranscript: ' + $('Poll AssemblyAI').first().json.text + '\\n\\nFormat as a personal, conversational newsletter post.\\nInclude: hook opener, 3 key insights from the episode, personal reflection, link to listen.\\nTone: warm, direct, like writing to a friend. 600-800 words.\\n\\nAt the end include:\\n🎧 Listen to the full episode: ' + ($('Upload to Buzzsprout').first().json.url || '') + '\\n📖 Read the blog post: ' + ($('Post to WordPress').first().json.link || '') + '\\nFollow Emma on LinkedIn: https://www.linkedin.com/in/emmamaidment\\n\\nIMPORTANT: Never use em dashes (\\u2014) in the writing. Use commas, colons, or rewrite sentences instead.' }] }) }}",
         "options": {}
       },
       "id": "generate-substack",
@@ -458,7 +458,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, messages: [{ role: 'user', content: 'You are Emma Maidment writing a LinkedIn post in your own voice. Write in first person as Emma. Professional but warm and direct. Use I, my, I am. Max 200 words.\\n\\nIMPORTANT FORMATTING RULES:\\n- Write in plain text only. No markdown, no asterisks, no bold formatting.\\n- No bullet points with dashes or asterisks. Use line breaks between points.\\n- No hashtags.\\n- Never use em dashes. Use commas, colons, or rewrite sentences instead.\\n- Never write about Emma in third person.\\n\\nEpisode title: ' + $('Generate R2 Presigned URL').first().json.episodeTitle + '\\nTranscript summary: ' + ($('Poll AssemblyAI').first().json.text || '').substring(0, 500) + '\\n\\nFormat: Hook line, then 3 key insights as short punchy lines separated by line breaks, then CTA to listen. Max 200 words.\\n\\nEnd the post with exactly this line:\\n\ud83c\udfa7 Listen here: ' + ($('Upload to Buzzsprout').first().json.url || '') }] }) }}",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, messages: [{ role: 'user', content: 'You are Emma Maidment writing a LinkedIn post in your own voice. Write in first person as Emma. Professional but warm and direct. Use I, my, I am. Max 200 words.\\n\\nIMPORTANT FORMATTING RULES:\\n- Write in plain text only. No markdown, no asterisks, no bold formatting.\\n- No bullet points with dashes or asterisks. Use line breaks between points.\\n- No hashtags.\\n- Never use em dashes. Use commas, colons, or rewrite sentences instead.\\n- Never write about Emma in third person.\\n\\nEpisode title: ' + $('Generate R2 Presigned URL').first().json.episodeTitle + '\\nTranscript summary: ' + ($('Poll AssemblyAI').first().json.text || '').substring(0, 500) + '\\n\\nFormat: Hook line, then 3 key insights as short punchy lines separated by line breaks, then CTA to listen. Max 200 words.\\n\\nEnd the post with exactly this line:\\n🎧 Listen here: ' + ($('Upload to Buzzsprout').first().json.url || '') }] }) }}",
         "options": {}
       },
       "id": "generate-linkedin",
@@ -509,8 +509,8 @@
       "notesInFlow": true,
       "credentials": {
         "httpHeaderAuth": {
-          "id": "Nd2uuX5t9KEwbQPv",
-          "name": "Supabase FSC"
+          "id": "XTzNI4kxIpHcVjlB",
+          "name": "Supabase Main Service Role"
         }
       },
       "notes": "NEEDS: SUPABASE_ANON_KEY env var"
@@ -550,7 +550,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const result = $input.first().json;\nconst highlights = result.auto_highlights_result?.results || [];\nconst top5 = highlights\n  .sort((a, b) => b.rank - a.rank)\n  .slice(0, 5)\n  .map(h => {\n    const mins = Math.floor(h.timestamps[0].start / 60000);\n    const secs = Math.floor((h.timestamps[0].start % 60000) / 1000);\n    return `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')} \u2014 \"${h.text}\"`;\n  });\n\nconst highlightText = top5.length > 0 \n  ? top5.join('\\n')\n  : 'No highlights detected';\n\nreturn [{ json: { \n  ...result,\n  highlightTimestamps: highlightText,\n  highlightCount: top5.length\n}}];"
+        "jsCode": "const result = $input.first().json;\nconst highlights = result.auto_highlights_result?.results || [];\nconst top5 = highlights\n  .sort((a, b) => b.rank - a.rank)\n  .slice(0, 5)\n  .map(h => {\n    const mins = Math.floor(h.timestamps[0].start / 60000);\n    const secs = Math.floor((h.timestamps[0].start % 60000) / 1000);\n    return `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')} — \"${h.text}\"`;\n  });\n\nconst highlightText = top5.length > 0 \n  ? top5.join('\\n')\n  : 'No highlights detected';\n\nreturn [{ json: { \n  ...result,\n  highlightTimestamps: highlightText,\n  highlightCount: top5.length\n}}];"
       },
       "id": "extract-highlights",
       "name": "Extract Highlight Timestamps",
@@ -970,8 +970,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "Nd2uuX5t9KEwbQPv",
-          "name": "Supabase FSC"
+          "id": "XTzNI4kxIpHcVjlB",
+          "name": "Supabase Main Service Role"
         }
       },
       "disabled": true
@@ -1092,8 +1092,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "Nd2uuX5t9KEwbQPv",
-          "name": "Supabase FSC"
+          "id": "XTzNI4kxIpHcVjlB",
+          "name": "Supabase Main Service Role"
         }
       },
       "continueOnFail": true
@@ -1128,8 +1128,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "Nd2uuX5t9KEwbQPv",
-          "name": "Supabase FSC"
+          "id": "XTzNI4kxIpHcVjlB",
+          "name": "Supabase Main Service Role"
         }
       },
       "continueOnFail": true
@@ -1164,8 +1164,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "Nd2uuX5t9KEwbQPv",
-          "name": "Supabase FSC"
+          "id": "XTzNI4kxIpHcVjlB",
+          "name": "Supabase Main Service Role"
         }
       },
       "continueOnFail": true
@@ -1200,8 +1200,8 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "Nd2uuX5t9KEwbQPv",
-          "name": "Supabase FSC"
+          "id": "XTzNI4kxIpHcVjlB",
+          "name": "Supabase Main Service Role"
         }
       },
       "continueOnFail": true
