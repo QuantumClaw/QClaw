@@ -6163,3 +6163,95 @@ before symlink gate check, repo file mtime unchanged, write
 correctly blocked). Slice 1 followup #6 closed; #11 (sub-agent
 canonical-source extension for 6 runtime-only agents) and #12
 (.bak.20260507-1243 cleanup ~2026-05-14) carried forward.
+
+
+## 2026-05-07 — ζ.0 + ζ.1: clipper-worker service_role switch + n8n env prep
+
+Closes the security gate prerequisite for ζ.6 (re-enable RLS on
+clip_jobs). Yesterday's trilogy left RLS OPEN on clip_jobs and
+charlie_tasks because the consumers (clipper-worker, Charlie
+Task Handler) were authenticating as anon — re-enabling RLS
+without policies would have blocked legitimate writes. ζ.1 fixes
+clipper-worker; ζ.3 (next dispatch) fixes Charlie Task Handler;
+ζ.6 re-enables RLS once both consumers are migrated.
+
+### ζ.0 — n8n host env
+
+Added SUPABASE_SERVICE_ROLE_KEY to /home/n8nadmin/n8n-project/.env
+on the n8n host (key value piped via stdin, never echoed). Ran
+docker compose up -d to recreate the n8n container (env_file
+changes need recreate, not restart). Verified the env var is
+present in the running container via docker exec env | grep -c —
+count returned 1, value never printed. n8n /healthz returned ok.
+
+This unblocks ζ.3 + ζ.4 — both need the service_role key
+available via $env in n8n workflow expressions.
+
+### ζ.1 — clipper-worker source edit
+
+Edited /root/QClaw/src/clipper/main.py:
+
+  - Removed hardcoded production anon JWT at lines 49-53 (was
+    a fallback for os.environ.get; the JWT was a credential
+    leak via git history).
+  - Switched all 4 references (lines 49-52, 81, 82) from
+    SUPABASE_ANON_KEY to SUPABASE_SERVICE_ROLE_KEY.
+  - Added RuntimeError raise if SUPABASE_SERVICE_ROLE_KEY is
+    missing — fail loudly instead of falling back silently.
+
+PM2 restart picked up the new env var (sudo pm2 restart
+clipper-worker --update-env — bare pm2 from flowos doesn't see
+the worker because it's registered under root's pm2 daemon).
+clipper-worker booted clean, /health returned ok.
+
+### Live verification
+
+POST /clip with reels/001.mp4 created clip_jobs row 496e6a5c-...
+The async clip generation failed on bucket mismatch (clipper-
+worker hardcodes the production R2 bucket prefix; the test reel
+is in a different bucket — same issue as yesterday's PUTs).
+That's not what ζ.1 was testing. The point: the row was INSERTed
+and PATCHed by the worker under service_role auth. Authentication
+verified. pm2 logs grep for 401/403 since restart returned zero
+matches.
+
+### Lessons banked
+
+1. **`ssh n8n` from qclaw requires sudo.** The Host alias config
+   lives in root's /root/.ssh/config (with IdentityFile to
+   /root/.ssh/charlie_n8n), not flowos's. Use `sudo ssh n8n`
+   in future dispatches. Alternatives: symlink the config or
+   add a flowos-readable identity. Logged as low-priority
+   followup.
+
+2. **PM2 restart needs sudo + --update-env.** clipper-worker is
+   registered under root's pm2 daemon; flowos's pm2 daemon
+   sees a different process list. Bare `pm2 restart
+   clipper-worker` returns "Process not found." Use
+   `sudo pm2 restart <name> --update-env` whenever env vars
+   change.
+
+3. **load_env uses os.environ.setdefault — PM2's cached env
+   wins.** clipper-worker's load_env() does NOT overwrite
+   existing process env. Without --update-env on PM2 restart,
+   stale env values persist silently. Real footgun. Documented
+   here for future env-touching work on PM2-managed Python
+   workers.
+
+### Followups (this dispatch + carry-over)
+
+  | Priority | Item                                                                      | Source     |
+  |----------|---------------------------------------------------------------------------|------------|
+  | HIGH     | ζ.3 — Charlie Task Handler workflow: $env.SUPABASE_ANON_KEY → service_role | next       |
+  | HIGH     | ζ.4 — Content Studio FSC credential re-point (option b: new credential, 9 nodes) | next |
+  | HIGH     | ζ.5 + ζ.6 — drop allow_anon_all policy + re-enable RLS                    | after ζ.4  |
+  | HIGH     | LinkedIn cluster service_role JWT exposure (5+ workflow files)            | recon      |
+  | HIGH     | Main-project anon JWT rotation (after ζ.6, only dashboard Crete uses anon)| post-ζ     |
+  | HIGH     | Anthropic 529 retry hardening on Workflow A (50% first-attempt fail today)| PUT 3      |
+  | MED      | quantumclaw PM2 process: 58 restarts / 13m uptime — heavy churn           | this       |
+  | MED      | Heartbeat regressions: Trading Position Monitor + GHL Scheduled Publisher | recon      |
+  | MED      | sudo ssh / sudo pm2 patterns — flowos identity gap on qclaw               | this       |
+  | LOW      | Operating-rules update: lock branch-awareness + git branch pre-flight     | yesterday  |
+  | NIT      | Workflow filename inconsistency (canonical vs legacy non-ID-prefixed)     | recon      |
+
+End of session 2026-05-07 ζ.0+ζ.1.
