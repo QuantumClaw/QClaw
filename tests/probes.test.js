@@ -15,7 +15,7 @@
 
 import { probe as probeN8n } from '../src/agents/probes/n8n.js';
 import { probe as probeHeartbeat } from '../src/agents/probes/heartbeat-freshness.js';
-import { probe as probePm2 } from '../src/agents/probes/pm2.js';
+import { probe as probePm2, parsePm2Output } from '../src/agents/probes/pm2.js';
 import { probe as probeSupabase } from '../src/agents/probes/supabase.js';
 import { probe as probeMemory } from '../src/agents/probes/memory-layer.js';
 
@@ -53,9 +53,32 @@ async function main() {
   const r3 = await probePm2();
   assertShape('pm2_processes', r3);
   if (r3.ok) {
-    check('pm2: detail.expected has 4 entries',
-      Array.isArray(r3.detail?.expected) && r3.detail.expected.length === 4);
+    check('pm2: detail.expected has 5 entries',
+      Array.isArray(r3.detail?.expected) && r3.detail.expected.length === 5);
   }
+
+  // ─── pm2 parse helper: tolerates leading non-JSON lines (regression for
+  //     2026-05-06T12:10:19Z ghost fire — pm2 jlist occasionally prepends
+  //     a Node deprecation warning before the JSON array).
+  const withWarningHeader =
+    '(node:12345) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. ' +
+    'Please use a userland alternative instead.\n' +
+    '(Use `node --trace-deprecation ...` to show where the warning was created)\n' +
+    '[{"pid":2498133,"name":"agex-hub","pm2_env":{"status":"online"}}]';
+  let parsedWithHeader;
+  try { parsedWithHeader = parsePm2Output(withWarningHeader); } catch (e) { parsedWithHeader = e; }
+  check('pm2 parse: deprecation-warning header is stripped',
+    Array.isArray(parsedWithHeader) && parsedWithHeader[0]?.name === 'agex-hub');
+
+  // ─── pm2 parse helper: empty / no-JSON-line input falls back to []
+  let parsedEmpty;
+  try { parsedEmpty = parsePm2Output(''); } catch (e) { parsedEmpty = e; }
+  check('pm2 parse: empty input → []', Array.isArray(parsedEmpty) && parsedEmpty.length === 0);
+
+  // ─── pm2 parse helper: clean JSON still parses
+  let parsedClean;
+  try { parsedClean = parsePm2Output('[{"name":"x","pm2_env":{"status":"online"}}]'); } catch (e) { parsedClean = e; }
+  check('pm2 parse: clean JSON parses', Array.isArray(parsedClean) && parsedClean[0]?.name === 'x');
 
   // ─── supabase
   const r4 = await probeSupabase();

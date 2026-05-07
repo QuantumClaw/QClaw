@@ -34,7 +34,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 // src/agents/bootstrap.js → repo root is two levels up.
 const REPO_ROOT = join(__dirname, '..', '..');
-const BOOTSTRAP_LOG_PATH = join(homedir(), '.quantumclaw', 'bootstrap.log');
 
 const TTL_MS = 30 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 5000;
@@ -121,7 +120,7 @@ export async function bootstrap(sessionContext = {}) {
   _cache.set(cacheKey, { result, loaded_at: now });
 
   // Best-effort observability append. Never throws.
-  try { _appendLog(result); } catch (err) {
+  try { _appendLog(result, sessionContext.config); } catch (err) {
     log.debug?.(`bootstrap.log append failed: ${err.message}`);
   }
 
@@ -376,7 +375,14 @@ function _trimBuildLog(text) {
   return capped.map((s) => s.lines.join('\n')).join('\n\n').trim() || null;
 }
 
-function _appendLog(result) {
+function _appendLog(result, config) {
+  // Resolve log path from config?._dir (mirrors _layer1Identity at line 212),
+  // so tests using a tmpdir _dir get isolated logs without mutating
+  // process.env.HOME. Production callers omit _dir, falling back to
+  // ~/.quantumclaw/bootstrap.log.
+  const dir = config?._dir || join(homedir(), '.quantumclaw');
+  const logPath = join(dir, 'bootstrap.log');
+
   // Strip large doc bodies before writing — keep the JSONL tractable.
   const compact = {
     loaded_at: result.loaded_at,
@@ -409,8 +415,8 @@ function _appendLog(result) {
     formatStatusMarkdown(result) + '\n' +
     '===\n';
 
-  appendFileSync(BOOTSTRAP_LOG_PATH, block, { mode: 0o600 });
+  appendFileSync(logPath, block, { mode: 0o600 });
   // Best-effort: ensure the file is 0600 even if appendFileSync ignores mode
   // because the file already existed.
-  try { chmodSync(BOOTSTRAP_LOG_PATH, 0o600); } catch { /* */ }
+  try { chmodSync(logPath, 0o600); } catch { /* */ }
 }

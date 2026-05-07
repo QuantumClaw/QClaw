@@ -1,18 +1,41 @@
 /**
  * Probe: PM2 process roll-call.
  *
- * Wraps `pm2 jlist` and reports the four expected processes per the
+ * Wraps `pm2 jlist` and reports the five expected processes per the
  * Slice 1 design lock in CHARLIE_OVERHAUL.md. ok=true iff every
  * expected process is present AND status === 'online'.
  *
- * Live process names verified 2026-05-06 via `pm2 jlist`. The runtime
- * also includes `agex-hub` (online) which is reported as informational
- * but not required for ok=true.
+ * Live process names verified 2026-05-06 via `pm2 jlist`. `agex-hub`
+ * is the @agexhq/hub-lite AGEX identity/security hub started by
+ * scripts/install.sh:561 and saved in /root/.pm2/dump.pm2.
  */
 
 import { execSync } from 'child_process';
 
-const EXPECTED = ['quantumclaw', 'trading-worker', 'clipper-worker', 'charlie-watcher'];
+const EXPECTED = [
+  'agex-hub',          // @agexhq/hub-lite — AGEX identity/security hub (port 4891)
+  'quantumclaw',
+  'trading-worker',
+  'clipper-worker',
+  'charlie-watcher'
+];
+
+// PM2 occasionally prepends non-JSON lines (e.g. Node deprecation warnings)
+// to `pm2 jlist` stdout. Skip leading lines until one starts with `[` or `{`.
+export function parsePm2Output(raw) {
+  const text = raw || '';
+  const lines = text.split('\n');
+  let startIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trimStart();
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      startIdx = i;
+      break;
+    }
+  }
+  const cleaned = startIdx === -1 ? '[]' : lines.slice(startIdx).join('\n');
+  return JSON.parse(cleaned);
+}
 
 export async function probe(_ctx = {}) {
   const t0 = Date.now();
@@ -30,7 +53,7 @@ export async function probe(_ctx = {}) {
 
   let parsed;
   try {
-    parsed = JSON.parse(raw || '[]');
+    parsed = parsePm2Output(raw);
   } catch (err) {
     return {
       name: 'pm2_processes',

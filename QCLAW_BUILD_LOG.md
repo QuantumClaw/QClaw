@@ -5830,3 +5830,152 @@ covering Followups #2 + #4 + this finding).
 
 Slice 2 unblocked from this audit's perspective. Sequence remains:
 hardening (Followups #2 + #4 + #9) → identity symlink (#6) → Slice 2.
+
+---
+
+## 2026-05-07 — Slice 1 Hardening: Followups #2 + #4 + #9 closed
+
+Branch: `cc/slice1-hardening-20260507-1122`
+Audit: `/tmp/slice1_hardening_audit.md` (508 lines)
+Files changed: `src/agents/probes/pm2.js`, `src/agents/bootstrap.js`,
+`tests/probes.test.js`, `tests/bootstrap.test.js`.
+
+### Followup #2 — PM2 probe non-JSON tolerance
+
+Bug reproduced naturally during the audit's `npm test` run today, twice
+in a 4-second window:
+
+```
+2026-05-07T11:11:18.724Z  user_id=7777  pm2_processes ok=false
+  error="pm2 jlist returned non-JSON: No number after minus sign in JSON at position 26 (line 2 column 26)"
+
+2026-05-07T11:11:19.745Z  user_id=6666  pm2_processes ok=false
+  error="pm2 jlist returned non-JSON: No number after minus sign in JSON at position 26 (line 2 column 26)"
+```
+
+Same exact error string as the original 2026-05-06T12:10:19.478Z ghost
+fire. PM2 occasionally prepends non-JSON content (deprecation warning,
+internal log line) to `pm2 jlist` stdout. Manual `sudo pm2 jlist`
+returned clean leading-`[` JSON across 5 sequential runs — failure only
+manifests under load (5 concurrent bootstraps, each spawning its own
+`pm2 jlist` subprocess).
+
+**Fix** (`src/agents/probes/pm2.js`): extracted parsing into
+`parsePm2Output(raw)` helper that splits stdout into lines and skips
+forward until a line starts with `[` or `{`, then `JSON.parse` from
+there. Falls back to `[]` if no JSON-shaped line found (preserves
+existing "treat as empty" behaviour). Helper exported for direct test.
+
+### Followup #4 — agex-hub added to expected list
+
+Audit confirmed `agex-hub` is intentional production:
+
+- npm package `@agexhq/hub-lite` (vendored under `node_modules`)
+- "AGEX identity/security hub", port 4891 (per build log line 44)
+- Started by repo `scripts/install.sh:561`
+- Saved in PM2 dump (`/root/.pm2/dump.pm2`) — comes back via `pm2 resurrect`
+- Documented in `src/agents/skills/charlie-cto.md:40` as a canonical PM2 process
+- Running 6 weeks (created 2026-03-26), restarts: 0, unstable_restarts: 0
+
+**Fix** (`src/agents/probes/pm2.js:14`): appended `'agex-hub'` to
+`EXPECTED` (now 5 entries, ordered by PM2 startup priority — agex-hub
+first per the dump). Inline comment notes the source. Header comment
+updated from "informational" to "five expected processes".
+
+### Followup #9 — BOOTSTRAP_LOG_PATH test pollution
+
+Pollution mechanism confirmed during audit: `npm test` with the old
+code added 8 test-fixture entries (9999×5, 8888×1, 7777×1, 6666×1) to
+`/root/.quantumclaw/bootstrap.log`. Root cause:
+`src/agents/bootstrap.js:37` evaluated `BOOTSTRAP_LOG_PATH` once at
+module load via top-level `homedir()`. Tests setting
+`process.env.HOME = tmp` AFTER import had no effect on the cached
+constant.
+
+**Fix** (option (b) per audit): plumbed `config` through to
+`_appendLog(result, config)`. Log path now derived per-call from
+`config?._dir || join(homedir(), '.quantumclaw')`, mirroring the
+existing pattern at `_layer1Identity:212`. Production callers
+(`src/channels/manager.js`) omit `_dir` so production log path is
+unchanged. Tests pass `config = { _dir: tmp }` (already did, for
+workspace isolation) so the same `_dir` now isolates the log too. The
+two `process.env.HOME = ...` mutations in `tests/bootstrap.test.js`
+(lines 68, 131) deleted as redundant.
+
+### Acceptance verification
+
+```
+=== Test suite ===
+agent-mutex / approval-gate-notifier / approval-parser-handler / approvals: 13 passed, 0 failed
+bootstrap: 28 passed, 0 failed
+probes: 26 passed, 0 failed   (was 23, +3 new pm2 parse-helper regression tests)
+
+Total: 80 passed, 0 failed.
+
+=== Bootstrap log pollution ===
+$ sudo wc -l /root/.quantumclaw/bootstrap.log    # BEFORE
+894
+$ cd /root/QClaw && sudo npm test
+... 80 passed ...
+$ sudo wc -l /root/.quantumclaw/bootstrap.log    # AFTER
+894
+delta: 0 lines, 0 entries  ✓
+```
+
+Acceptance criterion 3 from the dispatch brief met: zero new entries
+to `/root/.quantumclaw/bootstrap.log` from a full `npm test` run.
+
+### Incidental finding from audit — separate followup
+
+The same npm test run that produced the 2 JSON-parse failures also
+produced 3 entries with `"warnings":[..., "probe pm2_processes failed: no detail"]`.
+Different root cause, NOT closed by this dispatch:
+
+- **JSON-parse mode** (latency 666–738ms): pm2 jlist returned non-JSON
+  bytes. Fixed by `parsePm2Output`.
+- **"no detail" mode** (latency 278–293ms — suspiciously fast): pm2 jlist
+  returned valid empty `[]`, all expected processes mark "missing",
+  probe returns `{ok: false, detail: {missing: [...]}}` without an
+  `error` field. The bootstrap warning aggregator then emits "no detail"
+  because it falls back to that string when `probe.error` is absent.
+
+Both modes share an upstream symptom (pm2 jlist behaving erratically
+under concurrent load) but emit different bytes. Item #2's fix doesn't
+help mode 2; item #9's doesn't either. Stays as Followup #10. Two
+candidate fixes worth a future small dispatch:
+
+1. **Producer-side:** retry pm2 probe once with backoff when result is
+   `[]` or "all expected missing" — treats empty as transient noise.
+2. **Aggregator-side:** when `ok=false` and no `error` but `detail`
+   present, surface the detail (e.g. `"missing=[agex-hub,quantumclaw,...]"`)
+   instead of "no detail".
+
+Option 1 is the principled fix; option 2 makes existing logs
+immediately diagnostic for next time.
+
+### Updated followup queue
+
+| # | Status | Description |
+|---|---|---|
+| 1 | ✅ Closed | Ghost user-6666 — benign |
+| 2 | ✅ Closed | PM2 probe non-JSON parse hardening (this entry) |
+| 3 | ✅ Closed | FLOW_OS_STATE.md Cognee Live (commit `255b7e5`) |
+| 4 | ✅ Closed | agex-hub to expected PM2 process list (this entry) |
+| 5 | ✅ Closed | Layer 5 wall-clock assertion already shipped |
+| 6 | 🟢 Unblocked | Identity symlink reconcile (brief drafted, parked) |
+| 7 | 📝 Future | n8n JWT rotation (~15 days runway, exp 2026-05-22) |
+| 8 | 📝 Future | Multi-session safety: git worktree migration |
+| 9 | ✅ Closed | BOOTSTRAP_LOG_PATH module-load caching (this entry) |
+| 10 | 📝 Future | Probe "no detail" failure mode (incidental finding above) |
+
+### Out of scope (not actioned per brief Rule 4)
+
+- Identity symlink reconcile (next dispatch).
+- Probe "no detail" failure mode → Followup #10.
+- /tmp validation artifact cleanup.
+- PM2 reload of `quantumclaw` (Tyson does this post-merge, then verifies
+  with one Telegram message that the next bootstrap.log entry has
+  `pm2_processes ok=true` and includes `agex-hub` in detail).
+
+Sequence next: hardening (this entry, awaiting merge + reload) →
+identity symlink (#6) → Slice 2.

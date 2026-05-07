@@ -62,10 +62,8 @@ async function main() {
   writeFileSync(join(tmp, 'workspace', 'agents', 'charlie', 'SOUL.md'), '# Test SOUL\nstub');
   writeFileSync(join(tmp, 'workspace', 'agents', 'charlie', 'IDENTITY.md'), '# Test IDENTITY\nstub');
 
-  // Make sure the bootstrap log doesn't pollute the real ~/.quantumclaw
-  // when we run tests as root: the implementation writes to homedir()/.quantumclaw/bootstrap.log
-  // unconditionally, so we redirect HOME for the test process.
-  process.env.HOME = tmp;
+  // bootstrap.log path is derived from config._dir, so passing _dir above
+  // already isolates the log to the tmpdir — no need to mutate process.env.HOME.
 
   clearAllCaches();
 
@@ -128,7 +126,6 @@ async function main() {
 
   // ─── 7. Layer fail-soft: missing SOUL.md adds a warning, other layers intact.
   const cfgMissing = { _dir: mkdtempSync(join(tmpdir(), 'qclaw-fail-soft-')) };
-  process.env.HOME = cfgMissing._dir;
   // No workspace tree → SOUL missing.
   const r4 = await bootstrap({
     userId: 7777, agentName: 'charlie',
