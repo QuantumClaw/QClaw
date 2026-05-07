@@ -5979,3 +5979,19 @@ immediately diagnostic for next time.
 
 Sequence next: hardening (this entry, awaiting merge + reload) →
 identity symlink (#6) → Slice 2.
+
+### Verified live
+
+Verified live 2026-05-07 11:57 UTC (14:57 Athens). PM2 reload of
+`quantumclaw` clean (restart count 53 → 54). Telegram message from
+Tyson hit post-merge runtime, bootstrap fire at 11:57:53.178Z showed
+all 5 probes green with zero warnings: n8n_reachable 537ms,
+heartbeat_freshness 957ms, pm2_processes ok=true 272ms (parser fix
+working — no non-JSON failure), supabase_reachable 345ms,
+memory_layer 18ms. Cognee returned 24 memory entries (up from
+12-14 yesterday — usage healthy). agex-hub no longer reported as
+"extras" — fix #4 working. `npm test` ran with bootstrap.log line
+count 928 → 928, entry count 25 → 25, zero delta — fix #9 working.
+80/80 tests passing. Slice 1 followups #2, #4, #9 closed. Followup
+#10 (no-detail probe failure mode) carried forward. Identity symlink
+dispatch (#6) next, brief drafted, parked.
