@@ -6277,6 +6277,49 @@ because: (a) needs scoping confirmation that no other consumer
 expects this bot's updates, (b) is a one-shot config change
 distinct from the auth-switch work.
 
+### ζ.4 — Content Studio FSC re-point (afternoon)
+
+Workflow Qf39NEOEgz2W0uls "Content Studio Pipeline" — swapped
+the credential reference on 9 HTTP nodes from 'Supabase FSC'
+(anon) to 'Supabase Main Service Role' (service_role). Tyson
+created the new credential in n8n UI; CC looked it up by name
+via direct postgres query against n8n's credentials_entity
+table (the n8n REST API doesn't expose /credentials list on
+this version — documented anomaly). Per-node credential
+references rewritten via jq atomic edit; PUT clean, all
+validators green, availableInMCP preserved.
+
+Live test fire on reels/001.mp4 ran clean end-to-end (1m 47s,
+36 nodes all green, zero 401/403). All 10 acceptance criteria
+green: heartbeat round-trip OK, csj row reaches a_complete,
+all platform fields populated (linkedin_post, wordpress_*,
+blog_post, substack_draft, youtube_*), clip_job_id captured
+via Postgres-credential path (sanity check that mixed-
+credential paths still work alongside the HTTP cred change),
+Telegram 'Workflow A Complete' delivered. A second concurrent
+fire (the dispatch's own second probe) also ran green —
+double independent verification.
+
+Option (b) chosen over option (a): create new credential and
+re-point only Content Studio's 9 nodes, leave the existing FSC
+credential intact for the 9 other workflows still using it
+across Trading / Crete / GHL Marketing. Smaller blast radius,
+explicit scope, future-proof against accidental cross-cluster
+auth mixing.
+
+### Anomalies surfaced during ζ.4
+
+- n8n REST API /credentials endpoint not exposed for listing
+  on this version. Workaround: direct postgres query via
+  docker exec n8n-postgres psql. Worth documenting for future
+  credential-id discovery dispatches.
+- Pre-existing clipper bucket-mismatch (clip_jobs row
+  92455e6d-... reached error with 'HeadObject ... 404'). Same
+  issue as PUT 1/2/3 yesterday — clipper-worker hardcodes
+  production R2 bucket prefix, test reels live in a different
+  bucket. Tracked as low-priority followup; doesn't affect
+  real episode fires.
+
 ### Followups (this dispatch + carry-over)
 
   | Priority | Item                                                                      | Source     |
