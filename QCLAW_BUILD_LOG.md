@@ -5728,3 +5728,105 @@ Two structural follow-ups dropped out of this:
   raise the pool size.
 
 End of session 2026-05-07.
+
+---
+
+## 2026-05-07 — Slice 1 Followup #1 closed: ghost user-6666 audit verdict
+
+Audit report: `/tmp/ghost_6666_audit.md` (445 lines, dispatched
+AUDIT ONLY mode, 2026-05-07 morning).
+
+### Verdict
+
+Benign pre-deploy validation. **No production bug, no autonomous
+caller of `bootstrap()`.**
+
+The 12:10:19Z entry is the 12th entry in `bootstrap.log`, not the
+first. The 11 prior entries are split between two pre-deploy
+validation tools:
+
+- 4 entries (12:03 + 12:07 UTC) — `/tmp/sandbox_bootstrap.mjs` runs,
+  using Tyson's real Telegram ID `1375806243`
+- 8 entries (12:10:13 - 12:10:19 UTC) — `tests/bootstrap.test.js`
+  runs (8 distinct test fires across tests #1, #3, #4, #6, #7, #9),
+  using fixture user IDs `9999`, `8888`, `7777`, `6666`
+
+The userId-`6666` entry specifically is `tests/bootstrap.test.js`
+line 160 (test #9, Layer 5 wall-clock budget assertion).
+
+The 16/11/20 char counts for SOUL/VALUES/IDENTITY in the ghost
+entry are test stub literals: `"# Test SOUL\nstub"` (16),
+`"STUB_VALUES"` (11), `"# Test IDENTITY\nstub"` (20). Repo seeds
+are 3937/917/1388 chars; runtime files are 979/917/1037. Neither
+matches the ghost — confirming test stubs as the source.
+
+Path resolution in `bootstrap.js` is invariant via `import.meta.url`.
+`REPO_ROOT` always resolves to `/root/QClaw` regardless of caller
+cwd. Runtime workspace is driven by `config?._dir`: tests pass a
+tmpdir (`mkdtemp`); production code passes `/root/.quantumclaw`.
+The mechanism for test-vs-production divergence is intentional and
+correct.
+
+Production caller scan (audit item 8): only 2 call sites of
+`bootstrap()` outside the bootstrap module itself, both in
+`src/channels/manager.js` (the Telegram channel handler). No cron,
+no startup self-test, no healthcheck endpoint, no autonomous loop.
+
+### Corrections to prior framing
+
+The 2026-05-06 verified-live entry's Followup #1 said "source
+unknown — synthetic workspace resolution." Both halves are wrong
+in light of the audit:
+
+1. Source identified: `tests/bootstrap.test.js` test #9, run from
+   shell during Slice 1 deploy validation.
+2. Workspace resolution is correct, not synthetic. Test deliberately
+   stubs Layer 1 reads via `config._dir = mkdtempSync(...)`.
+
+The verified-live entry is left intact (operational layer is
+append-only). This entry supersedes Followup #1.
+
+### Slice 1 Followup #5 — already implemented
+
+Audit appendix C confirms `tests/bootstrap.test.js:158-167` already
+contains the Layer 5 wall-clock-budget assertion:
+`check('Layer 5: total wall-clock ≤ 6s', wall <= 6000, ...)`.
+Followup #5 from yesterday's verified-live entry was inaccurate;
+the assertion shipped with Slice 1. Drop from queue.
+
+### New followup discovered during audit
+
+**`BOOTSTRAP_LOG_PATH` module-load caching** (incidental finding,
+audit "Recommendations" section). `src/agents/bootstrap.js:37`
+evaluates the log path once at module load via top-level
+`homedir()`. `tests/bootstrap.test.js:64` sets
+`process.env.HOME = tmp` AFTER import — the redirect comes too
+late. Mechanism: every `node tests/bootstrap.test.js` run appends
+8 fake-userId entries to `/root/.quantumclaw/bootstrap.log`. This
+is how the ghost ended up in production. Low severity, contained,
+no cross-system impact, but worth fixing before test polution
+becomes routine. Folding into the next dispatch (Slice 1 hardening
+covering Followups #2 + #4 + this finding).
+
+### Optional housekeeping (not actioned)
+
+- `/tmp/sandbox_bootstrap.mjs` and `/tmp/bootstrap.test.js`
+  artifacts could be moved to `scripts/sandbox/` with a README.
+  Not urgent.
+
+### Updated Slice 1 followup queue
+
+| # | Status | Description |
+|---|---|---|
+| 1 | ✅ Closed | Ghost user-6666 — benign, this entry |
+| 2 | 🟡 Queued | PM2 probe non-JSON parse hardening |
+| 3 | ✅ Closed | FLOW_OS_STATE.md Cognee Live (commit `255b7e5`) |
+| 4 | 🟡 Queued | agex-hub to expected PM2 process list |
+| 5 | ✅ Closed | Layer 5 wall-clock assertion already shipped |
+| 6 | 🟢 Unblocked | Identity symlink reconcile (brief drafted, parked) |
+| 7 | 📝 Future | n8n JWT rotation (~15 days runway, exp 2026-05-22) |
+| 8 | 📝 Future | Multi-session safety: git worktree migration |
+| 9 | 📝 Future | BOOTSTRAP_LOG_PATH module-load caching (this audit) |
+
+Slice 2 unblocked from this audit's perspective. Sequence remains:
+hardening (Followups #2 + #4 + #9) → identity symlink (#6) → Slice 2.
