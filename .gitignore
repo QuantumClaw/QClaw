@@ -65,3 +65,4 @@ CLAUDE_CODE_TASKS.md
 # Timestamped backup files (qclaw-dev skill convention: file.bak.<timestamp> / file.backup.<epoch>)
 *.bak.*
 *.backup.*
+.claude-code-session.lock
