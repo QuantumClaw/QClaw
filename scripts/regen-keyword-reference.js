@@ -216,10 +216,13 @@ function render() {
   ].join('\n');
 }
 
-function main() {
+export function main() {
   const out = render();
   writeFileSync(OUTPUT, out);
   console.log(`Regenerated ${OUTPUT} from ${SKILLS_DIR}`);
 }
 
-main();
+// Only run when invoked as a CLI, not when imported (e.g. by smoke test).
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main();
+}

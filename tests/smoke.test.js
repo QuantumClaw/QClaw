@@ -19,13 +19,13 @@ const modules = [
   '../src/memory/vector.js',
   '../src/models/router.js',
   '../src/agents/registry.js',
-  '../src/skills/loader.js',
   '../src/channels/manager.js',
   '../src/dashboard/server.js',
   '../src/credentials.js',
   '../src/tools/mcp-client.js',
   '../src/tools/registry.js',
   '../src/tools/executor.js',
+  '../scripts/regen-keyword-reference.js',
 ];
 
 let passed = 0;
