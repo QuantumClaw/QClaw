@@ -19,6 +19,8 @@ const modules = [
   '../src/memory/vector.js',
   '../src/models/router.js',
   '../src/agents/registry.js',
+  '../src/agents/skill-loader.js',
+  '../src/agents/skill-router.js',
   '../src/channels/manager.js',
   '../src/dashboard/server.js',
   '../src/credentials.js',

@@ -28,7 +28,11 @@ import { routeKeywords } from './skill-router.js';
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = join(dirname(__filename), '..', '..');
 const SKILLS_DIR = join(REPO_ROOT, 'src', 'agents', 'skills');
-const LOG_PATH = join(homedir(), '.quantumclaw', 'skill-load.log');
+
+// Tests override via QCLAW_SKILL_LOG_PATH so they don't pollute the real log.
+function _logPath() {
+  return process.env.QCLAW_SKILL_LOG_PATH || join(homedir(), '.quantumclaw', 'skill-load.log');
+}
 
 const HARD_CAP_ON_DEMAND = 4;
 const TOKEN_CHARS_PER_TOKEN = 4; // standard rough estimate
@@ -129,13 +133,14 @@ function readAllSkills() {
  * continue.
  */
 function writeLogEntry(entry) {
+  const path = _logPath();
   try {
     const line = JSON.stringify(entry) + '\n';
-    appendFileSync(LOG_PATH, line);
+    appendFileSync(path, line);
     // Ensure 0600 on first write (idempotent — chmod is cheap)
     try {
-      const mode = statSync(LOG_PATH).mode & 0o777;
-      if (mode !== 0o600) chmodSync(LOG_PATH, 0o600);
+      const mode = statSync(path).mode & 0o777;
+      if (mode !== 0o600) chmodSync(path, 0o600);
     } catch { /* file readable, mode check is best-effort */ }
   } catch (err) {
     log.warn(`skill-loader: skill-load.log write failed: ${err.message}`);
