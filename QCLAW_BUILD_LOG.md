@@ -7128,3 +7128,44 @@ Pending Tyson post-merge:
 - [ ] Optional: send a community-relevant message to Charlie to verify routing fires the right CM variant (FSC keywords vs Flow OS keywords disambiguate)
 
 End of session 2026-05-08 Slice 2b.
+
+## [2026-05-08] Slice 2b hotfix — runaway content
+
+Direct-edit hotfix to three always-on skill files (no code changes) following
+runaway diagnostic chain observed post-2b merge: Charlie interpreted "what's
+pending" as a system-state question and chained `pm2 list` → `pm2 logs` →
+`pm2 stop`/`pm2 start` against his own quantumclaw runtime. Approval gate
+caught the self-stop-start; Tyson denied. Diagnostic captured `on_demand: []`
+for the runaway message — root cause was always-on content, not router.
+
+### Changes (commit `3061bba`, merged `455f6ac`)
+
+- `lanes.md`: distinguishes bootstrap-loaded state (answer from prompt) vs
+  external state (use tools); adds hard rule against self-observing the
+  quantumclaw runtime; adds diagnostic chain circuit-breaker (stop after 2
+  tool calls if no clear answer).
+- `identity.md`: greet template now synthesises from prompt's bootstrap
+  state, never tools at session start.
+- `verification-reflexes.md`: adds "Derived numbers and time spans" section
+  — no rates from snapshots, no fabricated time windows. Closes the "70
+  restarts in 2 min" hallucination class.
+
+### Verification
+
+- All 12 test files green via `npm test` (501 assertions).
+- Post-reload Telegram fire (`/session` then "what's pending"): Charlie
+  answered from prompt with no shell_exec attempts. Greeting followed new
+  template. Zero approvals fired.
+
+### Followups for Slice 2c
+
+1. Skill-authoring checklist as part of 2c hygiene pass: prompt-state vs
+   tool-state distinction, self-runtime-observation rules, derived-number
+   rules. Same discipline that Charlie's verification-reflexes enforce on
+   his outputs needs to apply to skill-content authoring itself.
+2. Audit `FLOW_OS_STATE.md` "known issues" section for any pre-existing
+   rate-claims without time series behind them (one observed: "PM2 process
+   heavy churn 53+ restarts / 13m" surfaced in tonight's verified-live
+   Telegram reply, sourced from state doc not real-time fabrication).
+3. Update `CHARLIE_OVERHAUL.md` Slice 2b status footnote: "verified live
+   post-hotfix `455f6ac` 2026-05-08T20:18Z".
