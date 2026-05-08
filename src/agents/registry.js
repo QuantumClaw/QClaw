@@ -9,6 +9,7 @@ import { readdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { log } from '../core/logger.js';
 import { parseSkill, skillToTools, executeSkillTool } from './skill-parser.js';
+import { loadSkills } from './skill-loader.js';
 
 // Per-agent serialization for the conversation read-modify-write in process().
 // Two concurrent process() calls for the same agent would otherwise read the
@@ -287,7 +288,14 @@ export class Agent {
       relevantKnowledge = memory.knowledge.search(textMessage, 5);
     }
 
-    const systemPrompt = this._buildSystemPrompt(graphContext, knowledgeContext, relevantKnowledge, context?.bootstrap || null);
+    const systemPrompt = await this._buildSystemPrompt(
+      graphContext,
+      knowledgeContext,
+      relevantKnowledge,
+      context?.bootstrap || null,
+      textMessage,
+      context?.userId
+    );
 
     const MAX_CONTEXT_CHARS = 100000;
     const systemChars = systemPrompt.length;
@@ -467,10 +475,16 @@ You exist to make your human's life easier and their business more profitable. Y
     return history.slice(cutoff);
   }
 
-  _buildSystemPrompt(graphContext, knowledgeContext, relevantKnowledge, bootstrap = null) {
-    // bootstrap (Charlie 2.0 Slice 1): when present, replaces the per-message
-    // soul/values/skills assembly with the cached BootstrapResult. Falls back
-    // to the legacy this.soul + skills path when null.
+  async _buildSystemPrompt(graphContext, knowledgeContext, relevantKnowledge, bootstrap = null, textMessage = '', userId = null) {
+    // bootstrap (Slice 1): when present, replaces the per-message
+    // soul/values assembly with the cached BootstrapResult. Falls back
+    // to the legacy this.soul path when null.
+    //
+    // Slice 2b: skill assembly moved off this.skills (Slice 2a en-bloc) onto
+    // loadSkills(context). Always-on skills inject before Trust Kernel
+    // (high cache stability). On-demand skills inject under their own
+    // routed heading. this.skills is still populated by Agent.load() and
+    // still consumed by tool registration — Slice 3 (T7) collapses that.
     const parts = [this.soul];
 
     if (bootstrap) {
@@ -500,12 +514,36 @@ You exist to make your human's life easier and their business more profitable. Y
       parts.push(`\n## Identity\n- **Agent ID (AID):** ${this.aid.aid_id}\n- **Trust Tier:** ${this.aid.trust_tier}\n- **Type:** ${this.aid.agent?.type || 'worker'}\n- You can spawn sub-agents using the spawn_agent tool. Each gets its own AID with delegated permissions.`);
     }
 
+    // Slice 2b: route skills. Always-on portion reuses bootstrap.skills.always_on
+    // when present (Layer 6 cache from Task 8); on-demand portion runs fresh
+    // against textMessage. Failure here is non-fatal — the prompt still gets
+    // the rest of its context.
+    let skillResult = null;
+    try {
+      skillResult = await loadSkills({
+        agent: this.name,
+        message: textMessage,
+        bootstrap,
+        userId,
+      });
+    } catch (err) {
+      log.warn(`_buildSystemPrompt: loadSkills failed: ${err.message} — continuing without routed skills`);
+    }
+
+    // Always-on skills go BEFORE Trust Kernel — they're identity-layer adjacent
+    // per audit §8 (high cache stability section).
+    if (skillResult && skillResult.always_on.length > 0) {
+      parts.push('\n## Always-on Skills');
+      for (const skill of skillResult.always_on) {
+        parts.push(`\n### ${skill.name}\n${_stripFrontmatter(skill.content)}`);
+      }
+    }
+
     // Add Trust Kernel
     const values = this.services.trustKernel.getContext();
     if (values) parts.push(`\n## Trust Kernel\n${values}`);
 
     // Add structured knowledge (semantic + procedural + episodic)
-    // This is the agent's long-term memory about the user — compact and efficient
     if (knowledgeContext) {
       parts.push(`\n${knowledgeContext}`);
     }
@@ -514,11 +552,14 @@ You exist to make your human's life easier and their business more profitable. Y
     if (this.services.toolExecutor) {
       parts.push('\n## Tool Execution\nYou have registered function-calling tools. When the user requests data or actions from GHL, Stripe, or n8n, you MUST invoke the tool directly. Do not describe the action or show curl commands — execute the tool and report results.');
     }
-    // Add skills
-    if (this.skills.length > 0) {
-      parts.push('\n## Available Skills');
-      for (const skill of this.skills) {
-        parts.push(`\n### ${skill.name}\n${skill.content}`);
+
+    // Slice 2b: routed on-demand skills. Replaces the en-bloc loop over
+    // this.skills. If no on-demand matched, omit the heading entirely.
+    if (skillResult && skillResult.on_demand.length > 0) {
+      parts.push('\n## Available Skills (routed)');
+      for (const skill of skillResult.on_demand) {
+        const matchedAnnotation = `matched: ${skill.matched_keywords.join(', ')}; density ${skill.density.toFixed(2)}`;
+        parts.push(`\n### ${skill.name} (${matchedAnnotation})\n${_stripFrontmatter(skill.content)}`);
       }
     }
 
@@ -540,4 +581,12 @@ You exist to make your human's life easier and their business more profitable. Y
 
     return parts.join('\n');
   }
+}
+
+/**
+ * Strip YAML frontmatter from a skill file's content for prompt injection.
+ * The metadata is loader-internal — Charlie shouldn't see it in the prompt.
+ */
+function _stripFrontmatter(content) {
+  return content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trimStart();
 }

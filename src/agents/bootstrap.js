@@ -170,6 +170,17 @@ export function formatStatusMarkdown(result) {
   }
   lines.push('');
 
+  if (result.skills) {
+    const alwaysOn = result.skills.always_on || [];
+    const totalChars = alwaysOn.reduce((sum, s) => sum + (s.content?.length || 0), 0);
+    lines.push('## Layer 6 — Skills (always-on)');
+    lines.push(`- ${alwaysOn.length} skills, ~${(totalChars / 1024).toFixed(1)} KB total`);
+    if (alwaysOn.length > 0) {
+      lines.push(`- names: ${alwaysOn.map(s => s.name).join(', ')}`);
+    }
+    lines.push('');
+  }
+
   if (result.warnings.length) {
     lines.push('## Warnings');
     for (const w of result.warnings) lines.push(`- ${w}`);
@@ -195,14 +206,36 @@ async function _runBootstrap(sessionContext, cacheKey) {
   const specialists = await _layer3Specialists(warnings);
   const recent = await _layer4Recent(services, warnings);
   const probes = await _layer5Probes(services, warnings);
+  const skills = await _layer6Skills(agentName, userId, warnings);
 
   return {
     agent_name: agentName,
     user_id: userId ?? null,
     loaded_at: new Date().toISOString(),
     cache_key: cacheKey,
-    identity, state, specialists, recent, probes, warnings
+    identity, state, specialists, recent, probes, skills, warnings
   };
+}
+
+/**
+ * Layer 6 (Slice 2b Task 8) — always-on skills, session-cached.
+ *
+ * Calls loadSkills with an empty message, which by design returns only
+ * the always-on portion (no on-demand matches against an empty token
+ * list). Stored on bootstrap.skills.always_on; reused by
+ * registry._buildSystemPrompt → loadSkills via context.bootstrap so
+ * that 7 markdown files don't re-read on every message inside the
+ * 30-min cache window.
+ */
+async function _layer6Skills(agentName, userId, warnings) {
+  try {
+    const { loadSkills } = await import('./skill-loader.js');
+    const result = await loadSkills({ agent: agentName, message: '', userId });
+    return { always_on: result.always_on };
+  } catch (err) {
+    warnings.push(`skills layer failed: ${err.message}`);
+    return { always_on: [] };
+  }
 }
 
 async function _layer1Identity(config, agentName, services, warnings) {

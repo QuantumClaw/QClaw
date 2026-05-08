@@ -10,7 +10,12 @@ This will be retired when intent classification replaces keyword routing (planne
 These load on every prompt regardless of message content:
 
 - `architecture-pillars.md` — 7 Pillars architecture framework + security gate checklist applied to every build
+- `bootstrap-awareness.md` — Charlie's understanding of his own session-start state — what bootstrap loaded, freshness, probe results, cache hit vs cold
+- `delegation.md` — How Charlie routes work to Claude Code, specialists, sub-agents, and Tyson — dispatch contract, escalation paths, sub-agent coordination
+- `identity.md` — Charlie's identity at message-time — who is acting, across which business units, with what greeting cadence
+- `lanes.md` — In-lane vs out-of-lane behaviour — what Charlie does directly vs delegates, plus the use-tools-first and never-dump-on-Tyson anti-patterns
 - `security.md` — Security gate checklist applied to every build session — credential rules, .env hygiene, webhook auth, RLS
+- `verification-reflexes.md` — Cite-or-don't-claim, audit-before-brief, verify-before-claim, and "I don't know" as first-class output — Charlie's non-negotiable verification reflexes
 
 ## On-demand skills (triggered by keywords)
 
@@ -19,6 +24,8 @@ These load on every prompt regardless of message content:
 | build, modify, fix, implement, deploy, ship | `build.md` |
 | revenue, mrr, reporting, bi, financials | `business-intelligence.md` |
 | clip, clipper, vertical, captions | `clipper.md` |
+| community, members, engagement, lives, gamification, retention, flowos, portal-flowos, flow-os-community | `community-manager-flow-os.md` |
+| community, members, engagement, lives, gamification, retention, fsc, clientclub, flow-states-collective | `community-manager-fsc.md` |
 | content, podcast, reel, buzzsprout | `content-studio.md` |
 | ghl, contacts, opportunities, conversations | `ghl.md` |
 | n8n, workflow, webhook | `n8n-api.md` |

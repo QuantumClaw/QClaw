@@ -142,14 +142,25 @@ async function main() {
   // ─── 8. formatStatusMarkdown produces expected sections.
   const md = formatStatusMarkdown(r1);
   check('formatStatusMarkdown: has title', md.startsWith('# Bootstrap status'));
-  check('formatStatusMarkdown: 5 layer headers',
+  check('formatStatusMarkdown: 6 layer headers',
     /## Layer 1 — Identity/.test(md) &&
     /## Layer 2 — State/.test(md) &&
     /## Layer 3 — Specialists/.test(md) &&
     /## Layer 4 — Recent context/.test(md) &&
-    /## Layer 5 — Live probes/.test(md));
+    /## Layer 5 — Live probes/.test(md) &&
+    /## Layer 6 — Skills \(always-on\)/.test(md));
   check('formatStatusMarkdown: probe lines have ✓ or ✗',
     /[✓✗] (n8n_reachable|heartbeat_freshness|pm2_processes|supabase_reachable|memory_layer)/.test(md));
+
+  // ─── 8b. Slice 2b Layer 6: skills.always_on populated and reused by formatter.
+  check('Layer 6: result.skills present', r1.skills && Array.isArray(r1.skills.always_on));
+  check('Layer 6: at least one always-on skill loaded',
+    r1.skills.always_on.length > 0,
+    `got ${r1.skills.always_on?.length} skills`);
+  check('Layer 6: each always-on entry has name and content',
+    r1.skills.always_on.every(s => s.name && s.content));
+  check('Layer 6: formatStatusMarkdown reports skill count',
+    new RegExp(`${r1.skills.always_on.length} skills,`).test(md));
 
   // ─── 9. Layer 5 wall-clock budget under timeout cap.
   const t0 = Date.now();
