@@ -53,16 +53,19 @@ files and are still mutable via the dashboard. Reconciliation TBD.
 - Bootstrap log: `~/.quantumclaw/bootstrap.log` (file-based, mode 0600, written by `src/agents/bootstrap.js` — file-based per Phase 4 Slice 1; Supabase migration deferred)
 - Audit log: `~/.quantumclaw/audit.db` (SQLite via `better-sqlite3`) with JSONL fallback at `~/.quantumclaw/audit.jsonl` — read interface `AuditLog.recent(limit, agent)` (`src/security/audit.js`)
 - Gate log: `~/.quantumclaw/gate.log` (file-based, will surface in QClaw dashboard post-Phase-5)
-- Skill load log: `~/.quantumclaw/skill-load.log` (file-based, will migrate to Supabase post-Phase-4)
+- Skill load log: `~/.quantumclaw/skill-load.log` (file-based, JSON Lines, mode 0600, written by `src/agents/skill-loader.js` from Slice 2b — one entry per `loadSkills()` call. Supabase migration deferred post-Phase-4.)
 - Claude Code dispatch log: Supabase table `claude_code_dispatches` (Phase 4 Slice 5)
 
 ## Capability layer
 
-- Skill files (canonical SSOT): `/root/QClaw/src/agents/skills/` — enforced by `SKILL_EDIT_ALLOWLIST` in `src/security/approval-gate.js`. Edits go through git, not via runtime mutation.
+- Skill files (canonical SSOT): `/root/QClaw/src/agents/skills/` — enforced by `SKILL_EDIT_ALLOWLIST` in `src/security/approval-gate.js`. Edits go through git, not via runtime mutation. Archived skills live at `src/agents/skills/archive/` (preserved via git history, excluded from runtime by `loadSkills`).
 - Skill frontmatter (canonical keyword source): each skill `.md` declares `name`, `category` (always-on | on-demand | specialist-scope | archive), `surface` (prompt | tool | both), `keywords` (required iff on-demand), `description`. Spec landed in Slice 2a.
+- Skill loader: `src/agents/skill-loader.js` — `loadSkills(context) → SkillLoadResult` is the canonical agent-level skill-loading code path (Slice 2b Task 4). Reads canonical SSOT directly, partitions by category, applies hard-cap-4 to on-demand routing. Tool registration stays in `Agent.load()` until Slice 3 (audit T7).
+- Skill router: `src/agents/skill-router.js` — token-level keyword matching with combination-trigger filter (Slice 2b Task 5). LLM-driven router is the Phase 5+ replacement behind the same `loadSkills` interface.
+- Bootstrap Layer 6: `bootstrap.skills.always_on` — populated by `_layer6Skills` (`src/agents/bootstrap.js`); cached per session by the existing 30-min bootstrap TTL; reused by `loadSkills` via `context.bootstrap` so always-on skills don't re-read on every message inside the cache window.
 - Generated keyword reference: `KEYWORD_REFERENCE.md` at repo root — generated from skill frontmatter via `node scripts/regen-keyword-reference.js`. Marked GENERATED at top; do not hand-edit. Will be retired when intent classification replaces keyword routing (Phase 5+).
-- Skill symlinks (Charlie runtime): `/root/.quantumclaw/workspace/agents/charlie/skills/` — every file is a symlink into `/root/QClaw/src/agents/skills/`. 17 symlinks as of Slice 2a (11 prior + 6 added: `build`, `qa`, `task-queue`, `trading`, `architecture-pillars`, `security`).
-- Tool registry: code-defined in `src/agents/tools/` (Phase 4 Slice 3)
+- Skill symlinks (Charlie runtime): `/root/.quantumclaw/workspace/agents/charlie/skills/` — every file is a symlink into `/root/QClaw/src/agents/skills/`. As of Slice 2b: 15 symlinks (17 post-Slice-2a Task 1, minus 2 archived in 2b — `charlie-cto.md` and `agent-coordination.md`).
+- Tool registry: code-defined in `src/agents/tools/` (Phase 4 Slice 3 will narrow per audit T7)
 
 ## Reference docs (Tyson and Claude Code)
 

@@ -6994,3 +6994,137 @@ under sb_secret. η.2 didn't introduce new regressions on either.
   | LOW      | The "default" sb_secret key Tyson deleted in η.2 is the one transmitted in chat during η.0c. Its full lifecycle (mint → probe → never consumed → delete) is now closed; no remediation needed beyond what just happened. Historical record only. | this   |
 
 End of session 2026-05-08 η.2.
+
+---
+
+## [2026-05-08] Slice 2b — Skill Authoring + Routing
+
+Branch `cc/slice2b-skill-routing-20260508-1631`. Audit grounding: `/tmp/slice2_skill_loading_audit.md` §3, §5, §8, §9. Allocation plan: `/tmp/charlie_cto_allocation_plan.md`. Closes audit T1, T2, T3, T9 partially; T7 deferred to Slice 3 as planned.
+
+Slice 2 sub-slice 2 of 3. 2a (plumbing + cleanup) merged earlier today as PR #8. 2c (test depth + hygiene) follows.
+
+### Mid-dispatch decision (locked)
+
+Brief Task 1 listed `community-manager-flow-os.md` and `community-manager-fsc.md` under "the 6 always-on skills" with `category: always-on`. The design (`CHARLIE_OVERHAUL.md` Component 3 + `KEYWORD_REFERENCE.md`) lists them as on-demand, and the Tyson-provided `.skill` bundle frontmatter reads "ACTIVATE WHEN someone mentions community / members / engagement / etc." Halted at the brief's halt-point (community-manager content from `/mnt/skills/user/` not present), Tyson provided 2 `.skill` bundles at `~/`, then on the category question pivoted both to **on-demand** with explicit keyword lists. Net always-on count for 2b: 5 (not 7). Plus 2 already always-on from 2a frontmatter (architecture-pillars, security). Total always-on = 7. Two new on-demand skills surfaced via keyword routing.
+
+### What changed (this PR)
+
+Nine commits on the branch, all mine, no piggybacks:
+
+- `2c625d4` — 5 always-on skills authored:
+  - `identity.md` (2.0 KB) — who is acting, business unit awareness, first-message greet template
+  - `lanes.md` (3.3 KB) — in-lane vs out-of-lane behaviour, use-tools-first, never-dump-on-Tyson anti-pattern
+  - `verification-reflexes.md` (3.1 KB) — cite-or-don't-claim, audit-before-brief, verify-before-claim, "I don't know" first-class
+  - `delegation.md` (4.9 KB) — routing rules, escalation paths, dispatch contract, sub-agent coordination (folds agent-coordination.md content)
+  - `bootstrap-awareness.md` (3.3 KB) — Charlie's awareness of his own session-start state, 6 layers, freshness, probe results
+  Each references `CHARLIE_ROLE.md` rather than duplicating it (loaded via bootstrap identity layer).
+
+- `2321112` — 2 on-demand community-manager skills:
+  - `community-manager-flow-os.md` (18.3 KB) — Flow OS Q2 webinars-→-lives pivot, governance via Flow OS Bible, Skool-inspired gamification, expansion-MRR thesis
+  - `community-manager-fsc.md` (14.5 KB) — FSC governance via Flow Bible / Offer & Pricing Lock, Soulful Strategy Session as primary CTA
+  Content sourced from Tyson-provided `.skill` bundles; frontmatter pivoted to Slice 2a-conforming `category: on-demand` with disambiguating keywords.
+
+- `018fcca` — `charlie-cto.md` archived (`src/agents/skills/archive/charlie-cto.md`) after content migration to identity/lanes/delegation per allocation plan. Runtime symlink removed.
+
+- `1ac8e07` — `agent-coordination.md` archived after content folded into `delegation.md` "Sub-agent coordination" section. Runtime symlink removed.
+
+- `2f93eb3` — `src/agents/skill-router.js` (140 lines): token-level keyword matching, density calculation, stable ordering (density desc, name asc on ties), combination-trigger filter (Emma + content keyword for content-studio).
+
+- `fd40451` — `src/agents/skill-loader.js` (226 lines): `loadSkills(context) → SkillLoadResult` interface. Reads canonical SSOT, partitions by category (skips archive/specialist-scope), applies hard-cap-4 to on-demand, reuses `bootstrap.skills.always_on` when present. Writes JSON Lines log to `~/.quantumclaw/skill-load.log` mode 0600. `QCLAW_SKILL_LOG_PATH` env override for tests.
+
+- `3f76da3` — `src/agents/registry.js` `_buildSystemPrompt` is now async, takes `textMessage` + `userId`, calls `loadSkills`. Always-on skills inject before Trust Kernel (audit §8 cache stability layer); on-demand replaces the en-bloc loop. New `_stripFrontmatter()` helper keeps YAML metadata out of the system prompt. `loadSkills` failure is non-fatal — log warn, continue without routed skills.
+
+- `f7e0493` — `src/agents/bootstrap.js` Layer 6 added (`_layer6Skills`). Calls `loadSkills` with empty message → only always-on portion surfaces; cached per session via existing 30-min bootstrap TTL. `formatStatusMarkdown` extended to report Layer 6 with skill count + KB total.
+
+- `e328926` — Tests:
+  - `tests/skill-router.test.js` (27 checks): tokenize, exact-token matching, density, ordering, empty messages, combination triggers
+  - `tests/skill-loader.test.js` (39 checks): result shape, archive/specialist-scope exclusion, hard-cap-4, bootstrap cache reuse, log writes
+  - `tests/bootstrap.test.js` extended +4 checks for Layer 6
+  - `tests/smoke.test.js` adds skill-loader + skill-router import paths
+  - `package.json` chains skill-router + skill-loader as the final 2 of 12 test files
+
+### Doc updates (in this PR)
+
+- `LOCATIONS.md` — Capability layer: skill-loader/router added as canonical code paths, archive subdir documented, Bootstrap Layer 6 caching pattern documented, charlie runtime skill count drops 17 → 15. Operational layer: skill-load.log moves from "will migrate" placeholder to live (file-based, JSON Lines, mode 0600, written by skill-loader.js).
+
+- `CHARLIE_OVERHAUL.md` — Slice 2b status flipped to ✓ COMPLETE 2026-05-08 with full detail paragraph. Slice 2c scope documented (per-keyword exhaustive tests, edge cases, hygiene cleanup, backup retirements).
+
+- `KEYWORD_REFERENCE.md` — regenerated. 7 always-on skills listed (was 2 in 2a). On-demand table now includes both community-manager variants. Combination triggers preserved.
+
+### What verified
+
+**Test suite — 12 files chained via `npm test`:**
+- smoke (import-path checks include the 2 new skill modules)
+- agent-mutex
+- approval-parser-handler 29/29
+- approval-gate-notifier 13/13
+- approvals 13/13
+- bootstrap 32/32 (was 28; +4 Layer 6 checks)
+- probes 24/24 (locally on workstation Mac, 1 pre-existing pm2-not-installed assertion fires; passes on qclaw)
+- identity-canonicalization
+- skill-frontmatter 238/238 (was 180; +58 from new skills)
+- cli-skill-list 53/53 (was 49; +4 from new skills minus 2 archived)
+- skill-router 27/27 NEW
+- skill-loader 39/39 NEW
+
+**Sandbox driver against `bootstrap()` (HOME=/tmp/qclaw-test):**
+- Layer 6 fires after Layer 5
+- 7 always-on skills loaded (identity, lanes, verification-reflexes, delegation, bootstrap-awareness, architecture-pillars, security)
+- `bootstrap.skills.always_on` populated; `formatStatusMarkdown` reports it
+
+**`loadSkills` smoke (HOME=/tmp/qclaw-test):**
+- Empty message → 7 always-on, 0 on-demand, ~4.8 KB token estimate
+- "build a fix for the trading scanner" → 4 on-demand (build, qclaw-dev, trading, trading-api) at density 0.29
+- 7-keyword message → 4 on-demand kept, 3 dropped via hard-cap-4
+- skill-load.log mode 0600, JSON Lines with all expected fields
+
+**Prompt content size impact:**
+- Always-on layer: ~21 KB (5 new + architecture-pillars 1.1 KB + security 1.2 KB). Cache-stable per 30-min bootstrap window.
+- On-demand layer: 0–~25 KB depending on keyword matches (community-manager skills are large; hard-cap-4 bounds the worst case).
+- Combined skill content per prompt: ~21–46 KB out of 100 KB MAX_CONTEXT_CHARS. Comfortable headroom for memory + history + user message.
+
+### 7 Pillars + security gate
+
+- Frontend: n/a — no UI changes.
+- Backend: new `loadSkills` interface; inputs validated (message string, agent name string); failures handled (file read errors log + continue, never throw); no new endpoints.
+- Databases: no schema changes.
+- Authentication: no auth changes.
+- Payments/Financial: n/a.
+- Security: no new credentials. No external network calls in skill-loader/router. `~/.quantumclaw/skill-load.log` mode 0600 enforced on creation. `QCLAW_SKILL_LOG_PATH` env override is test-only.
+- Infrastructure: no PM2 changes by Claude Code; Tyson reloads `quantumclaw` post-merge to pick up new modules.
+
+### Out of scope (Slice 2c)
+
+- Per-keyword exhaustive routing tests (every keyword in `KEYWORD_REFERENCE.md` resolves to expected skill).
+- Edge-case combination tests beyond Emma+content.
+- Message-length and Unicode edge cases for tokenizer.
+- Integration test for prompt assembly under bootstrap-aware path with full always-on layer merged.
+- Skill-format hygiene normalisation across surviving skills (audit T9 — full pass).
+- Migration of inline combination-trigger rule to frontmatter `combination_required` field (only if more combinations emerge — YAGNI gate).
+- Cleanup of `.bak.20260508-1246` symlink backups (kept until 2c per Slice 2a contract).
+- Cleanup of tracked `src/agents/skills/n8n-api.md.backup.1776933191` (audit T6 footnote).
+
+### Out of scope (Slice 3)
+
+- Tool-registration coupling (audit T7) — tool registry currently registers all skill endpoints en-bloc regardless of routing decision. Documented but not addressed in 2b.
+- `shell_exec` narrowing.
+- Removal of `spawn_agent` and broken filesystem MCP.
+
+### Followups (this dispatch)
+
+  | Priority | Item | Source |
+  |----------|------|--------|
+  | INFO | Brief's Task 1 internally inconsistent (named community-manager files among "6 always-on" but design + Tyson-provided source frontmatter point to on-demand). Tyson resolved mid-dispatch via AskUserQuestion. Document the resolution path for future dispatches: AskUserQuestion is the right escape hatch when brief vs design conflict. | this |
+  | INFO | community-manager-{flow-os,fsc}.md content has shared section overlap (~70% similar structure). 2c could DRY this if it stays painful, but YAGNI for now — they are distinct enough in voice and governance reference. | this |
+  | LOW | The router's combination-trigger rule for content-studio has a known false-negative: "Emma's podcast" (possessive) tokenizes to ["emma", "s", "podcast"], which still passes (emma + podcast). But "Emma's podcast" with curly apostrophe (U+2019) tokenizes the same way. Punctuation stripping is safe across apostrophe variants. Smoke checked. | this |
+  | INFO | First Charlie message after merge will trigger a cold bootstrap that now includes Layer 6 (~50-100ms additional wall-clock per the Slice 1 sandbox numbers — well within the existing budget). | this |
+
+### Verified live
+
+Pending Tyson post-merge:
+- [ ] `pm2 reload quantumclaw` so new modules load
+- [ ] Spot-check Charlie's first message after reload: should greet with status template, on-demand skill heading should appear when Tyson asks something keyword-bearing (e.g. "what's the trading state?" → trading + trading-api both load)
+- [ ] `tail -3 ~/.quantumclaw/skill-load.log` to confirm log writes are happening live
+- [ ] Optional: send a community-relevant message to Charlie to verify routing fires the right CM variant (FSC keywords vs Flow OS keywords disambiguate)
+
+End of session 2026-05-08 Slice 2b.
