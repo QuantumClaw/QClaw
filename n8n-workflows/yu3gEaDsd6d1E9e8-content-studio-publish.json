@@ -1,0 +1,773 @@
+{
+  "name": "Content Studio - Publish + Distribution",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "content-studio-publish",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        600
+      ],
+      "webhookId": "content-studio-publish",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ekVxS05c4wasuBlc",
+          "name": "Content Studio Publish Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select id, status, episode_title, episode_description, buzzsprout_url,\n       buzzsprout_episode_id, wordpress_post_id, wordpress_slug, wordpress_status,\n       wordpress_post_url, youtube_video_id, youtube_url, linkedin_post,\n       linkedin_post_id, linkedin_post_url, error_message\nfrom public.content_studio_jobs\nwhere id = '{{ $json.body.csj_id }}'::uuid;",
+        "options": {}
+      },
+      "name": "SELECT csj",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        520,
+        600
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "eligible-status-c0",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "clipper_complete",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "eligible-status-c1",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "clipper_error",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "eligible-status-c2",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "clipper_timeout",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "name": "Eligible Status?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        800,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Content Studio - Publish + Distribution'::text, '{{ $execution.id }}'::text, '{{ JSON.stringify({branch: 'skipped', csj_id: $json.id, csj_status: $json.status}) }}'::jsonb);",
+        "options": {}
+      },
+      "name": "Heartbeat: Skipped",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1080,
+        1000
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": false,
+        "headerParameters": {},
+        "sendBody": true,
+        "options": {},
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({chat_id: 1375806243, text: '\\u26a0\\ufe0f Content Studio publish skipped \u2014 ' + ($('SELECT csj').first().json.episode_title || '<no title>') + '\\n\\nReason: csj status is \"' + ($('SELECT csj').first().json.status || 'unknown') + '\", not in {clipper_complete, clipper_error, clipper_timeout}.' + '\\ncsj: ' + ($('SELECT csj').first().json.id || '<no id>'), parse_mode: 'HTML'}) }}"
+      },
+      "name": "Telegram: Skipped",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        1000
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ok: false, reason: 'csj status not eligible', csj_status: $('SELECT csj').first().json.status, csj_id: $('SELECT csj').first().json.id}) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "name": "Respond: 422",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1640,
+        1000
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://flowstatescollective.com/wp-json/wp/v2/posts/{{ $('SELECT csj').first().json.wordpress_post_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "options": {},
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'publish' }) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "wordpressApi"
+      },
+      "name": "WordPress: Publish",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1080,
+        440
+      ],
+      "credentials": {
+        "wordpressApi": {
+          "id": "9wJkjOmNNLH3lh4w",
+          "name": "WordPress FSC"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set:-wp-shape-0",
+              "name": "wp_status",
+              "value": "={{ $json.error ? 'error' : 'success' }}",
+              "type": "string"
+            },
+            {
+              "id": "set:-wp-shape-1",
+              "name": "wp_slug",
+              "value": "={{ $json.error ? '' : ($json.slug || '') }}",
+              "type": "string"
+            },
+            {
+              "id": "set:-wp-shape-2",
+              "name": "wp_url",
+              "value": "={{ $json.error ? '' : ($json.link || '') }}",
+              "type": "string"
+            },
+            {
+              "id": "set:-wp-shape-3",
+              "name": "wp_error",
+              "value": "={{ $json.error ? (($json.error && $json.error.message) || $json.error || '') : '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Set: WP Shape",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1360,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Build LinkedIn post text. Workflow A's Generate LinkedIn Post embedded\n// the Buzzsprout URL inline at A-time via Claude. Defensive: if the trailing\n// \"\ud83c\udfa7 Listen here:\" line has NO URL after it, substitute csj.buzzsprout_url.\n// Otherwise post verbatim.\nconst csj = $input.first().json;\nconst post = csj.linkedin_post;\nconst buzzUrl = csj.buzzsprout_url;\n\nif (!post) {\n  throw new Error('linkedin_post is empty \u2014 Workflow A did not generate text');\n}\n\nconst trailingPattern = /\ud83c\udfa7\\s*Listen here:\\s*$/;\nif (trailingPattern.test(post)) {\n  if (!buzzUrl) {\n    throw new Error('Trailing placeholder present but buzzsprout_url is empty');\n  }\n  return [{\n    json: {\n      ...csj,\n      linkedinText: post.replace(trailingPattern, `\ud83c\udfa7 Listen here: ${buzzUrl}`)\n    }\n  }];\n}\n\n// Otherwise post verbatim \u2014 Claude embedded URL inline already\nreturn [{ json: { ...csj, linkedinText: post } }];\n"
+      },
+      "name": "Build LinkedIn Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "platform": "linkedin",
+        "accountId": {
+          "__rl": true,
+          "value": "17146",
+          "mode": "list",
+          "cachedResultName": "Emma Maidment",
+          "cachedResultUrl": "https://backend.blotato.com/v2/accounts/17146"
+        },
+        "postContentText": "={{ $json.linkedinText }}",
+        "options": {}
+      },
+      "name": "Blotato: LinkedIn Post",
+      "type": "@blotato/n8n-nodes-blotato.blotato",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        600
+      ],
+      "credentials": {
+        "blotatoApi": {
+          "id": "Bs2TEAOA9mVKfcR3",
+          "name": "Blotato account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set:-li-shape-0",
+              "name": "li_status",
+              "value": "={{ $json.error ? 'error' : 'success' }}",
+              "type": "string"
+            },
+            {
+              "id": "set:-li-shape-1",
+              "name": "li_post_id",
+              "value": "={{ $json.error ? '' : ($json.postSubmissionId || $json.id || $json.postId || '') }}",
+              "type": "string"
+            },
+            {
+              "id": "set:-li-shape-2",
+              "name": "li_url",
+              "value": "={{ $json.error ? '' : ($json.url || $json.postUrl || '') }}",
+              "type": "string"
+            },
+            {
+              "id": "set:-li-shape-3",
+              "name": "li_error",
+              "value": "={{ $json.error ? (($json.error && $json.error.message) || $json.error || '') : '' }}",
+              "type": "string"
+            },
+            {
+              "id": "set:-li-shape-4",
+              "name": "li_raw_response",
+              "value": "={{ JSON.stringify($json) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Set: LI Shape",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1640,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "https://www.googleapis.com/youtube/v3/videos?part=status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "options": {},
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({id: $('SELECT csj').first().json.youtube_video_id, status: { privacyStatus: 'public' } }) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api"
+      },
+      "name": "YouTube: Make Public",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1080,
+        760
+      ],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "zQZfoOUGdhExsQCX",
+          "name": "Emma YouTube Oauth2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set:-yt-shape-0",
+              "name": "yt_status",
+              "value": "={{ $json.error ? 'error' : 'success' }}",
+              "type": "string"
+            },
+            {
+              "id": "set:-yt-shape-1",
+              "name": "yt_url",
+              "value": "={{ $json.error ? '' : ($('SELECT csj').first().json.youtube_url || ('https://youtu.be/' + $('SELECT csj').first().json.youtube_video_id)) }}",
+              "type": "string"
+            },
+            {
+              "id": "set:-yt-shape-2",
+              "name": "yt_error",
+              "value": "={{ $json.error ? (($json.error && $json.error.message) || $json.error || '') : '' }}",
+              "type": "string"
+            },
+            {
+              "id": "set:-yt-shape-3",
+              "name": "yt_raw_response",
+              "value": "={{ JSON.stringify($json) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Set: YT Shape",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1360,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "options": {},
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 3
+      },
+      "name": "Merge Branches",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1920,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Combine merged per-branch fields with csj context, build patch body + telegram.\nconst csj = $('SELECT csj').first().json;\nconst merged = $input.first().json;\n\nconst failedSurfaces = [];\nif (merged.wp_status !== 'success') failedSurfaces.push('wordpress');\nif (merged.li_status !== 'success') failedSurfaces.push('linkedin');\nif (merged.yt_status !== 'success') failedSurfaces.push('youtube');\nconst allSuccess = failedSurfaces.length === 0;\n\nconst publishMetadata = {\n  wp_status: merged.wp_status || null,\n  wp_slug: merged.wp_slug || null,\n  wp_url: merged.wp_url || null,\n  wp_error: merged.wp_error || null,\n  li_status: merged.li_status || null,\n  li_post_id: merged.li_post_id || null,\n  li_url: merged.li_url || null,\n  li_error: merged.li_error || null,\n  li_raw_response: merged.li_raw_response || null,\n  yt_status: merged.yt_status || null,\n  yt_url: merged.yt_url || null,\n  yt_error: merged.yt_error || null,\n  yt_raw_response: merged.yt_raw_response || null,\n  failed_surfaces: failedSurfaces,\n};\n\n// Build telegram message\nconst title = csj.episode_title || '<no title>';\nconst tick = (s) => s === 'success' ? '\\u2705' : '\\u274c';\nlet tg;\nif (allSuccess) {\n  tg = '\\ud83d\\udce2 Episode published: ' + title +\n       '\\n\\n\\u2705 WordPress: ' + (merged.wp_slug || merged.wp_url || '(no slug)') +\n       '\\n\\u2705 LinkedIn: ' + (merged.li_url || merged.li_post_id || '(posted, no url returned)') +\n       '\\n\\u2705 YouTube: ' + merged.yt_url +\n       '\\n\\ncsj: ' + csj.id;\n} else {\n  tg = '\\ud83d\\udce2 Episode published with errors: ' + title + '\\n\\n' +\n       tick(merged.wp_status) + ' WordPress' +\n         (merged.wp_status === 'success' ? ': ' + (merged.wp_slug || merged.wp_url || '(no slug)') : ': ' + (merged.wp_error || '(error)')) +\n       '\\n' + tick(merged.li_status) + ' LinkedIn' +\n         (merged.li_status === 'success' ? ': ' + (merged.li_url || merged.li_post_id || '(posted)') : ': ' + (merged.li_error || '(error)')) +\n       '\\n' + tick(merged.yt_status) + ' YouTube' +\n         (merged.yt_status === 'success' ? ': ' + merged.yt_url : ': ' + (merged.yt_error || '(error)')) +\n       '\\n\\nManual fix needed for: ' + failedSurfaces.join(', ') +\n       '\\ncsj: ' + csj.id;\n}\n\nreturn [{\n  json: {\n    csj_id: csj.id,\n    episode_title: title,\n    all_success: allSuccess,\n    failed_surfaces: failedSurfaces,\n    publish_metadata: publishMetadata,\n    // PATCH-shape fields for csj\n    patch_body: {\n      status: 'full_complete',\n      published_at: new Date().toISOString(),\n      publish_metadata: publishMetadata,\n      wordpress_slug: merged.wp_status === 'success' ? merged.wp_slug : csj.wordpress_slug,\n      wordpress_status: merged.wp_status === 'success' ? 'publish' : csj.wordpress_status,\n      wordpress_post_url: merged.wp_status === 'success' ? merged.wp_url : csj.wordpress_post_url,\n      linkedin_post_id: merged.li_status === 'success' ? merged.li_post_id : csj.linkedin_post_id,\n      linkedin_post_url: merged.li_status === 'success' ? merged.li_url : csj.linkedin_post_url,\n      linkedin_posted_at: merged.li_status === 'success' ? new Date().toISOString() : csj.linkedin_posted_at,\n    },\n    telegram_text: tg,\n  }\n}];\n"
+      },
+      "name": "Build Publish Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://fdabygmromuqtysitodp.supabase.co/rest/v1/content_studio_jobs?id=eq.{{ $json.csj_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "options": {},
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.patch_body) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "name": "PATCH csj",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2480,
+        600
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "XTzNI4kxIpHcVjlB",
+          "name": "Supabase Main Service Role"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": false,
+        "headerParameters": {},
+        "sendBody": true,
+        "options": {},
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({chat_id: 1375806243, text: $('Build Publish Summary').first().json.telegram_text, parse_mode: 'HTML'}) }}"
+      },
+      "name": "Telegram: Publish Done",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2760,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Content Studio - Publish + Distribution'::text, '{{ $execution.id }}'::text, '{{ JSON.stringify({branch: 'processed', csj_id: $('Build Publish Summary').first().json.csj_id, all_success: $('Build Publish Summary').first().json.all_success, failed_surfaces: $('Build Publish Summary').first().json.failed_surfaces}) }}'::jsonb);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3040,
+        600
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ok: true, csj_id: $('Build Publish Summary').first().json.csj_id, all_success: $('Build Publish Summary').first().json.all_success, failed_surfaces: $('Build Publish Summary').first().json.failed_surfaces, publish_metadata: $('Build Publish Summary').first().json.publish_metadata}) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "Respond: 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3320,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'Content Studio - Publish + Distribution'::text, '{{ $execution.id }}'::text, '{{ JSON.stringify({trigger: 'webhook', csj_id: $json.body && $json.body.csj_id}) }}'::jsonb);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        520,
+        360
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "SELECT csj",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SELECT csj": {
+      "main": [
+        [
+          {
+            "node": "Eligible Status?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eligible Status?": {
+      "main": [
+        [
+          {
+            "node": "WordPress: Publish",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build LinkedIn Text",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "YouTube: Make Public",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Heartbeat: Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Skipped": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Skipped": {
+      "main": [
+        [
+          {
+            "node": "Respond: 422",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WordPress: Publish": {
+      "main": [
+        [
+          {
+            "node": "Set: WP Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LinkedIn Text": {
+      "main": [
+        [
+          {
+            "node": "Blotato: LinkedIn Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Blotato: LinkedIn Post": {
+      "main": [
+        [
+          {
+            "node": "Set: LI Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube: Make Public": {
+      "main": [
+        [
+          {
+            "node": "Set: YT Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set: WP Shape": {
+      "main": [
+        [
+          {
+            "node": "Merge Branches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set: LI Shape": {
+      "main": [
+        [
+          {
+            "node": "Merge Branches",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Set: YT Shape": {
+      "main": [
+        [
+          {
+            "node": "Merge Branches",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Branches": {
+      "main": [
+        [
+          {
+            "node": "Build Publish Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Publish Summary": {
+      "main": [
+        [
+          {
+            "node": "PATCH csj",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PATCH csj": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Publish Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Publish Done": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Success": {
+      "main": [
+        [
+          {
+            "node": "Respond: 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "errorWorkflow": "7kpNnMtnuDWXgWcX",
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "active": false
+}
