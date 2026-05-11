@@ -1,0 +1,620 @@
+{
+  "name": "Content Studio - Clipper Watcher",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/30 * * * * *"
+            }
+          ]
+        }
+      },
+      "name": "Schedule Every 30s",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select\n  count(*)::int as queued,\n  coalesce(\n    jsonb_agg(jsonb_build_object(\n      'csj_id', csj.id,\n      'csj_episode_title', csj.episode_title,\n      'csj_poll_count', coalesce(csj.poll_count, 0),\n      'csj_clip_job_id', csj.clip_job_id,\n      'cj_status', cj.status,\n      'cj_clips', cj.clips,\n      'cj_error_message', cj.error_message\n    ) order by csj.created_at)\n    filter (where csj.id is not null),\n    '[]'::jsonb\n  ) as jobs\nfrom public.content_studio_jobs csj\nleft join public.clip_jobs cj on cj.id = csj.clip_job_id\nwhere csj.status = 'clipper_pending'\n  and csj.clip_job_id is not null;",
+        "options": {}
+      },
+      "name": "Aggregate Pending",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        520,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-pending-cond",
+              "leftValue": "={{ $json.queued }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "name": "Has Pending?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        800,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Content Studio - Clipper Watcher'::text, '{{ $execution.id }}'::text, '{{ JSON.stringify({queued: 0, branch: 'idle'}) }}'::jsonb);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success Idle",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1080,
+        680
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Take the single aggregate row and emit one item per job.\nconst items = $input.all();\nconst out = [];\nfor (const item of items) {\n  const jobs = item.json.jobs || [];\n  for (const j of jobs) {\n    out.push({ json: j });\n  }\n}\nreturn out;\n"
+      },
+      "name": "Split Jobs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.cj_status }}",
+                    "rightValue": "complete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "switch-clip-status-cond-0"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Complete"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.cj_status }}",
+                    "rightValue": "error",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "switch-clip-status-cond-1"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Error"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "name": "Switch Clip Status",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1360,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update public.content_studio_jobs\nset status = 'clipper_complete',\n    clip_count = coalesce(jsonb_array_length('{{ JSON.stringify($json.cj_clips || []) }}'::jsonb), 0),\n    clips_ready = true,\n    clip_selections = '{{ JSON.stringify($json.cj_clips || []) }}'::jsonb,\n    updated_at = now()\nwhere id = '{{ $json.csj_id }}'::uuid\nreturning id, status, '{{ $json.csj_episode_title }}'::text as episode_title;",
+        "options": {}
+      },
+      "name": "Patch: Clipper Complete",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1640,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({chat_id: 1375806243, text: '\\ud83c\\udfac Clips ready: ' + ($('Switch Clip Status').item.json.csj_episode_title || '<no title>') + '\\n\\n' + (($('Switch Clip Status').item.json.cj_clips || []).length) + ' clips:\\n' + (($('Switch Clip Status').item.json.cj_clips || []).map(c => (c.hook_title ? c.hook_title + ' \\u2014 ' : '') + (c.public_url || c.r2_key || '<no url>')).join('\\n')) + '\\n\\ncsj: ' + ($('Switch Clip Status').item.json.csj_id || '<no id>'), parse_mode: 'HTML'}) }}",
+        "options": {}
+      },
+      "name": "Telegram: Clips Ready",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update public.content_studio_jobs\nset status = 'clipper_error',\n    error_message = '{{ ($json.cj_error_message || '').replace(/'/g, \"''\") }}',\n    updated_at = now()\nwhere id = '{{ $json.csj_id }}'::uuid\nreturning id, status, '{{ $json.csj_episode_title }}'::text as episode_title;",
+        "options": {}
+      },
+      "name": "Patch: Clipper Error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1640,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({chat_id: 1375806243, text: '\\u26a0\\ufe0f Clipper failed: ' + ($('Switch Clip Status').item.json.csj_episode_title || '<no title>') + '\\n\\nReason: ' + ($('Switch Clip Status').item.json.cj_error_message || '<no error message>') + '\\n\\nPodcast can still publish; clips skipped.' + '\\ncsj: ' + ($('Switch Clip Status').item.json.csj_id || '<no id>'), parse_mode: 'HTML'}) }}",
+        "options": {}
+      },
+      "name": "Telegram: Clipper Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-timeout-cond",
+              "leftValue": "={{ $json.csj_poll_count }}",
+              "rightValue": 60,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "name": "Has Timeout?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1640,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update public.content_studio_jobs\nset status = 'clipper_timeout',\n    updated_at = now()\nwhere id = '{{ $json.csj_id }}'::uuid\nreturning id, status, '{{ $json.csj_episode_title }}'::text as episode_title;",
+        "options": {}
+      },
+      "name": "Patch: Clipper Timeout",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1920,
+        560
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({chat_id: 1375806243, text: '\\u23f1\\ufe0f Clipper timeout: ' + ($('Switch Clip Status').item.json.csj_episode_title || '<no title>') + '\\n\\nReached 60 polls (30min). Clip job may still complete async \u2014 check clip_jobs/' + ($('Switch Clip Status').item.json.csj_clip_job_id || '<no id>') + '.' + '\\ncsj: ' + ($('Switch Clip Status').item.json.csj_id || '<no id>'), parse_mode: 'HTML'}) }}",
+        "options": {}
+      },
+      "name": "Telegram: Clipper Timeout",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update public.content_studio_jobs\nset poll_count = coalesce(poll_count, 0) + 1,\n    updated_at = now()\nwhere id = '{{ $json.csj_id }}'::uuid\nreturning id, poll_count;",
+        "options": {}
+      },
+      "name": "Patch: Increment Poll",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1920,
+        800
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 4,
+        "options": {}
+      },
+      "name": "Merge Branches",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2480,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'success'::text, 'Content Studio - Clipper Watcher'::text, '{{ $execution.id }}'::text, '{{ JSON.stringify({branch: 'processed'}) }}'::jsonb);",
+        "options": {}
+      },
+      "name": "Heartbeat: Success Processed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2760,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.record_heartbeat('{{ $workflow.id }}'::text, 'started'::text, 'Content Studio - Clipper Watcher'::text, '{{ $execution.id }}'::text);",
+        "options": {}
+      },
+      "name": "Heartbeat: Start",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        520,
+        280
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Schedule Every 30s": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Pending",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Heartbeat: Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Pending": {
+      "main": [
+        [
+          {
+            "node": "Has Pending?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Pending?": {
+      "main": [
+        [
+          {
+            "node": "Split Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Heartbeat: Success Idle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Jobs": {
+      "main": [
+        [
+          {
+            "node": "Switch Clip Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Clip Status": {
+      "main": [
+        [
+          {
+            "node": "Patch: Clipper Complete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Patch: Clipper Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Timeout?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch: Clipper Complete": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Clips Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch: Clipper Error": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Clipper Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Timeout?": {
+      "main": [
+        [
+          {
+            "node": "Patch: Clipper Timeout",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Patch: Increment Poll",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch: Clipper Timeout": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Clipper Timeout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Clips Ready": {
+      "main": [
+        [
+          {
+            "node": "Merge Branches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Clipper Failed": {
+      "main": [
+        [
+          {
+            "node": "Merge Branches",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Telegram: Clipper Timeout": {
+      "main": [
+        [
+          {
+            "node": "Merge Branches",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Patch: Increment Poll": {
+      "main": [
+        [
+          {
+            "node": "Merge Branches",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge Branches": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat: Success Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat: Start": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "errorWorkflow": "7kpNnMtnuDWXgWcX",
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "active": false
+}
