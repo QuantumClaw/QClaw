@@ -7169,3 +7169,237 @@ for the runaway message — root cause was always-on content, not router.
    Telegram reply, sourced from state doc not real-time fabrication).
 3. Update `CHARLIE_OVERHAUL.md` Slice 2b status footnote: "verified live
    post-hotfix `455f6ac` 2026-05-08T20:18Z".
+
+## 2026-05-11 — Content Studio Workflow B: Clipper Watcher (build + branch tests)
+
+Workflow A's clipper hand-off writes `content_studio_jobs.status =
+'clipper_pending'` + `clip_job_id` and exits. Without a watcher, csj rows
+sit in that state forever and the clip URLs never make it back. Workflow B
+closes that loop: every 30s it polls clipper_pending csj rows, joins
+`clip_jobs` by `clip_job_id`, and routes the row to one of three terminal
+states based on `clip_jobs.status`, firing Telegram alerts on each.
+
+Workflow id: **`qeE2hCSFoB6fU926`** (n8n).
+File: `n8n-workflows/qeE2hCSFoB6fU926-content-studio-clipper-watcher.json`.
+Schedule: cron `*/30 * * * * *` (every 30s, UTC).
+errorWorkflow: `7kpNnMtnuDWXgWcX` per HEARTBEAT_PATTERN.md.
+
+### Step 0 — clip_jobs.clips shape, captured from source
+
+From `src/clipper/main.py:357-377` (the only writer of `clip_jobs.clips`):
+
+```python
+clips_result.append({
+    "index": n,
+    "hook_title": seg.get("hook_title", ""),
+    "caption_text": seg.get("caption_text", ""),
+    "virality_score": seg.get("virality_score", 0),
+    "start_ms": start_ms,
+    "end_ms": end_ms,
+    "duration_s": round(end_s - start_s, 2),
+    "r2_key": r2_key,
+    "public_url": f"{R2_PUBLIC_BASE}/{r2_key}",
+})
+...
+db_update(job_id, {"status": "complete", "clips": clips_result})
+```
+
+`public_url` is absolute (`{R2_PUBLIC_BASE}/clips/{job_id}/clip_{n}.mp4`).
+Error path writes `{"status": "error", "error_message": str(e)}`. No other
+metadata in the `clips` array. Workflow B's Telegram template uses
+`hook_title` + `public_url` per clip.
+
+### Workflow shape
+
+17 nodes (brief said 12 — that was the approximate cluster count, not the
+literal node total once branch-internal patches/telegrams are enumerated):
+
+```
+Schedule Every 30s ──┬──→ Heartbeat: Start (parallel sink off trigger,
+                     │     per HEARTBEAT_PATTERN.md regression-fix rule)
+                     │
+                     └──→ Aggregate Pending  (single SELECT count(*) +
+                            jsonb_agg JOIN; always emits 1 row so the
+                            empty-tree case still drives Has Pending? —
+                            sidesteps the n8n empty-input downstream-skip
+                            bug)
+                              │
+                              v
+                          Has Pending? (IF queued > 0)
+                              ├─true ──→ Split Jobs (code: emit N items)
+                              │             │
+                              │             v
+                              │         Switch Clip Status
+                              │            ├ "complete" ──→ Patch: Clipper Complete ──→ Telegram: Clips Ready ──┐
+                              │            ├ "error"    ──→ Patch: Clipper Error    ──→ Telegram: Clipper Failed ─┤
+                              │            └ default    ──→ Has Timeout? (poll_count >= 60)
+                              │                                 ├ true  ──→ Patch: Clipper Timeout ──→ Telegram: Clipper Timeout ─┤
+                              │                                 └ false ──→ Patch: Increment Poll ────────────────────────────────┤
+                              │                                                                                                    │
+                              │                                                      Merge Branches ←──────────────────────────────┘
+                              │                                                            │
+                              │                                                            v
+                              │                                                Heartbeat: Success Processed
+                              │
+                              └─false ──→ Heartbeat: Success Idle (metadata.queued=0)
+```
+
+Validators (`assert_clean_for_put` from `n8n-workflows/_tools/b_common.py`)
+clean: no orphans, no brace-collapse in heartbeat SQL, no
+serially-interposed Start heartbeat. POST returned 200; GET on the new id
+returned 17 nodes intact.
+
+### Bug found mid-test — IF v2 number condition wired wrong on first POST
+
+First activation appeared to fire (executions 929013→929037 logged every
+30s) but every execution went down the `idle` branch even after I
+INSERTed four `clipper_pending` synth rows. Inspecting the execution
+detail of exec 929037 via `GET /api/v1/executions/929037?includeData=true`:
+
+```
+=== Aggregate Pending ===
+  run 0: output[0] items=1
+    first.json: {"queued": 4, "jobs": [{"csj_id":..., ...}, ...]}
+
+=== Has Pending? ===
+  run 0: output[0] items=0   ← TRUE branch empty
+          output[1] items=1   ← FALSE branch (idle) received the item
+
+=== Heartbeat: Success Idle ===
+  run 0: output[0] items=1
+    first.json: {"record_heartbeat": "..."}
+```
+
+`queued: 4` clearly > 0 but Has Pending? was returning false. The IF node
+JSON I'd generated had:
+
+```json
+"rightValue": "0",          ← string
+"operator": {"type": "number", "operation": "larger"}
+```
+
+Cross-checked against `trading-market-scanner.json` (the only existing
+file with a working IF-v2 number comparison):
+
+```json
+"rightValue": 0,            ← numeric literal
+"operator": {"type": "number", "operation": "gt"}
+```
+
+n8n IF v2 with `operator.type=number` requires `rightValue` to be a
+numeric JSON literal, not a string — even with `typeValidation: "loose"`,
+the comparison silently evaluates to `false` when rightValue is the string
+`"0"`. Fixed the `if_node()` helper in the builder script to coerce numeric
+operands at build time, switched the `Has Pending?` operator from `larger`
+→ `gt` (matching the dominant precedent — `gt` × 9, `gte` × 2, `equals` ×
+2, `larger` × 1 across all existing workflows; `larger` likely deprecated
+or undocumented). Re-built, PUT to /api/v1/workflows/qeE2hCSFoB6fU926.
+
+### Step 3 — controlled branch tests, 5/5 green
+
+Brief originally specified `POST /api/v1/workflows/{id}/execute` for manual
+execution. That endpoint returned **405 method not allowed** on this n8n
+instance:
+
+```
+POST /api/v1/workflows/qeE2hCSFoB6fU926/execute
+status=405 body={"message":"POST method not allowed"}
+
+POST /api/v1/workflows/qeE2hCSFoB6fU926/run
+status=405 body={"message":"POST method not allowed"}
+```
+
+Tyson approved switching to activate-and-wait: the workflow is active
+during testing, each tick fires naturally on the 30s schedule, tests
+INSERT synthetic rows and SELECT csj after the next tick. Test order also
+adjusted per Tyson's mid-dispatch revision: idle (Test 5) first (capture
+the natural pre-data idle case), then complete → error → increment →
+timeout.
+
+| Test | exec_id | started_at | result | verification |
+|---|---|---|---|---|
+| 5 — idle re-verify (post-fix) | 929061 | 14:23:30 | **PASS** | heartbeat metadata `{branch: idle, queued: 0}`; no csj patches during this exec |
+| 1 — clipper_complete | 929065 | 14:24:31 | **PASS** | csj.status='clipper_complete', clip_count=2, clips_ready=true, clip_selections matched synth shape |
+| 2 — clipper_error | 929068 | 14:25:01 | **PASS** | csj.status='clipper_error', error_message='Synthetic test failure' |
+| 3 — pending increment | 929070 | 14:26:00 | **PASS** | csj.status='clipper_pending', poll_count went 5→7 (two ticks before cleanup landed — per Tyson's adjustment 3, verify by first-tick exec_id 929070, not final poll_count value) |
+| 4 — clipper_timeout | 929072 | 14:27:00 | **PASS** | csj.status='clipper_timeout' |
+
+Telegram messages for tests 1, 2, 4 fired to chat_id `1375806243`
+(Test 3 increment is intentionally silent — no Telegram).
+
+### Brief inconsistency — Test 4 setup poll_count vs threshold
+
+Brief specified `IF poll_count >= 60: Patch Timeout` (the workflow logic)
+**and** `INSERT csj (poll_count=59)` for Test 4. With threshold `>= 60`
+and a single tick, `poll_count=59` would fall through to the increment
+branch (59 < 60), not timeout. Used `poll_count=60` for Test 4 instead
+(matches the threshold the brief itself specified for the workflow). If
+Tyson intended threshold `>= 59` (so the 60th poll triggers timeout), the
+workflow needs `if_node(..., "59", "gte", ...)` and the Telegram message
+text should be reviewed — flagged as Followup.
+
+### Activation + heartbeat verification (Step 4)
+
+`POST /api/v1/workflows/qeE2hCSFoB6fU926/activate` returned 200,
+`active=true` confirmed via GET. Heartbeats fire every 30s; recent
+window:
+
+```
+14:27:00  exec=929072  status=success  meta={"branch": "processed"}    ← Test 4
+14:27:30  exec=929073  status=success  meta={"branch": "idle", queued: 0}
+14:28:00  exec=929075  status=success  meta={"branch": "idle", queued: 0}
+```
+
+No execution errors during or after the test window (`/api/v1/executions?
+workflowId=qeE2hCSFoB6fU926` shows status=success for every run, no error
+heartbeat rows for this workflow_id).
+
+### Followups (Rule 4)
+
+1. **R2 bucket mismatch (out of scope — pre-existing, flagged for awareness).**
+   The clipper-worker hardcodes the production R2 prefix. Episode files
+   uploaded to the test bucket fail `s3.download_file(R2_BUCKET_NAME, …)`
+   in `src/clipper/main.py:303`. End-to-end testing of Workflow A → B with
+   Emma's real episode requires the audio to already live in the
+   production bucket; otherwise Workflow B will (correctly) record
+   `clipper_error` for that csj row.
+
+2. **Brief-vs-workflow threshold inconsistency for Test 4.** If Tyson
+   meant "give up at the 60th poll attempt" (i.e. timeout when `poll_count
+   == 59` pre-increment), change `Has Timeout?` to `gte 59` and update the
+   Telegram timeout message text to match. Currently both threshold and
+   Telegram text say "60 polls"; only the brief's Test 4 setup poll_count
+   diverges.
+
+3. **`TELEGRAM_BOT_TOKEN` not yet refactored to credential.** Workflow B
+   uses the same `$env.TELEGRAM_BOT_TOKEN` inline-env pattern as Workflow
+   A. Migration to a proper n8n credential is on the existing P1 followup
+   list, not in scope here.
+
+4. **Idle-aggregate metadata is hardcoded.** `Heartbeat: Success Idle`
+   metadata literal `{queued: 0, branch: 'idle'}` is correct only on the
+   idle path — it doesn't actually read `$json.queued`. Acceptable for now
+   (the path was selected via IF queued > 0 = false → queued IS 0), but if
+   you want defence-in-depth, swap to
+   `{{ JSON.stringify({queued: $json.queued, branch: 'idle'}) }}`.
+
+5. **`Heartbeat: Success Processed` fires per-item, not once-per-execution.**
+   Multi-item exec with N matching rows → N upserts (idempotent on
+   `(workflow_id, execution_id)`, so DB ends at one row, but metadata is
+   "last fire wins"). The brief originally asked for aggregate metadata
+   `{queued: N, complete: X, error: Y, timeout: Z, still_pending: W}`. To
+   produce that, add a Code "Aggregate Counts" node between Merge Branches
+   and Heartbeat: Success Processed that returns one item with the
+   counts. Acceptable trade-off for now; flagged for later.
+
+### End-to-end (Step 5) — deferred per brief
+
+Brief Step 5 (fire Workflow A on Emma's real episode) is Tyson-driven and
+not part of this dispatch. End-to-end success depends on the R2 bucket
+mismatch (Followup 1).
+
+verified: workflow `qeE2hCSFoB6fU926` created (POST 200) → IF v2
+rightValue-type bug surfaced via exec 929037 dump → PUT 200 with fix → all
+5 branch tests green (exec ids 929061/929065/929068/929070/929072) → active
+state confirmed → DB clean of test fixtures (csj WB Test rows = 0,
+clip_jobs WB Test rows = 0, clipper_pending rows = 0).
