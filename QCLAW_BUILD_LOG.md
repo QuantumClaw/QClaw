@@ -7665,3 +7665,220 @@ enforced → `csj.publish_metadata` populated on each test exec → migration
 and `published_at`+`publish_metadata` columns confirmed via
 `information_schema.columns` → DB clean of `WC %` test rows post-cleanup
 (`SELECT … WHERE episode_title LIKE 'WC %'` returns `[]`).
+
+## 2026-05-12 — Ep 68 production fire: first real end-to-end run + 2 architectural bugs surfaced
+
+First real end-to-end production run of the full A → B → C pipeline
+against a real podcast episode (2.3 GB MP4 source). Episode shipped
+successfully to WordPress, LinkedIn, YouTube via Workflow C despite two
+architectural bugs surfacing during the run.
+
+- `csj_id`: `fb4edfcc-7e9d-4873-bf97-f1bedc647777`
+- `buzzsprout_episode_id`: `19166754`
+- `clip_job_id`: `41eeaa72-cdad-4237-9d9b-beefd646844b`
+
+Source: `episodes/theflowlane-ep68-Stop_selling_what_you_do.mp4` (R2
+bucket `emma-content-studio`, 2.3 GB, uploaded via rclone from Tyson's
+local Mac in 7m 58s — 35 multipart chunks).
+
+### Pipeline timing
+
+```
+19:49:37 — Workflow A trigger (curl from Tyson's Mac)
+19:53:39 — Workflow A complete, csj.status=a_complete
+             (NOTE: should have been clipper_pending — Bug 2)
+19:53:40 — clip_jobs row created, status=queued
+19:55:08 — Clipper FFmpeg exit-8 on vertical crop step (Bug 1)
+20:17:25 — Manual UPDATE csj.status='clipper_error'
+             (via Supabase MCP to unblock Workflow C)
+20:19:05 — Manual UPDATE csj.buzzsprout_url after Tyson published
+             in Buzzsprout (third issue — see "Three issues surfaced")
+[TIME]   — Workflow C triggered, all_success=true
+```
+
+### Workflow C result (commit `5b6c894`): all 3 surfaces ✅
+
+- **WordPress:** https://flowstatescollective.com/the-flow-lane-ep-68-stop-selling-what-you-do/
+- **LinkedIn:** `postSubmissionId` `18ad0fcd-0bd8-4b37-ace5-2c1eac66050b`
+- **YouTube:** https://youtu.be/TM0EMPTKQ9I (public, `embeddable=false`)
+
+### Three issues surfaced under real load
+
+#### Bug 1 — Clipper FFmpeg exit-8 recurrence (HIGH)
+
+The vertical-crop step in `clipper-worker` failed with exit code 8 on
+`clip_0` of Ep 68's source. The exit-8 fix from commit `457d120` (May 7)
+addressed audio codec encoding (`-c:a copy` → `-c:a aac`), but exit-8
+has multiple root causes. Source video has something the crop filter
+can't handle.
+
+Failed command:
+
+```
+ffmpeg -y -threads 1 \
+  -i /tmp/41eeaa72-cdad-4237-9d9b-beefd646844b_clip_0.mp4 \
+  -vf 'crop=ih*9/16:ih:max(0, min(iw-ih*9/16, 0.4546*iw - ih*9/16/2)):0' \
+  -preset ultrafast \
+  -c:a aac -b:a 128k -ac 2 \
+  -movflags +faststart \
+  /tmp/41eeaa72-cdad-4237-9d9b-beefd646844b_vertical_0.mp4
+```
+
+Next session diagnostic:
+
+- Re-run exact command on qclaw with `-v debug` against the Ep 68 source
+  (still in R2 bucket).
+- Identify root cause (likely VFR, unusual codec, color space, or crop
+  dimension producing invalid output).
+- Fix in `src/clipper/main.py` `crop_to_vertical()`.
+
+#### Bug 2 — Workflow A status-overwrite (HIGH, critical)
+
+Workflow A's terminal `Update Job Record` node writes
+`csj.status='a_complete'` AFTER `Patch: Clipper Pending` (PUT 1) wrote
+`csj.status='clipper_pending'`. This overwrites the state Workflow B's
+filter (`WHERE status='clipper_pending'`) depends on, so Workflow B
+never polls the csj row — even when clipper succeeds OR fails, Workflow
+B is blind.
+
+Tonight, Workflow B never fired its Telegram alert for clipper failure
+because of this. Tyson was waiting on a notification that the
+architecture made impossible.
+
+**Why this wasn't caught:** branch tests in Workflow B's build inserted
+rows directly into `clipper_pending` state, bypassing Workflow A
+entirely. End-to-end testing was deferred because clipper never
+succeeded before. We've never had a real A → B round-trip test until
+tonight.
+
+Fix candidates for next session:
+
+1. Reorder Workflow A — move `Update Job Record` BEFORE `Patch: Clipper
+   Pending` so the terminal write leaves `clipper_pending`.
+2. Restrict `Update Job Record` to only write `transcript_text` + other
+   a_complete-specific fields, not `status`.
+3. Have `Patch: Clipper Pending` run as a sink off the final
+   notification node so it ALWAYS runs last.
+
+**Recommend (2)** — cleanest separation of concerns. `Update Job
+Record` writes A-output data; `Patch: Clipper Pending` writes A → B
+handoff state.
+
+Lesson 27 from this fire: branch testing in isolation hides ordering
+bugs in producer-consumer workflow pairs. Test plans must include
+"consumer sees the state producer's terminal write actually leaves."
+
+#### Issue 3 — `buzzsprout_url` is NULL on draft (HIGH)
+
+Workflow A captures `buzzsprout_episode_id` but NOT the public URL,
+because Buzzsprout returns `.url=null` while the episode is in draft
+state. Public URL is only assigned after manual publish in the
+Buzzsprout UI.
+
+Workflow C as built reads `csj.buzzsprout_url` directly, which is still
+NULL at trigger time. LinkedIn branch's defensive fallback throws
+`Trailing placeholder present but buzzsprout_url is empty`.
+
+**Workaround tonight:** manual UPDATE `csj.buzzsprout_url` via Supabase
+MCP after Tyson published in Buzzsprout.
+
+**Fix for Workflow C v2 (next session):** re-fetch Buzzsprout episode by
+`buzzsprout_episode_id` at trigger time, read `.url` from response,
+UPDATE `csj.buzzsprout_url` BEFORE LinkedIn branch. ~2 node addition.
+
+### Other observations from tonight
+
+- Workflow A's webhook `responseMode='lastNode'` caused Cloudflare 524
+  on Tyson's curl (Cloudflare edge timeout ~100s vs Workflow A ~4 min).
+  Workflow continued server-side fine, but Tyson saw "error" in
+  terminal. Followup: change `responseMode='onReceived'` with immediate
+  `csj_id` response.
+- Workflow A fired **duplicate** "Workflow A Complete" Telegram messages
+  (identical content, same exec). Single csj row created — not a
+  duplicate execution, a duplicate notification fire. Possibly two
+  Notify nodes wired in. Followup to investigate.
+- "Published to WordPress" wording in Workflow A's Telegram template is
+  misleading — actual `wordpress_status='draft'` as designed. Cosmetic
+  copy fix.
+- `substack_draft_id` is NULL in csj — Workflow A's Substack draft
+  creation succeeded (per Telegram "Substack: Draft ready") but didn't
+  write the ID back. Doesn't block Workflow C (Substack publish is
+  manual) but means Emma has to find the draft manually.
+- LinkedIn post text contained a trailing `🎧 Listen here:` placeholder
+  for THIS episode, contradicting Workflow C Step 0.4 recon finding
+  ("Workflow A always embeds URL inline"). Anthropic's prompt is
+  non-deterministic. Workflow C's defensive fallback handled it
+  correctly (once `buzzsprout_url` was populated). Lesson: don't trust
+  LLM output shape as deterministic for downstream substitution logic.
+- YouTube video set to `embeddable=false` by default. Workflow C's
+  YouTube PATCH only flips `privacyStatus`, doesn't touch
+  `embeddable`. If Emma wants iframe embeds on flowstatescollective.com,
+  that's a followup C polish.
+- rclone upload pattern: `rclone copyto` (not `copy`) for renaming
+  during upload, `--s3-no-check-bucket` flag required when token lacks
+  CreateBucket permissions. Documented for re-use.
+- R2 bucket naming gotcha: bucket name is `emma-content-studio`, NOT
+  the `pub-70c4...` hash (which is the public-access subdomain).
+  LOCATIONS.md already documents both but briefs have been using the
+  hash as bucket name throughout.
+
+### Brief-author lessons banked from this fire
+
+Total brief-author lessons across the Content Studio + ζ + η + B + C +
+Ep 68 arc: **27**.
+
+New tonight:
+
+20. R2 tooling can't be inferred from qclaw to local Mac.
+21. `emma-content-studio` is bucket name; `pub-70c4...` is subdomain
+    hash.
+22. R2 tokens scoped to object Read/Write require
+    `--s3-no-check-bucket` on rclone.
+23. Workflow A's `responseMode='lastNode'` guarantees 524 on Cloudflare
+    for 4-min-runtime workflows.
+24. Workflow A Telegram template says "Published to WordPress" but
+    means "Draft created at WP" — misleading copy.
+25. `csj.buzzsprout_url` is NULL during draft state; Workflow C must
+    re-fetch at trigger time.
+26. Workflow A's `Update Job Record` overwrites `Patch: Clipper
+    Pending`'s `status='clipper_pending'` back to `a_complete`;
+    Workflow B's filter then misses the row.
+27. Branch testing in isolation hides producer-consumer ordering bugs;
+    e2e fire is the only test that catches these.
+
+### Followups for next session (HIGH → LOW)
+
+**HIGH:**
+
+- Fix Bug 2 (Workflow A status overwrite) — critical, all future
+  clipper outcomes invisible to B without this.
+- Diagnose Bug 1 (Clipper FFmpeg exit-8) — re-run with `-v debug` on
+  Ep 68 source, identify root cause.
+- Workflow C v2: re-fetch `buzzsprout_url` at trigger time.
+
+**MEDIUM:**
+
+- Workflow A `responseMode` → `onReceived`.
+- Workflow A duplicate Telegram notification fix.
+- Workflow A Substack `draft_id` write-back.
+- YouTube `embeddable=true` flip in Workflow C.
+- Blotato → LinkedIn URL lookup (post-publish GET).
+
+**LOW:**
+
+- "Published to WordPress" → "WordPress draft created" copy fix.
+- 405 on `/api/v1/workflows/{id}/execute` on this n8n — documented
+  elsewhere.
+
+### Status
+
+Episode shipped despite bugs. Pipeline is functional in the "happy
+path minus clips" mode. Bug 2 must be fixed before next episode or B's
+notifications stay invisible.
+
+verified: appended to QCLAW_BUILD_LOG.md after the 2026-05-11 Workflow
+C entry; no prior content modified; git status shows only intended file
+staged; csj_id, buzzsprout_episode_id, clip_job_id, LinkedIn
+postSubmissionId, WP URL, YT URL transcribed verbatim from brief; one
+unfilled `[TIME]` marker preserved for Workflow C trigger time (not
+known to this session — Tyson to fill in next session).
