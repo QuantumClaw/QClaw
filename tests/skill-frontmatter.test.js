@@ -15,6 +15,10 @@
  *   - No two skills share the same name
  *   - Skills with surface=tool or surface=both have a "## Endpoints"
  *     heading (audit T10 footgun guard)
+ *
+ * Slice 2c Task 4 (T9 hygiene). Every skill file in src/agents/skills/
+ * and src/agents/skills/archive/ has an h1 heading after the frontmatter.
+ * Locks the post-2a normalisation in.
  */
 
 import { readdirSync, readFileSync } from 'fs';
@@ -104,6 +108,25 @@ for (const file of files) {
     check(`${file}: surface=${fm.surface} requires "## Endpoints" heading`, hasEndpointsHeading,
       'audit T10 footgun guard — fix the heading or change surface');
   }
+
+  // Slice 2c Task 4 (T9 hygiene). h1 heading required after frontmatter.
+  const hasH1 = /^# \S/m.test(content);
+  check(`${file}: has an h1 heading`, hasH1,
+    'T9 hygiene — add a "# Title" line after the frontmatter');
+}
+
+// Archive skills must also carry an h1 — locked-in post-2a normalisation.
+const ARCHIVE_DIR = join(SKILLS_DIR, 'archive');
+try {
+  const archiveFiles = readdirSync(ARCHIVE_DIR).filter(f => f.endsWith('.md'));
+  for (const file of archiveFiles) {
+    const content = readFileSync(join(ARCHIVE_DIR, file), 'utf-8');
+    const hasH1 = /^# \S/m.test(content);
+    check(`archive/${file}: has an h1 heading`, hasH1,
+      'T9 hygiene — archived skills also require h1');
+  }
+} catch (err) {
+  // archive/ optional — only check when it exists.
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

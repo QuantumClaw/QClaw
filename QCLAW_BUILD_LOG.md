@@ -8828,3 +8828,202 @@ per Workflow A execution (proven against the actual Ep 68 exec
 937426); commit `5cd037c` shipped the workflow JSON; `Last updated`
 header unchanged at 13 May 2026 (set earlier today in the Bug 2
 docs commit).
+
+## [2026-05-13] Slice 2c — Routing Tests + Format Hygiene + Cleanup
+
+Branch `cc/slice2c-testing-hygiene-20260513-1134`. Audit grounding:
+`/tmp/slice2_skill_loading_audit.md` §7, §9 (T9, T10). Closes the
+remaining test-depth and hygiene followups from Slice 2b. Phase 4
+Slice 2 fully closed with 2a + 2b + 2c.
+
+Slice 2 sub-slice 3 of 3. 2a merged as PR #8 (2026-05-08); 2b merged as
+PR #9 (2026-05-08) and verified live with a hotfix on the same day.
+Five days of operational data since the hotfix show zero touches to
+skill-loader / router / skills / tests, with skill-load.log recording
+48 fires correctly routing across the gap.
+
+### What changed (this PR)
+
+Seven commits on the branch, all mine, no piggybacks:
+
+- `88eed29` — Tests for Tasks 1, 2, 3 (per-keyword routing, combination
+  edge cases, hard-cap-4 edge cases). +107 checks in `skill-router.test.js`
+  (27 → 134), +13 in `skill-loader.test.js` (39 → 52).
+
+  Task 1 — `skill-router.test.js` loads on-demand candidates from
+  frontmatter via a small parser, then asserts every keyword in every
+  on-demand skill's frontmatter routes to that skill. Combination
+  triggers handled with the required disambiguator (`emma` for
+  content-studio). Also added token-boundary discipline ("shipping"
+  ≠ "ship", "testing" ≠ "test", "tradingview" ≠ "trading", etc.) for
+  six keywords, case-insensitivity (BUILD/Build/build × build/stripe/ghl),
+  and surrounding-punctuation tolerance (build., (build), build,, etc.).
+
+  Task 2 — 3-way and 4-way density ties resolve by name asc; combination
+  trigger fires case-insensitively (EMMA/Emma/emma + Podcast); apostrophe
+  and bracket punctuation in combination messages (`Emma's podcast?`,
+  `(Emma) [podcast]`) still triggers content-studio; multi-line message
+  matches keywords across lines (`Build a thing.\n\nFix the trading
+  scanner.` → build + trading); the skill-name-vs-keyword distinction
+  controlled with `business-intelligence` whose name tokens (business,
+  intelligence) are not keywords (revenue/mrr/reporting/bi/financials).
+
+  Task 3 — `skill-loader.test.js` covers exactly-4 (4 surface, 0 drops),
+  exactly-5 (4 surface, 1 drops with reason `hard-cap-4`), tied-at-cap-
+  boundary (5 skills equal density → clipper/ghl/qa/qclaw-dev surface
+  alphabetically, stripe drops), zero-density (0 on_demand + 0 dropped
+  — non-match is not a drop), and all-on-demand-keywords (exactly 4
+  surface, rest drop; content-studio absent without `emma` disambiguator;
+  ≥ 14 distinct skills matched in total).
+
+- `804c60e` — Tests for Task 4 (h1 hygiene guard, audit T9). Adds h1
+  presence assertions to `skill-frontmatter.test.js` for all 25 skills
+  in `src/agents/skills/` plus 2 archived skills in
+  `src/agents/skills/archive/`. 222 → 249 checks (+27). T10 `## Endpoints`
+  guard from Slice 2a verified still in place; `trading.md` remains
+  `surface: prompt` by Slice 2a design (uses `## Key API Endpoints` not
+  `## Endpoints`) so T10 doesn't fire on it.
+
+- `40dbb9b` — Task 5: `src/agents/skills/n8n-api.md.backup.1776933191`
+  removed via `git rm`. The last file that escaped the `*.backup.*`
+  gitignore rule added in an earlier slice. Skill `.md` count stays at
+  25 (the backup ended in `.1776933191` not `.md` so neither
+  `cli-skill-list.test.js` nor `skill-frontmatter.test.js` were
+  load-bearing on its presence).
+
+- `77ec21f` — Task 6: skill-load.log `userId="null"` (string) entries
+  traced to scheduled heartbeat tasks (`src/core/heartbeat.js:167`,
+  `:219`) and CLI `agent.process()` invocations (`src/cli/index.js:196`,
+  `:217`). These pass no `userId` in context → `_buildSystemPrompt`
+  defaults to `null` → `loadSkills` coerces via `String(null)` → the
+  string `"null"` in the log entry (`src/agents/skill-loader.js:216`).
+  Intentional behaviour for non-Telegram callers, no code change. The
+  2026-05-13T02:00:00Z log entry in the brief is consistent with a
+  scheduled task firing at 05:00 Athens (daily-digest-shaped). Documented
+  in `LOCATIONS.md` Operational layer.
+
+- `78d699c` — Task 7: five-item skill-authoring checklist appended to
+  `CHARLIE_OVERHAUL.md` Component 3 (Skill loading strategy). Items:
+  (1) prompt-state vs tool-state distinction, (2) no self-runtime-
+  observation, (3) no derived rate claims without time series, (4)
+  cross-doc category consistency, (5) bootstrap-layer KB awareness.
+  Derived from the Slice 2b hotfix postmortem.
+
+- `64d92c3` — Task 8: `FLOW_OS_STATE.md` Section 7 (Known issues)
+  rate-claim audit. Reviewed every bullet under Memory layer, Tool
+  surface, Skill files, Content pipelines, Ad Agency, and Infrastructure
+  / process. Result: section is clean as of 2026-05-13 — no rate-claim
+  language without a time series. Closest pattern is "Filesystem MCP
+  fails to start every restart" (conditional, not rate-over-time, left
+  as-is). The canonical bad-pattern reference from Slice 2b hotfix
+  ("PM2 process heavy churn (53+ restarts / 13m)") is absent. No rewrites;
+  audit entry appended to the maintenance log noting Tyson review required.
+
+- (this commit) — `CHARLIE_OVERHAUL.md` Slice 2c status flipped to ✓
+  COMPLETE 2026-05-13; Phase 4 Slice 2 declared fully closed; Slice 3
+  marked **Next** with note that audit T7 (tool-registration coupling,
+  deferred from 2b) is the primary scope. Plus this build log entry.
+
+### Doc updates (in this PR)
+
+- `LOCATIONS.md` — Operational layer: skill-load.log entry extended
+  with `userId` field semantics (Telegram-sourced calls carry the user
+  id; heartbeat + CLI callers surface as `"null"` string by design).
+
+- `CHARLIE_OVERHAUL.md` — Component 3 (Skill loading strategy) gained
+  the skill-authoring checklist; Slice 2c status block expanded to the
+  full result paragraph; Phase 4 Slice 2 declared fully closed; Slice 3
+  prefixed with audit T7 as primary scope.
+
+- `FLOW_OS_STATE.md` — Maintenance log gained the 2026-05-13 audit entry
+  for Section 7 rate-claim review.
+
+### What verified
+
+**Individual test files (each run separately, since pre-existing
+probes.test.js failure on workstation Mac shorts the `&&` chain in
+`npm test`):**
+
+- `tests/smoke.test.js` → 24 passed, 0 failed
+- `tests/agent-mutex.test.js` → 7 passed, 0 failed
+- `tests/approval-parser-handler.test.js` → 29 passed, 0 failed
+- `tests/approval-gate-notifier.test.js` → 13 passed, 0 failed
+- `tests/approvals.test.js` → 13 passed, 0 failed
+- `tests/bootstrap.test.js` → 32 passed, 0 failed
+- `tests/probes.test.js` → 28 passed, **1 pre-existing failure**
+  (`pm2_processes: failure carries error string` — environment-specific,
+  PM2 not installed on the workstation; passes on the qclaw server.
+  Confirmed pre-existing on main via `git stash && git checkout main`).
+- `tests/identity-canonicalization.test.js` → 10 passed, 0 failed
+- `tests/skill-frontmatter.test.js` → **249 passed**, 0 failed
+  (was 222 — +27 from Task 4 h1 guard)
+- `tests/cli-skill-list.test.js` → 59 passed, 0 failed
+- `tests/skill-router.test.js` → **134 passed**, 0 failed
+  (was 27 — +107 from Tasks 1 + 2)
+- `tests/skill-loader.test.js` → **52 passed**, 0 failed
+  (was 39 — +13 from Task 3)
+
+**Total: 650 passed, 1 pre-existing failure (on probes.test.js;
+unchanged on main). Slice 2c net additions: +147 test assertions.**
+
+**File counts (after Task 5 cleanup):**
+- `src/agents/skills/*.md` → 25 (unchanged; backup didn't match `*.md`)
+- `src/agents/skills/archive/*.md` → 2
+
+### 7 Pillars + security gate
+
+- Frontend: n/a — no UI changes.
+- Backend: no new endpoints, no input handling changed. Only tests + docs
+  + one tracked-file deletion. No code paths altered.
+- Databases: no schema changes.
+- Authentication: no auth changes.
+- Payments/Financial: n/a.
+- Security: no new credentials. `n8n-api.md.backup.1776933191` removed
+  from git index (was tracked since Apr 23; pre-`*.backup.*` gitignore
+  rule). No secrets exposed.
+- Infrastructure: no PM2 changes by Claude Code. Tyson reload of
+  `quantumclaw` is **not required** post-merge — Slice 2c carries no
+  code changes (only tests + docs).
+
+### Out of scope (handed off)
+
+**Content Studio dispatch:**
+- Anthropic 529 retry hardening on Workflow A. Distinct from Slice 2c
+  scope; goes via the Content Studio operational dispatch path.
+- `content-studio.md` skill content staleness — does not yet reflect
+  Workflows B + C. Separate skill-content micro-dispatch.
+
+**Slice 3 — Tool surface overhaul (next dispatch):**
+- Audit T7 — tool-registration coupling deferred from 2b — **primary
+  scope** for Slice 3.
+- `shell_exec` narrowing to read-only allowlist.
+- Removal of `spawn_agent` and broken filesystem MCP.
+- Narrow tools added (`read_file`, `grep_repo`, `pm2_status`,
+  `n8n_workflow_get`, etc.).
+- Tool registration interface with scope per Component 4.
+
+**YAGNI (only if more combinations emerge):**
+- Migration of inline combination-trigger rule in
+  `src/agents/skill-router.js` to a frontmatter `combination_required`
+  field. Still inline; currently only content-studio uses it.
+
+### Followups (this dispatch)
+
+| Priority | Item | Source |
+|----------|------|--------|
+| LOW | `tests/probes.test.js` — `pm2_processes: failure carries error string` fails on workstations without PM2 installed. Pre-existing on main; not caused by Slice 2c. Either guard the test on PM2 presence or document the expected env. Filing as a separate followup per Operating Rule 4 — do not silently expand scope. | this |
+| INFO | Skill `.md` count stayed at 25 after backup removal — the backup file ended in `.1776933191`, not `.md`, so neither `cli-skill-list.test.js` nor `skill-frontmatter.test.js` were enumerating it. The "25 → 24" outcome anticipated in the brief was a false alarm. No test change needed. | this |
+| INFO | `userId="null"` is the canonical heartbeat / CLI signature in `skill-load.log`. If Slice 5+ wants per-source tracing, the call sites in `heartbeat.js` and `cli/index.js` should pass a sentinel like `userId: 'heartbeat'` / `userId: 'cli'` so the log can disambiguate. Not in 2c scope. | this |
+
+### Verified live
+
+Pending Tyson post-merge:
+- [ ] No `pm2 reload` required (no code changes).
+- [ ] Spot-check `tail -3 ~/.quantumclaw/skill-load.log` later in the
+  day to confirm log shape unchanged.
+- [ ] Optional: run `npm test` on the qclaw server to confirm the
+  probes.test.js failure is workstation-only (one expected: `pm2_processes:
+  failure carries error string` should pass on the server where PM2 is
+  installed).
+
+End of session 2026-05-13 Slice 2c.

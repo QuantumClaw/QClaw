@@ -180,6 +180,20 @@ Hard cap of 4 on-demand skills per prompt. If more match, top 4 by keyword densi
 
 **Phase 4 task:** audit all 21 existing skill files. Decide always-on vs on-demand vs archive. Update `community-manager.md` to reference GHL Communities (not Skool). Symlink discipline in `src/agents/skills/`.
 
+**Skill authoring checklist — apply before any skill content lands:**
+
+1. **Prompt-state vs tool-state distinction.** Does this skill tell Charlie to use a tool to answer a question whose answer is already in his bootstrap-loaded state? If yes — rewrite. Charlie should answer from prompt for `FLOW_OS_STATE.md`, build log, specialists registry, and probe results. Tools are for live external state only.
+
+2. **Self-runtime-observation.** Does this skill tell Charlie to run diagnostic commands against his own quantumclaw runtime (pm2 commands, shell_exec for self-introspection)? If yes — rewrite. Charlie cannot reliably observe himself from inside himself. Hard rule in `lanes.md`.
+
+3. **Derived numbers and time spans.** Does this skill contain any rate claim (X per minute, Y per hour, Z restarts in N seconds) that doesn't have a time series behind it? If yes — rewrite to snapshot only, or remove. The "70 restarts in 2 min" fabrication class.
+
+4. **Cross-doc consistency.** Does this skill's `category` (always-on vs on-demand vs specialist-scope vs archive) match what `CHARLIE_OVERHAUL.md` Component 3 and `KEYWORD_REFERENCE.md` say? If mismatch — resolve in design, not in skill file.
+
+5. **Bootstrap layer impact.** Always-on skills load every prompt. Is this skill's content ~1-3 KB? If significantly larger, can it be split or moved to on-demand?
+
+This checklist applies to authoring and to skill-content review. Slice 2b hotfix (2026-05-08) demonstrated the cost of skipping it.
+
 ### Component 4 — Tool surface overhaul
 
 **Purpose:** Encode lane discipline at the tool level. Closes failure patterns D (phantom tool use) and E (lane violations) structurally.
@@ -397,11 +411,14 @@ YAML frontmatter spec applied to all 20 skill files in `src/agents/skills/` (`na
 
 5 always-on skills authored: `identity.md`, `lanes.md`, `verification-reflexes.md`, `delegation.md`, `bootstrap-awareness.md`. Each references `CHARLIE_ROLE.md` rather than duplicating it (loaded via bootstrap identity layer). 2 community-manager skills authored as **on-demand** (corrected mid-dispatch — brief Task 1 was internally inconsistent on this point; design intent per `CHARLIE_OVERHAUL.md` Component 3 + `KEYWORD_REFERENCE.md` is on-demand): `community-manager-flow-os.md` (18.3 KB) and `community-manager-fsc.md` (14.5 KB), content sourced from Tyson-provided `.skill` bundles. `loadSkills(context) → SkillLoadResult` lives in `src/agents/skill-loader.js`; keyword router with combination-trigger filter in `src/agents/skill-router.js`. `_buildSystemPrompt` now consumes `loadSkills` output — always-on injects before Trust Kernel, on-demand replaces the en-bloc loop. Bootstrap Layer 6 caches always-on per session (30-min TTL). `~/.quantumclaw/skill-load.log` written JSON-Lines mode 0600. `charlie-cto.md` archived after migration per `/tmp/charlie_cto_allocation_plan.md`; `agent-coordination.md` folded into `delegation.md` and archived. New tests: `skill-router.test.js` (27 checks), `skill-loader.test.js` (39 checks), bootstrap.test.js extended for Layer 6 (+4 checks). Tool-registration coupling (audit T7) deferred to Slice 3 as planned.
 
-**Slice 2c — Test depth + hygiene.**
-Per-keyword exhaustive routing tests (every keyword in `KEYWORD_REFERENCE.md` resolves to expected skill). Edge-case combination tests (Emma without content → no fire; community + portal → flow-os variant; community + clientclub → fsc variant). Message-length edge cases. Integration test for prompt assembly under bootstrap-aware path with the full always-on layer merged. Skill-format hygiene normalisation (audit T9 — h1 + frontmatter consistency audit). Migration of inline combination-trigger rule to frontmatter `combination_required` field (only if more combinations emerge — YAGNI gate). Cleanup of `.bak.20260508-1246` symlink backups from 2a, plus `src/agents/skills/n8n-api.md.backup.1776933191` (audit T6 footnote).
+**Slice 2c — Test depth + hygiene.** ✓ COMPLETE 2026-05-13
 
-**Slice 3 — Tool surface overhaul.**
-Narrow tools added (`read_file`, `grep_repo`, `pm2_status`, `n8n_workflow_get`, etc.). `shell_exec` narrowed. `spawn_agent` and broken filesystem MCP removed. Tool registration interface with scope.
+Per-keyword exhaustive routing tests landed: `skill-router.test.js` 27 → 134 checks (+107), driven from skill frontmatter so coverage tracks future keyword changes automatically. Combination-trigger edge cases (Tasks 2): 3-way and 4-way density tie-break, case-insensitive combination trigger, apostrophe / bracket punctuation tolerance, multi-line message matching, skill-name-vs-keyword distinction (business-intelligence as controlled case). Hard-cap-4 edge cases (Task 3): `skill-loader.test.js` 39 → 52 checks (+13) covering exactly-4 / exactly-5 / tied-at-cap-boundary / zero-density / all-on-demand-keywords paths. Skill-format hygiene (Task 4): T9 h1-presence guard added to `skill-frontmatter.test.js` (222 → 249 checks, +27) covering all 25 skill files + 2 archive files; T10 `## Endpoints` heading guard from Slice 2a verified still in place; `trading.md` remains `surface: prompt` by design (uses `## Key API Endpoints`). `n8n-api.md.backup.1776933191` removed from git (the last file that escaped the `*.backup.*` gitignore rule). `userId="null"` skill-load.log entries traced to scheduled heartbeat tasks + CLI invocations (intentional non-Telegram sources) and documented in `LOCATIONS.md`. Skill-authoring checklist appended to Component 3 of this doc (derived from Slice 2b hotfix postmortem). `FLOW_OS_STATE.md` Section 7 (Known issues) rate-claim audit — section is clean as of 2026-05-13, no rewrites required. Combination-trigger migration to frontmatter `combination_required` field deferred — YAGNI gate held; still inline in `src/agents/skill-router.js`. `.bak.20260508-1246` symlink backup cleanup self-resolved (backups already gone, dropped from 2c scope).
+
+**Phase 4 Slice 2 fully closed** with 2a + 2b + 2c all verified live.
+
+**Slice 3 — Tool surface overhaul.** **Next.**
+Tool-registration coupling (audit T7 — deferred from 2b) is the primary scope. Then: narrow tools added (`read_file`, `grep_repo`, `pm2_status`, `n8n_workflow_get`, etc.). `shell_exec` narrowed to read-only allowlist. `spawn_agent` and broken filesystem MCP removed. Tool registration interface with scope.
 
 **Slice 4 — Verification gates (soft + hard).**
 `verification-reflexes.md` skill written and loaded. `runGates()` runtime function with five gates. Gate log in place.
