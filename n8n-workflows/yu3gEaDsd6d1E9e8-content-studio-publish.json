@@ -334,7 +334,7 @@
         "sendBody": true,
         "options": {},
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({id: $('SELECT csj').first().json.youtube_video_id, status: { privacyStatus: 'public' } }) }}",
+        "jsonBody": "={{ JSON.stringify({id: $('SELECT csj').first().json.youtube_video_id, status: { privacyStatus: 'public', embeddable: true } }) }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "youTubeOAuth2Api"
       },
@@ -558,7 +558,8 @@
         920,
         540
       ],
-      "notes": "HEAD-probe the deterministic Buzzsprout landing-page URL before patching. Fails the workflow if Tyson hasn't clicked Publish in Buzzsprout UI (4xx response). Public URL \u2014 no auth required."
+      "notes": "HEAD-probe the deterministic Buzzsprout landing-page URL before patching. Fails the workflow if Tyson hasn't clicked Publish in Buzzsprout UI (4xx response). Public URL \u2014 no auth required.",
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -581,6 +582,45 @@
         }
       },
       "notes": "Deterministic URL construction (Buzzsprout's API has no .url field \u2014 verified via direct probe 2026-05-13). Uses RETURNING * so downstream nodes pick up the populated buzzsprout_url via $input.first().json."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": false,
+        "headerParameters": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({chat_id: 1375806243, text: '\u26a0\ufe0f Content Studio publish skipped \u2014 ' + ($('SELECT csj').first().json.episode_title || '<no title>') + '\\n\\nReason: Buzzsprout episode ' + ($('SELECT csj').first().json.buzzsprout_episode_id || '<unknown>') + ' is still in draft state. Publish in the Buzzsprout UI first, then re-trigger Workflow C.' + '\\n\\nURL probe: https://www.buzzsprout.com/1946225/episodes/' + ($('SELECT csj').first().json.buzzsprout_episode_id || '?') + ' (HTTP 4xx)' + '\\ncsj_id: ' + ($('SELECT csj').first().json.id || '?')}) }}",
+        "options": {}
+      },
+      "id": "telegram-draft-pending",
+      "name": "Telegram: Draft Pending",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1080,
+        1140
+      ],
+      "continueOnFail": true,
+      "notes": "Fires when Probe Buzzsprout URL returns non-200 (episode still in draft). Public URL probe doesn't need auth."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ok: false, reason: 'buzzsprout_draft', message: 'Buzzsprout episode is in draft state. Publish in the Buzzsprout UI first then re-trigger.', buzzsprout_episode_id: $('SELECT csj').first().json.buzzsprout_episode_id, buzzsprout_url: 'https://www.buzzsprout.com/1946225/episodes/' + $('SELECT csj').first().json.buzzsprout_episode_id, csj_id: $('SELECT csj').first().json.id}) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "respond-422-draft",
+      "name": "Respond: 422 Draft",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1360,
+        1140
+      ]
     }
   ],
   "connections": {
@@ -796,6 +836,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Telegram: Draft Pending",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -814,6 +861,17 @@
           },
           {
             "node": "YouTube: Make Public",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Draft Pending": {
+      "main": [
+        [
+          {
+            "node": "Respond: 422 Draft",
             "type": "main",
             "index": 0
           }
