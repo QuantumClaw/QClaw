@@ -8095,3 +8095,175 @@ node count 45/45 + `active=true` + `settings.availableInMCP=true` all
 preserved; all `_tools/b_common.py` validators green pre-PUT;
 `Last updated` header bumped to 13 May 2026; followups carry forward
 items left open from the Ep 68 entry.
+
+## 2026-05-13 — Workflow C v2: deterministic Buzzsprout URL + pre-publish probe
+
+Eliminates the manual `UPDATE csj.buzzsprout_url` step that yesterday's
+Ep 68 fire required. The dispatch was framed as "re-fetch from
+Buzzsprout API at trigger time and read `.url`" — recon surfaced that
+the framing was wrong, and the simpler shape that fell out is captured
+below.
+
+### Brief premise contradiction (Buzzsprout's API has no `.url` field)
+
+Direct GET against the live Ep 68 episode:
+
+```
+GET https://www.buzzsprout.com/api/1946225/episodes/19166754.json
+  Authorization: Token token=<BUZZSPROUT_API_TOKEN from /root/.quantumclaw/.env>
+→ HTTP 200
+
+response keys:
+  artist, artwork_url, audio_url, custom_url, description, duration,
+  episode_number, episode_type, explicit, guid, hq, id, inactive_at,
+  magic_mastering, private, published_at, season_number, summary,
+  tags, title, total_plays
+```
+
+URL-shaped fields are `audio_url` (the MP3 file
+`...19166754-ep-68-stop-selling-what-you-do.mp3`), `artwork_url` (a
+storage.buzzsprout.com asset), and `custom_url` (empty string). There
+is no `.url` field. The Ep 68 entry's claim that "Buzzsprout returns
+.url=null while in draft state" was incorrect — the field doesn't
+exist at all, so there's nothing to wait-for-publish to populate.
+
+The public landing-page URL is **fully deterministic** given
+`buzzsprout_episode_id` (already captured by Workflow A in csj) plus
+the known podcast id `1946225`:
+
+```
+https://www.buzzsprout.com/1946225/episodes/<EPISODE_ID>
+```
+
+Direct probe against this constructed URL for Ep 68: `HTTP 200`, no
+redirects. Supabase confirms: the one csj row Tyson ever populated
+`buzzsprout_url` for (manually, last night, Ep 68) stored exactly this
+pattern. No API roundtrip required to discover the URL.
+
+### Implementation shape (β: Probe + Patch)
+
+Two new nodes inserted between `Eligible Status?` IF (true branch) and
+the three publish entry points — Pattern Y, single edit on the
+true-branch connection:
+
+```
+Eligible Status? (true) ─→ Probe Buzzsprout URL ─→ Patch: Buzzsprout URL ─┬─→ WordPress: Publish
+                                                                          ├─→ Build LinkedIn Text
+                                                                          └─→ YouTube: Make Public
+Eligible Status? (false) ─→ Heartbeat: Skipped ─→ Telegram: Skipped ─→ Respond: 422  (unchanged)
+```
+
+**Probe Buzzsprout URL** (`httpRequest`, HEAD, no auth):
+
+```
+=https://www.buzzsprout.com/1946225/episodes/{{ $('SELECT csj').first().json.buzzsprout_episode_id }}
+```
+
+Failure mode: 4xx response → n8n workflow execution fails. This is
+intentional — catches "Tyson forgot to click Publish in the Buzzsprout
+UI before triggering C" before LinkedIn posts a dead link. The
+trigger contract gains an implicit precondition: the Buzzsprout
+episode must be published (not still in draft) at C-trigger time.
+Webhook caller sees an n8n-error response rather than the existing
+clean 422-Skipped path; could be polished into the 422 route later
+but not in scope for this slice.
+
+**Patch: Buzzsprout URL** (`postgres`, executeQuery):
+
+```sql
+update public.content_studio_jobs
+set buzzsprout_url = 'https://www.buzzsprout.com/1946225/episodes/' || buzzsprout_episode_id,
+    updated_at = now()
+where id = '{{ $('SELECT csj').first().json.id }}'::uuid
+  and buzzsprout_episode_id is not null
+returning *;
+```
+
+`RETURNING *` produces the updated csj row as the node's output, which
+flows into all three publish branches via Pattern Y. `Build LinkedIn
+Text`'s existing `$input.first().json.buzzsprout_url` substitution
+logic picks up the now-populated URL without code changes.
+
+Defensive `AND buzzsprout_episode_id IS NOT NULL` guards the
+edge case where csj somehow reached `clipper_complete` without a
+buzzsprout_episode_id; the UPDATE is a no-op in that case and the
+LinkedIn branch's defensive fallback still throws as before.
+
+### Patch + verification
+
+- Backup: `/tmp/workflow_c_v2_backup_1778663241.json` (24,753 B, pre-edit).
+- Edit applied via `/tmp/wf-c-v2-edit.py` (Python — handles connections rewire idempotently; aborts on topology drift).
+- Diff: +71/-11 (2 new node definitions, Eligible Status? true-branch rewired from 3 outputs to 1, two new connection entries route through Probe → Patch → 3 publish branches).
+- `_tools/b_common.py` validators: `orphans=[]`, `brace_collapse=[]`, `start_heartbeats_serial=[]` — all green.
+- PUT body trimmed to `{name, nodes, connections, settings}` (19,387 B); `settings.availableInMCP=false` preserved (Workflow C was never MCP-exposed; Workflow A is).
+- `PUT https://webhook.flowos.tech/api/v1/workflows/yu3gEaDsd6d1E9e8` → **HTTP 200**, `updatedAt: 2026-05-13T09:08:06.117Z`, node count 20 → 22.
+- Independent GET back, five static checks PASS:
+  1. Probe URL template references `$('SELECT csj').first().json.buzzsprout_episode_id` exactly.
+  2. Patch query WHERE clause `where id = '{{ $('SELECT csj').first().json.id }}'::uuid` and URL construction `'https://www.buzzsprout.com/1946225/episodes/' || buzzsprout_episode_id` both verified literal-substring match.
+  3. Patch: Buzzsprout URL main output fans out to `Build LinkedIn Text`, `WordPress: Publish`, `YouTube: Make Public` (all 3, alphabetised) — Pattern Y intact.
+  4. Build LinkedIn Text's `jsCode` still references `csj.buzzsprout_url` and reads from `$input.first().json` — no downstream code change required.
+  5. `active=true`, node count 22, `settings.availableInMCP=false` (preserved verbatim from pre-PUT).
+
+### Trigger contract update
+
+The implicit precondition for `POST /webhook/content-studio-publish`
+adds a step:
+
+> Before triggering Workflow C, the episode at
+> `csj.buzzsprout_episode_id` must be **published** in the Buzzsprout
+> UI (not in draft state). Otherwise the Probe node fails the
+> workflow with a non-200 from buzzsprout.com.
+
+`csj.status IN ('clipper_complete', 'clipper_error', 'clipper_timeout')`
+remains the explicit precondition. This second precondition is the
+manual gate Tyson already follows in practice; the new probe just
+turns "silent dead URL in LinkedIn" into "loud n8n error before any
+publish fires".
+
+### Followups for next session (HIGH → LOW)
+
+**HIGH:**
+
+- Diagnose Bug 1 (Clipper FFmpeg exit-8) — still open from Ep 68 fire.
+
+**MEDIUM:**
+
+- Probe failure → 422-Skipped route: currently a non-200 from Buzzsprout
+  fails the entire workflow execution rather than returning a clean
+  422 via the existing Skipped branch with a "publish in Buzzsprout
+  first" message. Future polish.
+- Orphaned clipper-polling subgraph in Workflow A (carried from
+  Bug 2 entry).
+- `N8N_WORKFLOW_INDEX.md` refresh (carried — needs Workflow B + C
+  entries and Workflow A node-count drift fix; Workflow C now at 22
+  nodes after this slice).
+- Workflow A `responseMode` → `onReceived` (carried).
+- Workflow A duplicate Telegram notification fix (carried).
+- Workflow A Substack `draft_id` write-back (carried).
+- YouTube `embeddable=true` flip in Workflow C (carried).
+- Blotato → LinkedIn URL lookup (carried).
+
+**LOW:**
+
+- "Published to WordPress" → "WordPress draft created" copy fix (carried).
+- 405 on `/api/v1/workflows/{id}/execute` on this n8n (carried).
+
+### Status
+
+Workflow C v2 is live. Next end-to-end run: Workflow A completes →
+Workflow B picks up clipper outcome → Tyson publishes in Buzzsprout
+UI → Tyson triggers Workflow C → C's Probe verifies the URL is live →
+Patch populates `csj.buzzsprout_url` → LinkedIn branch substitutes
+without throwing. The manual `UPDATE csj SET buzzsprout_url = ...`
+step from the Ep 68 playbook is now superseded.
+
+verified: live PUT to webhook.flowos.tech/api/v1/workflows/yu3gEaDsd6d1E9e8
+returned HTTP 200; independent GET-back confirmed 5/5 static checks
+(Probe URL template, Patch WHERE + URL construction, Pattern Y
+fan-out, downstream Build LinkedIn Text unchanged, active+nodeCount+MCP
+state preserved); `_tools/b_common.py` validators all green pre-PUT;
+Buzzsprout API response shape positively probed against live Ep 68
+during recon (HTTP 200, 21 response keys, none of them named `.url`);
+deterministic URL pattern probed and returned HTTP 200 directly with
+zero redirects; `Last updated` header unchanged from 13 May 2026
+(already set in the Bug 2 commit earlier today).
