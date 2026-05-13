@@ -8481,3 +8481,158 @@ the May 7 fix (commit 457d120) was a different exit-8 variant (audio
 codec) — that fix remains valid and is unaffected by this slice;
 `Last updated` header unchanged from 13 May 2026 (set earlier today
 in the Bug 2 docs commit).
+
+## 2026-05-13 — Workflow C polish: 422 Probe-fail routing + YT embeddable
+
+First of three cleanup batches today. Workflow C edits live on the
+same workflow (`yu3gEaDsd6d1E9e8`); both changes land in one PUT.
+
+### Change 1 — Probe failure now returns structured 422
+
+The morning's Workflow C v2 commit (`34254f9`) added Probe Buzzsprout
+URL + Patch: Buzzsprout URL between the IF gate and the publish
+branches. When Tyson triggers C before publishing the episode in the
+Buzzsprout UI, the constructed `https://www.buzzsprout.com/1946225/episodes/<id>`
+URL returns 4xx and the Probe throws — failing the entire workflow
+execution with an opaque n8n generic error rather than the clean
+422-Skipped pattern the rest of the workflow uses.
+
+This slice routes the failure cleanly:
+
+- **Probe Buzzsprout URL**: top-level `onError: "continueErrorOutput"`
+  added so 4xx/5xx routes to a separate error port (main[1]) instead
+  of throwing.
+- **New node: Telegram: Draft Pending** (`httpRequest` POST). On Probe
+  failure, posts a Telegram with episode title, the constructed URL,
+  csj_id, and a "publish in Buzzsprout UI first, then re-trigger
+  Workflow C" message. `continueOnFail=true` so a Telegram outage
+  doesn't break the 422 path.
+- **New node: Respond: 422 Draft** (`respondToWebhook`). Returns:
+
+  ```json
+  {
+    "ok": false,
+    "reason": "buzzsprout_draft",
+    "message": "Buzzsprout episode is in draft state. Publish in the Buzzsprout UI first then re-trigger.",
+    "buzzsprout_episode_id": "<id>",
+    "buzzsprout_url": "<constructed URL>",
+    "csj_id": "<uuid>"
+  }
+  ```
+
+  HTTP 422. Tyson's curl now sees this body instead of n8n's
+  workflow-execution-failed page.
+
+- **Connections added**:
+  - `Probe Buzzsprout URL.main[1]` (error port) → `Telegram: Draft Pending`
+  - `Telegram: Draft Pending.main[0]` → `Respond: 422 Draft`
+
+The existing IF-false Skipped path (`Eligible Status?` → `Heartbeat: Skipped`
+→ `Telegram: Skipped` → `Respond: 422`) is untouched and remains
+the route for "csj status not in {clipper_complete, clipper_error,
+clipper_timeout}" failures.
+
+**Design note** — the dispatch brief framed this as "route to the
+same 422-Skipped Respond node". Reusing the existing `Respond: 422`
+would require restructuring the `Telegram: Skipped → Respond: 422`
+chain (n8n's `httpRequest` Telegram replaces `$json` with the Telegram
+API response, so the Respond's body would need a Set-node prefix to
+re-inject csj fields, and its body template would need a dynamic
+reason). A dedicated `Respond: 422 Draft` node produces the same
+caller-visible behavior (HTTP 422 + structured body with
+reason="buzzsprout_draft") with no topology churn on the existing
+Skipped path. Two separate respondToWebhook nodes in the same
+workflow is supported by n8n and matches the same-named pattern
+already in this workflow (`Respond: 422` for csj-ineligible,
+`Respond: 200` for success).
+
+### Change 2 — YT embeddable=true
+
+`YouTube: Make Public` PATCH body, before:
+
+```js
+={{ JSON.stringify({id: $('SELECT csj').first().json.youtube_video_id, status: { privacyStatus: 'public' } }) }}
+```
+
+After:
+
+```js
+={{ JSON.stringify({id: $('SELECT csj').first().json.youtube_video_id, status: { privacyStatus: 'public', embeddable: true } }) }}
+```
+
+YouTube Data API `videos.update` with `part=status` supports both
+fields in the same request. Ep 68's `csj.publish_metadata.yt_raw_response`
+explicitly captured `embeddable: false` in the YT API response after
+the v1 PATCH — confirming the API preserves the existing
+`embeddable=false` default unless we send it. From here forward,
+videos shipped by Workflow C will be embeddable so
+`flowstatescollective.com` (and future Substack/LinkedIn previews)
+can iframe the player without Emma manually flipping it in YouTube
+Studio.
+
+### Patch + verification
+
+- Backup: `/tmp/workflow_c_b2_backup_1778666223.json` (26,731 B).
+- Edit applied via `/tmp/wf-c-b2-edit.py` (idempotent Python; aborts
+  on topology drift — pre-edit invariants pinned on the YT body
+  string and on the existing Probe → Patch connection).
+- Diff: +60/-2 on the workflow JSON. 2 new node definitions, 1
+  parameter add (`onError` on Probe), 1 jsonBody string update on YT,
+  and 2 new connection entries.
+- `_tools/b_common.py` validators: all green (`orphans=[]`,
+  `brace_collapse=[]`, `start_heartbeats_serial=[]`).
+- PUT body trimmed to `{name, nodes, connections, settings}` (21,350
+  B); `settings.availableInMCP=false` preserved.
+- `PUT https://webhook.flowos.tech/api/v1/workflows/yu3gEaDsd6d1E9e8`
+  → **HTTP 200**, `updatedAt: 2026-05-13T09:57:30.850Z`, nodeCount
+  22 → 24.
+- Independent GET-back, 6/6 static checks PASS:
+  1. Probe `onError` = `continueErrorOutput`
+  2. YT body contains literal `embeddable: true`
+  3. Both new nodes present with correct names
+  4. Probe main port count is 2 (success → Patch, error → Telegram: Draft Pending)
+  5. Telegram: Draft Pending → Respond: 422 Draft wired
+  6. `active=true`, nodeCount 24, `settings.availableInMCP=false` preserved
+
+### Trigger contract update
+
+The caller now sees a structured 422 with `reason="buzzsprout_draft"`
+when the episode is still in draft — replacing the previous generic
+workflow-execution-failure response. The trigger precondition itself
+is unchanged: the Buzzsprout episode must be published in the
+Buzzsprout UI before triggering Workflow C. The probe still fails
+the path; it just fails cleanly now.
+
+### Followups (HIGH → LOW)
+
+**HIGH:** none.
+
+**MEDIUM:**
+
+- N8N_WORKFLOW_INDEX.md will need a Workflow C nodeCount bump (22 →
+  24) in the next index refresh. Out of scope for B2 — folding into
+  next index update.
+- (Carried) Orphaned clipper-polling subgraph in Workflow A — 5 dead
+  nodes; addressed in B3 of this batch.
+- (Carried) Workflow A `responseMode` → `onReceived`.
+- (Carried) Workflow A duplicate Telegram notification — addressed in
+  B3.
+- (Carried) Workflow A Substack `draft_id` write-back.
+- (Carried) Blotato → LinkedIn URL lookup.
+- (Carried) "Published to WordPress" copy — addressed in B3.
+
+**LOW:**
+
+- 405 on `/api/v1/workflows/{id}/execute` on this n8n (carried).
+
+### Status
+
+Workflow C is now end-to-end clean for both the happy path (probe
+200 → publish all surfaces → 200 response) and the
+Tyson-forgot-to-publish path (probe 4xx → Telegram + 422 with clear
+reason). YT videos will be embeddable on publish from here forward.
+
+verified: live PUT to webhook.flowos.tech/api/v1/workflows/yu3gEaDsd6d1E9e8
+returned HTTP 200; GET-back confirmed 6/6 static checks; commit `f491283`
+shipped the workflow JSON; `Last updated` header unchanged at
+13 May 2026 (set earlier today in the Bug 2 docs commit).
