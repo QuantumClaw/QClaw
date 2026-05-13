@@ -2,7 +2,7 @@
 
 **Project:** QClaw — Self-hosted Claude agent runtime (Fork of QuantumClaw/QClaw)
 **Owner:** Tyson Venables / Flow OS
-**Last updated:** 7 May 2026
+**Last updated:** 12 May 2026
 **Repo:** https://github.com/tysonven/QClaw
 
 ---
@@ -7665,6 +7665,99 @@ enforced → `csj.publish_metadata` populated on each test exec → migration
 and `published_at`+`publish_metadata` columns confirmed via
 `information_schema.columns` → DB clean of `WC %` test rows post-cleanup
 (`SELECT … WHERE episode_title LIKE 'WC %'` returns `[]`).
+
+## 2026-05-12 — flowos-sms-gateway — Phase 1 Complete
+
+### Summary
+
+- Built flowos-sms-gateway from scratch — standalone FastAPI service on Railway replacing myCRMSIM
+- GHL Marketplace app created (Flow OS CRM Sim) with custom SMS Conversation Provider
+- Two-way SMS live on two sub-accounts:
+  - Flow OS (2NszMTudEJyVXCzQjNTo) — Motorola +61490091602
+  - Emma Maidment (WYYe8joTZ7f0ESbNx2av) — +61490086759
+- Permanent Cloudflare Tunnels on both devices:
+  - device1.flowos.tech → Motorola
+  - device2.flowos.tech → Emma's device
+- Termux Boot configured on both — tunnels survive reboots
+- Supabase schema: tenants, sub_accounts, device_registry, message_log (multi-tenant from day one)
+- Auth: Ed25519 GHL webhook verification, per-device HMAC signing keys from device_registry
+- myCRMSIM subscription cancelled — ends May 31
+- Tagged v1.0-phase1 on github.com/tysonven/flowos-sms-gateway
+- 56/56 tests green
+
+### Security gate: PASSED
+
+- No hardcoded secrets
+- Per-device signing keys in Supabase only
+- RLS enabled on all tables
+- Global ANDROID_GATEWAY_SIGNING_KEY env var removed
+- Cloudflare Tunnel replaces ngrok permanently
+
+### Concrete refs
+
+- Repo: https://github.com/tysonven/flowos-sms-gateway
+- Tag `v1.0-phase1` → commit `cb8b30a` (Phase 1 milestone)
+- `main` head at session end: `d29b36f` (per-device signing key — post-tag follow-on for Emma's device)
+- Railway: https://flowos-sms-gateway-production.up.railway.app
+- Supabase migrations applied 001 → 006:
+  - 001_initial.sql (tenants, sub_accounts, device_registry, message_log + deny-all RLS)
+  - 002_sub_account_oauth.sql (per-Location OAuth tokens)
+  - 003_tenant_company_oauth.sql (agency-tier Company token storage)
+  - 004_device_sim_number.sql (multi-SIM / eSIM slot)
+  - 005_device_android_device_id.sql (sms-gate.app hardware-id lookup)
+  - 006_device_signing_key.sql (per-device HMAC key)
+
+### Architecture as shipped
+
+```
+Outbound (GHL agent / AI sends SMS):
+  GHL outbound webhook (Ed25519 asymmetric, x-ghl-signature)
+  → /webhooks/outbound → route by location_id → active device for sub_account
+  → sms-gate.app POST <device_webhook_url>/messages (Basic auth, simNumber)
+
+Inbound (customer texts the gateway SIM):
+  Android device webhook (HMAC-SHA256 + 5-min replay window, key per device)
+  → /webhooks/inbound → JSON-peek deviceId → look up device.signing_key → verify
+  → /contacts/lookup (with /contacts/?query= fallback) → /contacts/ create on miss
+  → /conversations/messages/inbound (access token from sub_account, refreshed via
+    sub_account.refresh_token OR re-minted from tenant Company token via
+    /oauth/locationToken when the sub_account has no refresh_token)
+```
+
+### What was iterated through this session (commit chain on `main`)
+
+- Multiple GHL webhook auth iterations (HMAC SHA-256 → SHA-512 → asymmetric Ed25519 once docs surfaced)
+- Android dispatcher fixes: Bearer → Basic auth, `/3rdparty/v1/message` → `/messages` (local mode)
+- Outbound payload schema match (no `from` field in GHL — switched to sub_account → device lookup)
+- Inbound payload schema match (nested `payload.sender` from sms-gate.app envelope)
+- Inbound contact resolution (`/contacts/search` was wrong; `/contacts/lookup` with `/contacts/?query=` fallback)
+- AI-message support: `userId` → Optional on outbound payload
+- Per-device signing keys (Motorola + Emma's device share an inbound URL convention but each carries its own HMAC key)
+
+### 7 Pillars — verified
+
+- Frontend: n/a (Phase 1 scope is API-only).
+- Backend: all webhook payloads validated by Pydantic before processing; phone numbers normalised E.164 with explicit 400s on malformed inputs; structured exception handler returns JSON, no stack traces in responses; slowapi rate limiting on every endpoint.
+- Databases: Supabase RLS deny-all on all four tables; service-role key server-side only; queries via parameterised supabase-py client (no string concat).
+- Authentication:
+  - GHL → gateway: Ed25519 verification with GHL's published public key, hard 401 on any failure path
+  - Android device → gateway: per-device HMAC-SHA256, body+timestamp, 5-min replay window
+  - Gateway → GHL: per-Location access tokens minted via `/oauth/locationToken` when the install was agency-tier; auto-refresh on demand
+  - Gateway → Android: per-device API key, Basic auth
+- Payments: Telnyx Phase 2; spend-limit setup documented in README as mandatory before any US traffic.
+- Security: zero hardcoded secrets; `.env` git-ignored; rate limiting active; `ANDROID_GATEWAY_SIGNING_KEY` env var deleted now that signing keys live per-device in Supabase only.
+- Infrastructure: Railway deploy from `main`; healthcheck `/health`; structured JSON logging; cryptography 44.0.0 pinned in requirements.txt.
+
+### Followups
+
+| Priority | Item |
+|----------|------|
+| INFO | OAuth token-exchange diagnostic logging in `app/oauth.py` retained (Tyson asked to keep it for future install debugging — token values redacted to length only). |
+| LOW | `multiple active devices per sub_account` — current routing picks first; revisit when load balancing or geographic spread is needed (Phase 2). |
+| LOW | Telnyx provider stub in place but not exercised; spend-limit gate + inbound webhook verification (`TELNYX_INBOUND_WEBHOOK_SECRET`) not wired (Phase 2). |
+| LOW | Admin endpoints (`POST /admin/tenants`, `POST /admin/sub-accounts`, `POST /admin/devices`, `PATCH /admin/sub-accounts/{id}`) not yet built — Phase 1 ships with manual Supabase seeding via `supabase/seed_phase1.sql`. |
+
+End of session 2026-05-12 — flowos-sms-gateway Phase 1.
 
 ## 2026-05-12 — Ep 68 production fire: first real end-to-end run + 2 architectural bugs surfaced
 
