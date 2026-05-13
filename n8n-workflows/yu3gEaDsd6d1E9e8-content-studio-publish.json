@@ -543,6 +543,44 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "HEAD",
+        "url": "=https://www.buzzsprout.com/1946225/episodes/{{ $('SELECT csj').first().json.buzzsprout_episode_id }}",
+        "options": {}
+      },
+      "id": "probe-buzzsprout-url",
+      "name": "Probe Buzzsprout URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        540
+      ],
+      "notes": "HEAD-probe the deterministic Buzzsprout landing-page URL before patching. Fails the workflow if Tyson hasn't clicked Publish in Buzzsprout UI (4xx response). Public URL \u2014 no auth required."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update public.content_studio_jobs\nset buzzsprout_url = 'https://www.buzzsprout.com/1946225/episodes/' || buzzsprout_episode_id,\n    updated_at = now()\nwhere id = '{{ $('SELECT csj').first().json.id }}'::uuid\n  and buzzsprout_episode_id is not null\nreturning *;",
+        "options": {}
+      },
+      "id": "patch-buzzsprout-url",
+      "name": "Patch: Buzzsprout URL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        920,
+        660
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qGUxEHfEZkZGdAcZ",
+          "name": "Supabase Postgres DB"
+        }
+      },
+      "notes": "Deterministic URL construction (Buzzsprout's API has no .url field \u2014 verified via direct probe 2026-05-13). Uses RETURNING * so downstream nodes pick up the populated buzzsprout_url via $input.first().json."
     }
   ],
   "connections": {
@@ -577,17 +615,7 @@
       "main": [
         [
           {
-            "node": "WordPress: Publish",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Build LinkedIn Text",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "YouTube: Make Public",
+            "node": "Probe Buzzsprout URL",
             "type": "main",
             "index": 0
           }
@@ -758,6 +786,38 @@
     "Heartbeat: Start": {
       "main": [
         []
+      ]
+    },
+    "Probe Buzzsprout URL": {
+      "main": [
+        [
+          {
+            "node": "Patch: Buzzsprout URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch: Buzzsprout URL": {
+      "main": [
+        [
+          {
+            "node": "WordPress: Publish",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build LinkedIn Text",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "YouTube: Make Public",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
