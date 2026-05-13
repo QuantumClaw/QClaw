@@ -66,3 +66,7 @@ CLAUDE_CODE_TASKS.md
 *.bak.*
 *.backup.*
 .claude-code-session.lock
+
+# Python bytecode caches
+__pycache__/
+*.pyc

@@ -7786,7 +7786,9 @@ local Mac in 7m 58s — 35 multipart chunks).
              (via Supabase MCP to unblock Workflow C)
 20:19:05 — Manual UPDATE csj.buzzsprout_url after Tyson published
              in Buzzsprout (third issue — see "Three issues surfaced")
-[TIME]   — Workflow C triggered, all_success=true
+20:21:40 — Workflow C triggered, all_success=true
+             (csj.published_at — Workflow C's terminal PATCH
+             that wrote status='full_complete')
 ```
 
 ### Workflow C result (commit `5b6c894`): all 3 surfaces ✅
@@ -7973,8 +7975,9 @@ verified: appended to QCLAW_BUILD_LOG.md after the 2026-05-11 Workflow
 C entry; no prior content modified; git status shows only intended file
 staged; csj_id, buzzsprout_episode_id, clip_job_id, LinkedIn
 postSubmissionId, WP URL, YT URL transcribed verbatim from brief; one
-unfilled `[TIME]` marker preserved for Workflow C trigger time (not
-known to this session — Tyson to fill in next session).
+originally unfilled placeholder for Workflow C trigger time
+preserved as `[TIME]` at commit-time; filled in 2026-05-13 with
+`20:21:40` (csj.published_at) as part of the hygiene cleanup batch.
 
 ## 2026-05-13 — Bug 2 fix: Workflow A status overwrite eliminated
 
