@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-05-13T20:30:34.190Z",
+  "updatedAt": "2026-05-13T21:10:28.744Z",
   "createdAt": "2026-04-13T13:10:45.173Z",
   "id": "fonuRTyqepxdyIdf",
   "name": "GHL Marketing: Publisher",
@@ -187,6 +187,7 @@
           "cachedResultUrl": "https://backend.blotato.com/v2/accounts/11109"
         },
         "postContentText": "={{ $('Prepare').item.json.linkedin_post || '' }}",
+        "postContentMediaUrls": "={{ $('Prepare').item.json.effective_image_url }}",
         "options": {}
       },
       "id": "p0000001-0001-4000-8000-00000000000a",
@@ -554,9 +555,9 @@
   "staticData": null,
   "meta": null,
   "pinData": {},
-  "versionId": "8c42e108-e51f-403a-ba09-55599047b7a1",
-  "activeVersionId": "8c42e108-e51f-403a-ba09-55599047b7a1",
-  "versionCounter": 114,
+  "versionId": "7c081329-0353-45e2-87cb-6ebdc260f769",
+  "activeVersionId": "7c081329-0353-45e2-87cb-6ebdc260f769",
+  "versionCounter": 117,
   "triggerCount": 1,
   "shared": [
     {
@@ -618,9 +619,9 @@
   ],
   "tags": [],
   "activeVersion": {
-    "updatedAt": "2026-05-13T20:30:34.192Z",
-    "createdAt": "2026-05-13T20:30:34.192Z",
-    "versionId": "8c42e108-e51f-403a-ba09-55599047b7a1",
+    "updatedAt": "2026-05-13T21:10:28.749Z",
+    "createdAt": "2026-05-13T21:10:28.749Z",
+    "versionId": "7c081329-0353-45e2-87cb-6ebdc260f769",
     "workflowId": "fonuRTyqepxdyIdf",
     "nodes": [
       {
@@ -803,6 +804,7 @@
             "cachedResultUrl": "https://backend.blotato.com/v2/accounts/11109"
           },
           "postContentText": "={{ $('Prepare').item.json.linkedin_post || '' }}",
+          "postContentMediaUrls": "={{ $('Prepare').item.json.effective_image_url }}",
           "options": {}
         },
         "id": "p0000001-0001-4000-8000-00000000000a",
@@ -1168,10 +1170,10 @@
     "autosaved": false,
     "workflowPublishHistory": [
       {
-        "createdAt": "2026-05-13T20:30:34.341Z",
-        "id": 967,
+        "createdAt": "2026-05-13T21:10:28.896Z",
+        "id": 968,
         "workflowId": "fonuRTyqepxdyIdf",
-        "versionId": "8c42e108-e51f-403a-ba09-55599047b7a1",
+        "versionId": "7c081329-0353-45e2-87cb-6ebdc260f769",
         "event": "activated",
         "userId": "b1512bca-25b8-4b8b-add0-b86540e5144d"
       }

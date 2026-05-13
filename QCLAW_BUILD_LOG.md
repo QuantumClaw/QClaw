@@ -9197,3 +9197,99 @@ chains preserved.
 - Memory: `project_n8n_qclaw_topology.md` (PUT body shape `{name, nodes,
   connections, settings}`).
 - Memory: `project_n8n_supabase_fsc_credential.md` (FSC credential is no-op).
+
+## 2026-05-13 — Slice 3: GHL Bug 2 fix (LinkedIn media wiring)
+
+Per `/tmp/marketing_image_audit_20260513.md` Bug 2 verdict for the GHL
+Publisher: the `LinkedIn Post (Blotato)` node passed only `postContentText`
+and did not set `postContentMediaUrls`, so every successful LinkedIn post
+went out text-only — including the recent execution `940561` where FB and
+IG were image-attached but LinkedIn was image-less. IG's wiring was the
+template; this dispatch mirrors it onto LinkedIn.
+
+**Branch:** `cc/slice3-ghl-linkedin-media-20260513` (created from `main` @
+`d63e855`, after Slice 2 PR #10 + Slice 1.5 stash PR #11 both merged).
+
+### Workflow touched
+
+**`fonuRTyqepxdyIdf` — GHL Marketing: Publisher (15 → 15 nodes, 1 node modified)**
+
+Single parameter added to `LinkedIn Post (Blotato)`:
+
+```
+"postContentMediaUrls": "={{ $('Prepare').item.json.effective_image_url }}"
+```
+
+Exact mirror of the `IG Post (Blotato)` expression on the same workflow.
+Inserted between `postContentText` and `options` to match IG's parameter
+ordering. No other parameters touched — `platform: "linkedin"`,
+`accountId.value: "11109"` (Tyson Venables LinkedIn account), the
+`LI Guard Check` / `LI Guard Apply` / `Skip LinkedIn?` 4h rate-limiter
+chain, and the FB / IG nodes are all bytewise identical to the pre-Slice-3
+state.
+
+### PUT verification (live)
+
+- PUT `HTTP=200` @ `2026-05-13T21:10:28.744Z`.
+- Re-GET confirms:
+  - `LinkedIn Post (Blotato).parameters.postContentMediaUrls` =
+    `"={{ $('Prepare').item.json.effective_image_url }}"` (exact match to IG's expression).
+  - `IG Post (Blotato).parameters.postContentMediaUrls` unchanged.
+  - `Facebook Post.parameters.jsonBody` unchanged (Graph API `/photos`
+    with `url: effective_image_url` still wired correctly).
+  - `Compute Final` retains Slice 2's `error?.description` promotion across
+    all three platforms — verified by static substring check on the post-PUT
+    jsCode.
+  - `settings.availableInMCP=true`.
+- Diff of the disk JSON shows exactly one functional addition (the line
+  above), mirrored once in the live `nodes` section and once in the
+  `activeVersion.nodes` GET-response mirror, plus expected version-bump
+  metadata (versionId 8c42e108→7c081329, versionCounter 114→117,
+  workflowPublishHistory id 967→968).
+
+### Smoke test
+
+Per brief: live smoke test is optional because it creates a real LinkedIn
+post. **Skipped** — the next natural publish through the Publisher
+validates the fix end-to-end. Alternative validation: static post-PUT GET
+confirms the parameter is in place; the IG node uses the exact same
+expression on the same upstream `Prepare.effective_image_url` field and
+is known to be working in production (per executions `940561`, `937131`,
+and Apr 27+ history).
+
+Note: when the next LinkedIn publish fires, the 4h Blotato rate-limit
+guard (`LI Guard Check` + `LI Guard Apply` + `Skip LinkedIn?` IF) may
+short-circuit the LinkedIn branch if the previous LI post was less than
+4h ago. That's expected behaviour, preserved per scope — not a smoke
+failure.
+
+### Security gate
+
+- [x] No hardcoded credentials added — only added an `$('Prepare').item.json.effective_image_url` expression reference.
+- [x] No new webhooks (no new webhook nodes).
+- [x] No new endpoints (no new HTTP nodes).
+- [x] No RLS changes.
+- [x] No financial features touched.
+- [x] `~/.quantumclaw/.env` and `/home/n8nadmin/n8n-project/.env` perms
+      unchanged at 600 — neither file written.
+- [x] `settings.availableInMCP=true` confirmed via re-GET.
+- [x] No stack traces or secrets exposed — single expression reference,
+      no error-handling change, no logging change.
+- [x] Credential references unchanged — Blotato `accountId.value: "11109"`
+      on the LI node is the same as pre-Slice-3 (Tyson Venables LinkedIn).
+
+### Out of scope (deferred)
+
+- Crete pipeline (Image Router gating + FB/LI media wiring) — Slice 4.
+- Regenerate path on Approval Handler (carries image_url forward; also
+  bypasses Cap Hashtags) — Slice 5.
+- Republishing `a19997f3` (already partially_published, accepted).
+
+### References
+
+- `/tmp/marketing_image_audit_20260513.md` — Bug 2 verdict.
+- `/tmp/ig_failure_a19997f3.md` — execution `940561` dump showing
+  LinkedIn-text-only behaviour pre-Slice-3.
+- Slice 2 (PR #10, merged `c482013...d63e855`) — predecessor on this
+  workflow (Compute Final `error.description` promotion).
+- Memory: `project_n8n_qclaw_topology.md` (PUT body shape).
