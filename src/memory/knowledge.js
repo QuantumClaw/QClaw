@@ -244,7 +244,11 @@ export class KnowledgeStore {
       }
     }
 
-    return parts.join('\n');
+    const result = parts.join('\n');
+    if (result.length > 8000) {
+      return result.substring(0, 8000) + '\n[... context truncated for memory safety]';
+    }
+    return result;
   }
 
   /**
