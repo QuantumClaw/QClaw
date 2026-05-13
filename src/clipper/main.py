@@ -271,9 +271,12 @@ def get_smart_crop_filter(video_path: str) -> str:
     log.info(f"Face detected at ({face_x_ratio:.2f}, {face_y_ratio:.2f}), applying smart crop")
 
     # Horizontal: center crop on face x position
-    # Clamp to valid range so we don't go out of bounds
+    # Clamp to valid range so we don't go out of bounds.
+    # Commas inside the FFmpeg expression MUST be backslash-escaped
+    # because FFmpeg's filtergraph parser treats unescaped commas as
+    # filter-chain separators (Bug 1, 2026-05-13).
     crop_x_expr = (
-        f"max(0, min(iw-ih*9/16, "
+        f"max(0\\, min(iw-ih*9/16\\, "
         f"{face_x_ratio:.4f}*iw - ih*9/16/2))"
     )
 
