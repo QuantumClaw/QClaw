@@ -9047,3 +9047,153 @@ Reactivation gated on:
 1. Polymarket fund situation resolved
 2. trading-worker diagnostic + restart dispatch landed
 3. Confirmation that at least one Market Scanner manual run returns valid JSON end-to-end
+
+## 2026-05-13 — Slice 2: GHL Bug 3 fix (Cap Hashtags + Compute Final error promotion)
+
+Root cause for Bug 3 captured in `/tmp/ig_failure_a19997f3.md` (execution
+`940561`, draft `a19997f3-3a85-4ab2-94b8-f289564228b7`, 2026-05-13 19:40 UTC):
+the `IG Post (Blotato)` node failed with `error.description: "Instagram allows
+a maximum of 5 hashtags per post."` against an `instagram_caption` containing
+15 hashtags. Cap Hashtags pattern from commit `e4ad82c` (Apr 29) only landed
+on Infographic V2 (`kJ2EdkOeEAwVbMwU`) — the GHL Marketing Content Generator
+was never protected. Secondary issue: `Compute Final` in the GHL Publisher
+mapped only the synthesized top-level `json.error` string to
+`publish_errors.{platform}`, dropping the more diagnostic
+`runDataItem.error.description` field — so every Blotato failure logged the
+same useless generic message to Supabase.
+
+**Branch:** `cc/slice2-ghl-hashtag-cap-20260513` (created from `main` @
+`2e5d2cb`, after stashing pre-existing `src/memory/knowledge.js` WIP into
+`stash@{0}` — not authored by this session).
+
+### Workflows touched (both via PUT through `https://webhook.flowos.tech/api/v1`)
+
+**`Awo65rdSe5BvDHtC` — GHL Marketing: Content Generator (11 → 12 nodes)**
+
+- **Added Code node `Cap Hashtags`** at position `[1504, 304]`, typeVersion 2,
+  id `a1000001-0001-4000-8000-000000000020`. Mirrors the
+  `kJ2EdkOeEAwVbMwU > Cap Hashtags` pattern (`MAX_HASHTAGS=5`,
+  `caption.replace(/#\w+/g, ...)`), trimmed to the single
+  `instagram_caption` field that exists in the GHL schema. Whitespace
+  cleanup: collapses runs of spaces/tabs, drops indent on continuation
+  lines, caps consecutive blanks to one. Pass-through for empty / missing
+  / `≤5` hashtags. Emits `_hashtag_cap_applied: { max, original_count,
+  dropped, at }` metadata for forward visibility (not persisted — stripped
+  by `Save to Supabase`'s explicit field whitelist).
+- **Rewired connections:** `Assign Image URL → Cap Hashtags →
+  Save to Supabase` (was `Assign Image URL → Save to Supabase`). Insertion
+  point is last gate before persistence, so Cap Hashtags sees the
+  final-shape row including `image_url` — and `Save to Supabase`'s body is
+  unchanged (it whitelists fields via `JSON.stringify({...})` literal, so
+  `_hashtag_cap_applied` doesn't leak into the DB row).
+- Position-shifted `Save to Supabase`, `Send to Telegram`, `Heartbeat:
+  Success` right by `+160px` to make room. Other 8 nodes unchanged.
+
+**`fonuRTyqepxdyIdf` — GHL Marketing: Publisher (15 → 15 nodes, 1 node modified)**
+
+- **Compute Final** jsCode updated to read the runData item itself (sibling
+  fields `.json` and `.error`) instead of only `.json`, so that
+  `runDataItem.error.description` from `NodeApiError` can be promoted into
+  `publish_errors.{platform}`. Per-platform mapping order is now:
+  `node.error?.description → node.json.error.message → node.json.error.* →
+  node.json.message → generic fallback`. Existing LinkedIn `LI Guard`
+  short-circuit path preserved verbatim. FB Graph API success detection
+  (`.id && !.error`) preserved. No other nodes touched in this workflow.
+
+### PUT verification (live)
+
+- **Awo65rdSe5BvDHtC:** PUT `HTTP=200` @ `2026-05-13T20:29:42.993Z`. Re-GET
+  confirms 12 nodes, `Cap Hashtags` present, `Assign Image URL.main[0]` →
+  `Cap Hashtags`, `Cap Hashtags.main[0]` → `Save to Supabase`, and
+  `settings.availableInMCP=true`.
+- **fonuRTyqepxdyIdf:** PUT `HTTP=200` @ `2026-05-13T20:30:34.190Z`. Re-GET
+  confirms `Compute Final` jsCode contains `fb?.error?.description`,
+  `igB?.error?.description`, `li?.error?.description`, all existing
+  fallback chains intact (`fbJson?.error?.error_user_msg`, `guard.skip_linkedin`
+  path), and `settings.availableInMCP=true`.
+
+### `availableInMCP` re-enable mechanism (brief-conflict surfaced)
+
+Brief specified `POST /api/v1/workflows/{id}/setAvailableInMCP` with body
+`{"available": true}`. That endpoint returned `HTTP=405 POST method not
+allowed` on the live n8n. Canonical mechanism per
+`src/tools/n8n-workflow-update.js:171` is to include
+`availableInMCP: true` inside the workflow's `settings` object on the PUT
+body — n8n PUT does NOT auto-flip this to false on update (the live
+settings already had `availableInMCP: true` and the PUT preserved it).
+Brief was operating on stale info; corrected approach used. Re-GETs on
+both workflows confirm the flag remained `true` post-PUT.
+
+### Live drift (Awo65 only) — surfaced not fixed
+
+Diffing live vs `~/QClaw/n8n-workflows/Awo65rdSe5BvDHtC-*.json` (the
+pre-Slice-2 disk copy) showed:
+- Cosmetic node-position drift (~10px shifts across all nodes).
+- Live has NO `Supabase FSC` (`Nd2uuX5t9KEwbQPv`) credential reference on
+  `Fetch Recent Hooks` / `Save to Supabase`; disk had the no-op empty
+  reference. Consistent with `project_n8n_supabase_fsc_credential.md` — the
+  FSC credential is empty httpHeaderAuth, auth happens via inline
+  `$env.SUPABASE_ANON_KEY` headers. Not load-bearing.
+- Live omits explicit `"method": "GET"` on `Fetch Recent Hooks` (defaults
+  to GET); disk had it explicit.
+
+Worked from LIVE for the PUT (single source of truth). Disk JSONs refreshed
+from post-PUT GETs, so any prior drift is overwritten with the new live state.
+
+### Smoke tests
+
+**Cap Hashtags (Content Generator):** Public n8n REST API does not expose
+ad-hoc execution of scheduled workflows (brief allowed UI fallback); live
+trigger would also burn a Claude API call + insert a `pending_approval`
+row, so I used the brief's static-equivalent: replicated the live jsCode
+locally and ran it against the exact `instagram_caption` from execution
+`940561` (the one that caused Bug 3). Output: 15 hashtags → 5, first 5
+kept (`#gohighlevel #ghl #automation #workflows #saas`), 10 dropped, all
+other row fields preserved verbatim, `_hashtag_cap_applied` metadata
+populated. Edge cases: empty caption pass-through, missing caption
+pass-through, `≤5` hashtags pass-through (dropped=0). The node body served
+by n8n is what was tested (pulled via re-GET, not the pre-PUT version).
+**No row written to `marketing_drafts`. No Claude / Telegram / Supabase
+call made for the smoke.**
+
+**Compute Final (Publisher):** Per brief, no live re-publish (would create
+duplicates on FB/LinkedIn). Static read of post-PUT jsCode confirms
+description-promotion for all three platforms with existing fallback
+chains preserved.
+
+### Security gate
+
+- [x] No hardcoded credentials added — Cap Hashtags is logic-only; Compute
+  Final reads existing in-runData error fields. Confirmed by static grep:
+  no `Bearer `, `api_key`, `token=`, `password=` strings introduced.
+- [x] No new webhooks (no webhook nodes added).
+- [x] No new endpoints.
+- [x] No RLS changes (no schema or policy touched).
+- [x] No financial features touched.
+- [x] `~/.quantumclaw/.env` and `/home/n8nadmin/n8n-project/.env` perms
+      unchanged at 600 — neither file written.
+- [x] `availableInMCP: true` re-confirmed via re-GET on both workflows
+      (location: `settings.availableInMCP`, not top-level).
+- [x] No stack traces or secrets exposed in error mappings — Compute Final
+      reads only `error.description` + `error.message` strings, no auth
+      payloads. `_hashtag_cap_applied` carries integer counts + ISO
+      timestamp only, no PII.
+
+### Out of scope (defer)
+
+- LinkedIn media wiring (`postContentMediaUrls`) — Slice 3.
+- Crete pipeline (Image Router gating + FB/LI media wiring) — Slice 4.
+- Regenerate-wipes-image_url investigation — Slice 1.5.
+- Prompt-level hashtag instruction tightening — backlog.
+- Republishing `a19997f3` — Tyson decided to accept partial, move on.
+
+### References
+
+- `/tmp/ig_failure_a19997f3.md` — root-cause dump for Bug 3.
+- `/tmp/marketing_image_audit_20260513.md` — full audit verdict (Bugs 1+2+3
+  context, brief-conflict log).
+- Commit `e4ad82c` — Cap Hashtags pattern source (Infographic V2,
+  `kJ2EdkOeEAwVbMwU`).
+- Memory: `project_n8n_qclaw_topology.md` (PUT body shape `{name, nodes,
+  connections, settings}`).
+- Memory: `project_n8n_supabase_fsc_credential.md` (FSC credential is no-op).
