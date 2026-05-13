@@ -8636,3 +8636,195 @@ verified: live PUT to webhook.flowos.tech/api/v1/workflows/yu3gEaDsd6d1E9e8
 returned HTTP 200; GET-back confirmed 6/6 static checks; commit `f491283`
 shipped the workflow JSON; `Last updated` header unchanged at
 13 May 2026 (set earlier today in the Bug 2 docs commit).
+
+## 2026-05-13 — Workflow A polish: orphan removal + WP copy fix + dup-Telegram defer
+
+Third of three cleanup batches today. Workflow A edits target
+`Qf39NEOEgz2W0uls`; two changes land in one PUT, plus an evidence-based
+deferral on the third planned item.
+
+### Change 1 — Orphaned clipper-polling subgraph removed
+
+Five nodes removed:
+
+- `Wait 10s Clip Poll` (wait, 10s)
+- `Poll Clip Status` (httpRequest GET clipper-worker)
+- `Clip Done?` (IF check on `clip_jobs.status == 'complete'`)
+- `Wait 10s Retry` (wait, 10s — loops back to Poll)
+- `Save Clip URLs` (httpRequest PATCH PostgREST)
+
+Plus the dead edge `Save Clip URLs → Merge Before Notify (index 1)`,
+which evaporates with `Save Clip URLs`. The subgraph was internally
+connected (Wait Initial → Poll → Clip Done? → Save URLs / Wait Retry
+→ Poll) but unreachable from the trigger: `Wait 10s Clip Poll` had
+no incoming edge from outside the subgraph. Disabled since at least
+the 2026-05-11 PUT (`9fbdb5b`) that fanned clipper outcome handling
+out to Workflow B (`qeE2hCSFoB6fU926`).
+
+`Merge Before Notify` index 1 was always fed by `Patch: Clipper
+Pending` (the live A→B handoff). After removal:
+
+```
+Merge Before Notify <- ['Patch: Clipper Pending', 'Upload to YouTube']
+```
+
+(was `<- ['Patch: Clipper Pending', 'Save Clip URLs', 'Upload to
+YouTube']` pre-edit — the `Save Clip URLs` edge was the dead one).
+
+Node count: 45 → 40.
+
+### Change 2 — "Published to WordPress" → "WordPress draft created"
+
+`Notify Complete` Telegram template, single literal substring
+replacement inside the `jsonBody`:
+
+```diff
+- 📝 Blog post: Published to WordPress
++ 📝 Blog post: WordPress draft created
+```
+
+(The emoji is stored as the literal `📝` escape sequence
+because the `jsonBody` is a `={{ JSON.stringify({...}) }}` template
+evaluated by n8n's JS engine at runtime — substring match used
+ASCII-only fragment to dodge the encoding complexity.)
+
+`csj.wordpress_status` is genuinely `draft` at Workflow A completion
+(per the recon migration `2026_05_11_workflow_c_csj_publish_columns.sql`
+audit notes); Workflow C does the publish flip. The old copy was
+misleading.
+
+### Change 3 — duplicate "Workflow A Complete" Telegram — DEFERRED with evidence
+
+Yesterday's Ep 68 entry reported Tyson received TWO identical
+"Workflow A Complete" Telegram messages for a single execution.
+Tyson confirmed during today's recon that the messages were
+identical content (not a `Notify Start` + `Notify Complete` pair
+conflation).
+
+**Static graph recon (Workflow A):** only one `Notify Complete`
+node, with exactly one incoming edge from `Update Job Record`. The
+only other Telegram-sending node is `Notify Start` (different
+content). No structural duplicate exists.
+
+**Cross-workflow check:** Workflow B has three Telegram nodes
+(`Telegram: Clips Ready`, `Telegram: Clipper Failed`, `Telegram:
+Clipper Timeout`) but none send "Workflow A Complete" text.
+
+**n8n executions API audit:** queried
+`/api/v1/executions?workflowId=Qf39NEOEgz2W0uls&limit=30` and
+filtered to the 2026-05-12 19:00–20:00 UTC window. Result:
+
+```
+exec 937426:
+  startedAt:       2026-05-12T19:49:36.138Z
+  stoppedAt:       2026-05-12T19:53:42.227Z
+  finished:        true
+  status:          success
+  mode:            webhook
+  retryOf:         null
+  retrySuccessId:  null
+```
+
+One execution, no retry. Fetched the full `runData` with
+`includeData=true`:
+
+```
+Notify Start:    fired 1 time(s)
+Notify Complete: fired 1 time(s)
+```
+
+(The 3 nodes that fired multiple times are `Poll AssemblyAI` (4×),
+`Check Transcript Status` (4×), `Wait 15s Retry` (3×) — the
+transcript polling loop, which is expected.)
+
+**Conclusion:** n8n executed `Notify Complete` exactly once. The
+duplicate at Tyson's end is at the Telegram delivery layer (Telegram
+bot infrastructure, Telegram client, or possibly a Cloudflare 524
+retry pattern). NOT in n8n. There is no static-graph fix target.
+
+**Defer:** flagged as a MEDIUM followup for runtime-layer
+investigation. If it recurs, the diagnostic path is to capture the
+two received message_ids + timestamps + the n8n exec_id, then check
+whether n8n received a Telegram error response for the original
+send (HTTP 5xx might trigger n8n's `continueOnFail=true` semantics)
+and whether the two Tyson-side messages have the SAME or DIFFERENT
+Telegram message_id (same ID → Telegram client double-rendered;
+different IDs → bot retried or n8n actually fired twice somehow,
+contradicting today's runData evidence).
+
+### Patch + verification
+
+- Backup: `/tmp/workflow_a_b3_backup_1778667511.json` (52,534 B).
+- Edit applied via `/tmp/wf-a-b3-edit.py` (idempotent Python; aborts
+  on topology drift — pre-edit invariants pinned on all 5 orphan
+  names + the literal "Blog post: Published to WordPress" copy
+  substring). First run aborted on a fragment-match mismatch (I had
+  included the literal emoji in my pre-edit invariant, but the
+  jsonBody stores it as an escape sequence) — script edited to drop
+  the emoji prefix from the invariant, second run succeeded.
+- Diff: +6/-188 (5 node definitions removed + their connection
+  block entries + 1 single-string edit on Notify Complete).
+- `_tools/b_common.py` validators: all green (`orphans=[]`,
+  `brace_collapse=[]`, `start_heartbeats_serial=[]`). Note that
+  `validate_no_orphans` is based on "no edges at all" — the 5
+  removed nodes were "referenced" (had internal edges) so the
+  validator did NOT flag them. The unreachable-from-trigger
+  invariant isn't covered by the validator; recon was needed to
+  identify them as orphans.
+- PUT body trimmed to `{name, nodes, connections, settings}`
+  (35,068 B); `settings.availableInMCP=true` preserved.
+- `PUT https://webhook.flowos.tech/api/v1/workflows/Qf39NEOEgz2W0uls`
+  → **HTTP 200**, `updatedAt: 2026-05-13T10:20:23.690Z`, nodeCount
+  45 → 40.
+- Independent GET-back, 8/8 checks PASS:
+  1. None of the 5 orphan names present on remote
+  2. nodeCount = 40 (expected 40)
+  3. `active=true` preserved
+  4. `settings.availableInMCP=true` preserved
+  5. updatedAt advanced to today's PUT timestamp
+  6. literal "Published to WordPress" absent from Notify Complete body
+  7. literal "WordPress draft created" present
+  8. `Merge Before Notify` incoming sources are exactly
+     `[Patch: Clipper Pending, Upload to YouTube]` — dead
+     `Save Clip URLs` edge gone
+
+### Followups (HIGH → LOW)
+
+**HIGH:** none.
+
+**MEDIUM:**
+
+- **Investigate duplicate Telegram on next recurrence** — collect
+  the two received message_ids, the n8n exec_id, and the bot's
+  error-log around the same window. If different message_ids:
+  Telegram-side retry. If same message_id: Tyson's Telegram client
+  rendered the same message twice. Either way, fix lives outside
+  n8n.
+- N8N_WORKFLOW_INDEX.md needs a second Workflow A nodeCount bump
+  (45 → 40 from this commit) in the next index refresh, plus a
+  Workflow C bump (22 → 24 from B2). Out of scope for B3.
+- (Carried) Add a clipper face-detection end-to-end fixture.
+- (Carried) `tests/clipper/` discovery polish (Python 3.12 vs 3.13).
+- (Carried) Workflow A `responseMode` → `onReceived`.
+- (Carried) Workflow A Substack `draft_id` write-back.
+- (Carried) Blotato → LinkedIn URL lookup.
+
+**LOW:**
+
+- (Carried) 405 on `/api/v1/workflows/{id}/execute` on this n8n.
+
+### Status
+
+Workflow A is down to 40 nodes, all reachable from the trigger.
+The user-facing Telegram now accurately reflects WP draft state.
+The clipper-polling dead code is gone (clipper outcome handling
+lives entirely in Workflow B). The duplicate-Telegram concern is
+proven not to be in n8n's layer.
+
+verified: live PUT to webhook.flowos.tech/api/v1/workflows/Qf39NEOEgz2W0uls
+returned HTTP 200; 8/8 static checks PASS on the GET-back; n8n
+executions API audit confirmed Notify Complete fires exactly once
+per Workflow A execution (proven against the actual Ep 68 exec
+937426); commit `5cd037c` shipped the workflow JSON; `Last updated`
+header unchanged at 13 May 2026 (set earlier today in the Bug 2
+docs commit).
