@@ -180,6 +180,20 @@ Hard cap of 4 on-demand skills per prompt. If more match, top 4 by keyword densi
 
 **Phase 4 task:** audit all 21 existing skill files. Decide always-on vs on-demand vs archive. Update `community-manager.md` to reference GHL Communities (not Skool). Symlink discipline in `src/agents/skills/`.
 
+**Skill authoring checklist — apply before any skill content lands:**
+
+1. **Prompt-state vs tool-state distinction.** Does this skill tell Charlie to use a tool to answer a question whose answer is already in his bootstrap-loaded state? If yes — rewrite. Charlie should answer from prompt for `FLOW_OS_STATE.md`, build log, specialists registry, and probe results. Tools are for live external state only.
+
+2. **Self-runtime-observation.** Does this skill tell Charlie to run diagnostic commands against his own quantumclaw runtime (pm2 commands, shell_exec for self-introspection)? If yes — rewrite. Charlie cannot reliably observe himself from inside himself. Hard rule in `lanes.md`.
+
+3. **Derived numbers and time spans.** Does this skill contain any rate claim (X per minute, Y per hour, Z restarts in N seconds) that doesn't have a time series behind it? If yes — rewrite to snapshot only, or remove. The "70 restarts in 2 min" fabrication class.
+
+4. **Cross-doc consistency.** Does this skill's `category` (always-on vs on-demand vs specialist-scope vs archive) match what `CHARLIE_OVERHAUL.md` Component 3 and `KEYWORD_REFERENCE.md` say? If mismatch — resolve in design, not in skill file.
+
+5. **Bootstrap layer impact.** Always-on skills load every prompt. Is this skill's content ~1-3 KB? If significantly larger, can it be split or moved to on-demand?
+
+This checklist applies to authoring and to skill-content review. Slice 2b hotfix (2026-05-08) demonstrated the cost of skipping it.
+
 ### Component 4 — Tool surface overhaul
 
 **Purpose:** Encode lane discipline at the tool level. Closes failure patterns D (phantom tool use) and E (lane violations) structurally.
