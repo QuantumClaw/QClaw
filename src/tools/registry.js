@@ -16,6 +16,66 @@
 
 import { MCPClient } from './mcp-client.js';
 import { log } from '../core/logger.js';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, statSync } from 'fs';
+import { dirname, join } from 'path';
+import { homedir } from 'os';
+
+/**
+ * Per-preset scope map. Domain tools (stripe, ghl) scope to the build/
+ * operator agent currently consuming them; utility presets are 'shared'.
+ * Slice 3b will couple this to per-agent skill loading; Slice 6 narrows
+ * Stripe/GHL further to per-business-unit operators.
+ */
+const PRESET_SCOPE_MAP = {
+  stripe: ['charlie'],
+  ghl: ['charlie'],
+};
+
+/**
+ * Resolve the absolute path for the tool-call.log file.
+ * Tests can override via QCLAW_TOOL_CALL_LOG_PATH; otherwise it lives
+ * alongside audit.db in ~/.quantumclaw/.
+ */
+function _toolCallLogPath() {
+  return process.env.QCLAW_TOOL_CALL_LOG_PATH
+    || join(homedir(), '.quantumclaw', 'tool-call.log');
+}
+
+/**
+ * Append one JSON Lines record to tool-call.log. Mode-locked to 0600 on
+ * first write. Best-effort: failures are warned and swallowed so they
+ * never block tool registration.
+ *
+ * Slice 3a scope: only emits 'registration' events. Slice 3b extends to
+ * routing decisions; Slice 3c covers per-call audit.
+ */
+function _appendToolCallLog(record) {
+  try {
+    const path = _toolCallLogPath();
+    const dir = dirname(path);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const line = JSON.stringify({ ts: new Date().toISOString(), ...record }) + '\n';
+    const existed = existsSync(path);
+    appendFileSync(path, line);
+    if (!existed) {
+      try { chmodSync(path, 0o600); } catch { /* non-fatal */ }
+    }
+  } catch (err) {
+    log.warn(`[ToolRegistry] tool-call.log write failed: ${err.message}`);
+  }
+}
+
+/**
+ * Validate a scope field. Throws on missing/invalid input. Accepts
+ * either the literal 'shared' or a non-empty array of agent names.
+ */
+function _validateScope(scope, where) {
+  if (scope === 'shared') return scope;
+  if (Array.isArray(scope) && scope.length > 0 && scope.every(s => typeof s === 'string' && s.length > 0)) {
+    return scope;
+  }
+  throw new Error(`[ToolRegistry] ${where}: scope must be 'shared' or a non-empty array of agent names, got ${JSON.stringify(scope)}`);
+}
 
 /**
  * Pre-configured MCP servers.
@@ -724,13 +784,13 @@ export class ToolRegistry {
   listTools() {
     const result = [];
     for (const [name, handler] of this._builtins) {
-      result.push({ name, description: handler.description, source: 'built-in' });
+      result.push({ name, description: handler.description, source: 'built-in', scope: handler.scope });
     }
-    for (const [, { tool }] of this._tools) {
-      result.push({ name: `${tool.server}__${tool.name}`, description: tool.description, source: `mcp:${tool.server}` });
+    for (const [fullName, { tool, scope }] of this._tools) {
+      result.push({ name: fullName, description: tool.description, source: `mcp:${tool.server || fullName.split('__')[0]}`, scope });
     }
-    for (const [name, { preset, toolDef }] of this._apiTools) {
-      result.push({ name, description: toolDef.description, source: `api:${preset.name}` });
+    for (const [name, { preset, toolDef, scope }] of this._apiTools) {
+      result.push({ name, description: toolDef.description, source: `api:${preset.name}`, scope });
     }
     return result;
   }
@@ -785,32 +845,48 @@ export class ToolRegistry {
     const client = new MCPClient({ name, ...serverConf });
     const tools = await client.connect();
     this._clients.set(name, client);
+    const scope = _validateScope(PRESET_SCOPE_MAP[name] || 'shared', `mcp ${name}`);
     for (const tool of tools) {
-      this._tools.set(`${name}__${tool.name}`, { tool, client });
+      const fullName = `${name}__${tool.name}`;
+      this._tools.set(fullName, { tool, client, scope });
+      _appendToolCallLog({
+        event: 'registration',
+        source: 'mcp',
+        tool: fullName,
+        scope,
+        server: name,
+      });
     }
   }
 
   /**
    * Register a skill-based tool from an agent's skill definition.
-   * Supports both:
-   *   registerSkillTool(agentName, skillName, parsedSkill, toolDef)
-   * and legacy:
-   *   registerSkillTool(skillName, parsedSkill, toolDef)
+   *
+   * Slice 3a: 4-arg form is mandatory. The legacy 3-arg shim silently
+   * scoped every skill tool to 'shared', which contradicted the
+   * per-agent design in CHARLIE_OVERHAUL.md Component 4. Callers must
+   * pass the owning agent name explicitly.
    */
   registerSkillTool(agentName, skillName, parsedSkill, toolDef) {
-    // Backward compatibility with older 3-arg call sites.
-    if (toolDef === undefined) {
-      toolDef = parsedSkill;
-      parsedSkill = skillName;
-      skillName = agentName;
-      agentName = parsedSkill?.agentName || 'shared';
+    if (
+      typeof agentName !== 'string' || !agentName ||
+      typeof skillName !== 'string' || !skillName ||
+      typeof parsedSkill !== 'object' || parsedSkill === null ||
+      typeof toolDef !== 'object' || toolDef === null
+    ) {
+      throw new Error(
+        '[ToolRegistry] registerSkillTool requires the 4-arg form ' +
+        '(agentName, skillName, parsedSkill, toolDef). 3-arg call sites ' +
+        'were removed in Slice 3a — pass the owning agent name explicitly.'
+      );
     }
 
-    if (!toolDef?.name || !parsedSkill?.baseUrl) {
+    if (!toolDef.name || !parsedSkill.baseUrl) {
       return;
     }
 
     const fullName = `${agentName}__${skillName}__${toolDef.name}`;
+    const scope = _validateScope([agentName], `skill tool ${fullName}`);
 
     const preset = {
       name: `skill:${skillName}`,
@@ -823,17 +899,37 @@ export class ToolRegistry {
     const entry = {
       preset,
       toolDef,
-      skill: parsedSkill
+      skill: parsedSkill,
+      scope,
     };
 
     this._apiTools.set(fullName, entry);
-    console.log(`[ToolRegistry] Registered skill tool: ${fullName}`);
+    _appendToolCallLog({
+      event: 'registration',
+      source: 'skill',
+      agent: agentName,
+      tool: fullName,
+      scope,
+      skill: skillName,
+    });
+    log.debug(`[ToolRegistry] Registered skill tool: ${fullName} (scope: ${JSON.stringify(scope)})`);
   }
 
   async _registerAPITools(presetName, preset) {
+    const scope = _validateScope(
+      PRESET_SCOPE_MAP[presetName] || 'shared',
+      `preset ${presetName}`
+    );
     for (const toolDef of (preset.tools || [])) {
       const fullName = `${presetName}__${toolDef.name}`;
-      this._apiTools.set(fullName, { preset, toolDef });
+      this._apiTools.set(fullName, { preset, toolDef, scope });
+      _appendToolCallLog({
+        event: 'registration',
+        source: 'preset',
+        tool: fullName,
+        scope,
+        preset: presetName,
+      });
     }
   }
 
@@ -1203,9 +1299,45 @@ export class ToolRegistry {
     }
   }
 
+  /**
+   * Public registration API for built-in tools.
+   *
+   * Replaces the Slice-2-era pattern of mutating ToolRegistry._builtins
+   * from index.js. Every entry must carry an explicit scope ('shared' or
+   * a non-empty array of agent names) — the shared__ rule lives in
+   * CHARLIE_OVERHAUL.md Component 4.
+   */
+  registerBuiltin(name, definition) {
+    if (typeof name !== 'string' || !name) {
+      throw new Error('[ToolRegistry] registerBuiltin: name must be a non-empty string');
+    }
+    if (!definition || typeof definition !== 'object') {
+      throw new Error(`[ToolRegistry] registerBuiltin(${name}): definition is required`);
+    }
+    if (typeof definition.fn !== 'function') {
+      throw new Error(`[ToolRegistry] registerBuiltin(${name}): definition.fn must be a function`);
+    }
+    const scope = _validateScope(definition.scope, `builtin ${name}`);
+    const entry = {
+      description: definition.description || name,
+      inputSchema: definition.inputSchema || { type: 'object', properties: {} },
+      fn: definition.fn,
+      scope,
+    };
+    if (definition.longRunning) entry.longRunning = true;
+    this._builtins.set(name, entry);
+    _appendToolCallLog({
+      event: 'registration',
+      source: 'builtin',
+      tool: name,
+      scope,
+    });
+  }
+
   _registerBuiltins() {
     // Current time
-    this._builtins.set('get_current_time', {
+    this.registerBuiltin('get_current_time', {
+      scope: 'shared',
       description: 'Get the current date and time',
       inputSchema: { type: 'object', properties: {
         timezone: { type: 'string', description: 'IANA timezone (e.g. Europe/London). Default: UTC' }
@@ -1218,7 +1350,8 @@ export class ToolRegistry {
     });
 
     // Calculator
-    this._builtins.set('calculate', {
+    this.registerBuiltin('calculate', {
+      scope: 'shared',
       description: 'Evaluate a mathematical expression',
       inputSchema: { type: 'object', properties: {
         expression: { type: 'string', description: 'Math expression (e.g. "2 * (3 + 4)")' }
@@ -1236,7 +1369,8 @@ export class ToolRegistry {
     });
 
     // HTTP fetch (simple)
-    this._builtins.set('web_fetch', {
+    this.registerBuiltin('web_fetch', {
+      scope: 'shared',
       description: 'Fetch the text content of a URL',
       inputSchema: { type: 'object', properties: {
         url: { type: 'string', description: 'URL to fetch' }
@@ -1258,7 +1392,8 @@ export class ToolRegistry {
     });
 
     // Knowledge graph query (uses the local graph)
-    this._builtins.set('search_knowledge', {
+    this.registerBuiltin('search_knowledge', {
+      scope: 'shared',
       description: 'Search the knowledge graph for entities, relationships, and stored memories',
       inputSchema: { type: 'object', properties: {
         query: { type: 'string', description: 'Natural language search query' }

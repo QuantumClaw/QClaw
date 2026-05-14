@@ -231,9 +231,9 @@ export class Agent {
           if (parsed) {
             const tools = skillToTools(parsed);
             for (const tool of tools) {
-              this.services.toolRegistry.registerSkillTool(skill.name, parsed, tool);
+              this.services.toolRegistry.registerSkillTool(this.name, skill.name, parsed, tool);
             }
-            log.debug(`Skill [${skill.name}]: registered ${tools.length} tools`);
+            log.debug(`Skill [${skill.name}]: registered ${tools.length} tools (scope: ${this.name})`);
           }
         }
       }

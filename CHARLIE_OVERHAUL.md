@@ -249,13 +249,21 @@ This checklist applies to authoring and to skill-content review. Slice 2b hotfix
 **Tool registration interface:**
 {
 name, description, parameters,
-scope: [agent_name, ...],
+scope: 'shared' | [agent_name, ...],
 audit_level: 'log' | 'log_and_alert' | 'require_approval',
 rate_limit: {calls_per_minute, calls_per_hour},
 handler
 }
 
-Out-of-scope tool calls return structured `{error: 'out_of_scope', suggestion: 'delegate to <correct_agent>'}`.
+**`shared__` rule (Slice 3a anchor):** a tool is registered with `scope: 'shared'` only when every agent in Charlie + specialists would legitimately need it — utility (`get_current_time`, `calculate`), memory (`search_knowledge`), read-only fetch (`web_fetch`), shared infrastructure (`shell_exec`). Domain tools (`trading_*`, `ghl_*`, `stripe_*`, `content_studio_*`, every skill-defined HTTP tool) carry `scope: [agent_name, ...]`. Skill tools are scoped to the agent whose `skills/` directory they were loaded from. Scope is metadata in Slice 3a — `getToolDefinitions()` does not filter on it yet; Slice 3b couples scope to skill loading and Slice 3c enforces at call time.
+
+**Tool registration surface (Slice 3a):**
+- `ToolRegistry.registerBuiltin(name, definition)` — public API for built-in tools. Replaces the Slice-2-era pattern of `index.js` reaching into `_builtins.set()`. Every definition must carry an explicit `scope`.
+- `ToolRegistry.registerSkillTool(agentName, skillName, parsedSkill, toolDef)` — 4-arg form is mandatory. The legacy 3-arg shim (silently defaulting to `'shared'`) was removed.
+- Preset API tools and MCP tools carry scope assigned from `PRESET_SCOPE_MAP` in `src/tools/registry.js`; default is `'shared'` if not listed.
+- Every registration call emits one `{event:'registration',source,tool,scope,...}` JSONL record to `tool-call.log` (see `LOCATIONS.md` Operational layer). Slice 3b extends the same log to routing decisions; Slice 3c covers per-call execution.
+
+Out-of-scope tool calls return structured `{error: 'out_of_scope', suggestion: 'delegate to <correct_agent>'}` (deferred to Slice 3b, when scope is actually enforced at call time).
 
 ### Component 5 — Verification gates
 

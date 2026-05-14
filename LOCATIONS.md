@@ -55,6 +55,7 @@ files and are still mutable via the dashboard. Reconciliation TBD.
 - Gate log: `~/.quantumclaw/gate.log` (file-based, will surface in QClaw dashboard post-Phase-5)
 - Skill load log: `~/.quantumclaw/skill-load.log` (file-based, JSON Lines, mode 0600, written by `src/agents/skill-loader.js` from Slice 2b — one entry per `loadSkills()` call. Supabase migration deferred post-Phase-4.) `userId` field semantics: Telegram-sourced calls carry the Telegram user id; non-Telegram callers (scheduled heartbeat tasks in `src/core/heartbeat.js`, CLI `agent.process()` invocations in `src/cli/index.js`) pass no userId, which surfaces as the string `"null"` in the log — by design, since these calls have no Telegram user. Identified Slice 2c Task 6.
 - Claude Code dispatch log: Supabase table `claude_code_dispatches` (Phase 4 Slice 5)
+- Tool registration / call log: `~/.quantumclaw/tool-call.log` (file-based, JSON Lines, mode 0600, written by `src/tools/registry.js` from Slice 3a — one entry per registration event with `{ts, event, source, tool, scope, ...}`). Tests can override via `QCLAW_TOOL_CALL_LOG_PATH`. Slice 3b extends the same log to routing decisions; Slice 3c covers per-call execution.
 
 ## Capability layer
 
