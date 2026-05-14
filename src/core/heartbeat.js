@@ -332,6 +332,12 @@ export class Heartbeat {
     // Pick a question — contextual if we have recent memory, random otherwise
     let question;
     try {
+      // Intentionally unfiltered (cross-channel). Auto-learn fires
+      // outside any specific user/channel context — its job is to
+      // surface a contextual question from whatever Charlie has been
+      // talking about recently across the whole agent surface. The
+      // H1 channel/userId filter at registry.js:_processNonReflex
+      // does not apply here. (Audit ref: /tmp/memory_drop_diagnostic_audit.md)
       const recent = this.memory.getHistory(agent.name, 10);
       const recentText = recent.map(m => m.content).join(' ').slice(0, 500);
 

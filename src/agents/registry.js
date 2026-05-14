@@ -303,7 +303,14 @@ export class Agent {
     const availableForHistory = MAX_CONTEXT_CHARS - systemChars - messageChars;
 
     const historyLimit = knowledgeContext.length > 100 ? 8 : 20;
-    const fullHistory = memory.getHistory(this.name, historyLimit);
+    // H1 fix (2026-05-14): scope history to the (channel, userId) of the
+    // current message so heartbeat / CLI / dashboard writes can't pollute
+    // the Telegram conversation a user is mid-flight in. Pre-fix this was
+    // an unfiltered agent-level fetch; see /tmp/memory_drop_diagnostic_audit.md.
+    const fullHistory = memory.getHistory(this.name, historyLimit, {
+      channel: context?.channel,
+      userId: context?.userId,
+    });
     const truncatedHistory = this._truncateHistory(fullHistory, availableForHistory);
 
     // Build user message — multimodal if images provided
