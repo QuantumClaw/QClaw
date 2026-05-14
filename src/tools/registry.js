@@ -595,9 +595,25 @@ export class ToolRegistry {
     this.config = config;
     this.secrets = secrets;
     this._clients = new Map();   // name -> MCPClient
-    this._tools = new Map();     // toolName -> { tool, client }
-    this._apiTools = new Map();  // toolName -> { preset, toolDef }
-    this._builtins = new Map();  // toolName -> handler function
+    this._tools = new Map();     // toolName -> { tool, client, scope }
+    this._apiTools = new Map();  // toolName -> { preset, toolDef, scope }
+    this._builtins = new Map();  // toolName -> { description, inputSchema, fn, scope }
+
+    // Slice 3b: per-request active-tool gate. When null, every
+    // registered tool is callable (legacy behaviour for boot-time
+    // callers, CLI, dashboard). When a Set, only tools whose names
+    // appear in the set are returned by getToolDefinitions() and
+    // executeTool() returns a structured out_of_scope error for any
+    // tool name outside the set. The set is computed per message by
+    // registerForRequest(skillLoadResult, agentName) from
+    // (a) every 'shared' scope tool, (b) every tool whose owning
+    // skill is in the message's loaded skill set — explicit via the
+    // skill's frontmatter `tools:` array, implicit via the
+    // <agent>__<skill>__* and <skill>__* prefix conventions.
+    this._activeForRequest = null;
+    // Tools the current request explicitly activated (subset of
+    // _activeForRequest), used for tool-call.log telemetry only.
+    this._lastActivated = [];
   }
 
   /**
@@ -634,23 +650,32 @@ export class ToolRegistry {
 
   /**
    * Get all tools formatted for LLM tool calling (Anthropic/OpenAI format)
+   *
+   * Slice 3b: when an active-set is in place (registerForRequest called),
+   * filter the output to that set. When no active-set is set
+   * (boot-time, dashboard /api/tools, CLI), all registered tools are
+   * returned — legacy behaviour preserved.
    */
   getToolDefinitions(format = 'anthropic') {
     const tools = [];
+    const active = this._activeForRequest;
+    const isActive = (name) => active === null || active.has(name);
 
     // Built-in tools
     for (const [name, handler] of this._builtins) {
+      if (!isActive(name)) continue;
       tools.push(this._formatTool(name, handler.description, handler.inputSchema, format));
     }
 
     // MCP tools
-    for (const [name, { tool }] of this._tools) {
-      const fullName = `${tool.server}__${tool.name}`;
+    for (const [fullName, { tool }] of this._tools) {
+      if (!isActive(fullName)) continue;
       tools.push(this._formatTool(fullName, tool.description, tool.inputSchema, format));
     }
 
     // API tools
     for (const [name, { toolDef }] of this._apiTools) {
+      if (!isActive(name)) continue;
       tools.push(this._formatTool(name, toolDef.description, toolDef.inputSchema, format));
     }
 
@@ -659,8 +684,20 @@ export class ToolRegistry {
 
   /**
    * Execute a tool call from the LLM
+   *
+   * Slice 3b: when an active-set is in place, tool calls whose name
+   * isn't in the set return a structured {error: 'out_of_scope', ...}
+   * shape rather than throwing. The shape is JSON-stringified by the
+   * executor and surfaces back to the LLM as a tool result, so the
+   * model can correct course (delegate, or rephrase to trigger the
+   * skill).
    */
   async executeTool(toolName, args = {}) {
+    const active = this._activeForRequest;
+    if (active !== null && !active.has(toolName)) {
+      return this._outOfScope(toolName);
+    }
+
     // Built-in tool?
     if (this._builtins.has(toolName)) {
       const handler = this._builtins.get(toolName);
@@ -683,6 +720,135 @@ export class ToolRegistry {
     }
 
     throw new Error(`Unknown tool: ${toolName}`);
+  }
+
+  /**
+   * Compose the structured out-of-scope response. Surfaces a hint
+   * about which skill or agent owns the tool, when derivable from the
+   * registration record.
+   */
+  _outOfScope(toolName) {
+    let suggestion = `Tool "${toolName}" is not available for the current message.`;
+    const owner = this._lookupOwner(toolName);
+    if (owner.kind === 'unknown') {
+      suggestion = `Tool "${toolName}" does not exist. Check the tool list for available tools, or delegate via claude_code_dispatch if you need a tool that hasn't been built yet.`;
+    } else if (owner.kind === 'skill') {
+      suggestion = `Tool "${toolName}" is owned by the "${owner.skill}" skill, which is not routed for this message. Mention one of its keywords (${owner.keywords_hint}) to load it, or delegate.`;
+    } else if (owner.kind === 'agent') {
+      suggestion = `Tool "${toolName}" is scoped to agent(s) ${owner.scope.join(', ')}. Delegate to ${owner.scope[0]}.`;
+    }
+    return {
+      error: 'out_of_scope',
+      tool: toolName,
+      suggestion,
+    };
+  }
+
+  /**
+   * Derive an owner hint for a tool name. Used only to build out_of_scope
+   * suggestions — best-effort and side-effect-free.
+   */
+  _lookupOwner(toolName) {
+    const entry = this._builtins.get(toolName)
+      || this._apiTools.get(toolName)
+      || this._tools.get(toolName);
+    if (!entry) return { kind: 'unknown' };
+    const scope = entry.scope;
+    // Infer owning skill from the name. Tool names look like:
+    //   <agent>__<skill>__<verb_path>  (skill HTTP)
+    //   <skill>__<verb>                (preset, when preset name matches a skill)
+    const parts = toolName.split('__');
+    if (parts.length >= 3) {
+      return { kind: 'skill', skill: parts[1], scope, keywords_hint: 'see the skill keywords' };
+    }
+    if (parts.length === 2) {
+      return { kind: 'skill', skill: parts[0], scope, keywords_hint: 'see the skill keywords' };
+    }
+    if (Array.isArray(scope)) {
+      return { kind: 'agent', scope };
+    }
+    return { kind: 'unknown' };
+  }
+
+  /**
+   * Slice 3b — Per-request active-tool gate.
+   *
+   * Computes the set of tool names callable for the current message
+   * from (a) every 'shared' scope tool, (b) every tool whose owning
+   * skill is in the loaded skill set. Sets `_activeForRequest` to that
+   * set, emits one tool-call.log record per skill-coupled tool
+   * activated this turn, and returns a cleanup handle that resets the
+   * gate. Callers MUST invoke the cleanup handle (try/finally) so
+   * boot-time tool listing continues to work.
+   *
+   * @param {Object} skillLoadResult  output of loadSkills()
+   * @param {string} agentName        agent driving this request
+   * @returns {() => void}            cleanup handle
+   */
+  registerForRequest(skillLoadResult, agentName) {
+    if (typeof agentName !== 'string' || !agentName) {
+      throw new Error('[ToolRegistry] registerForRequest: agentName required');
+    }
+    if (!skillLoadResult || typeof skillLoadResult !== 'object') {
+      throw new Error('[ToolRegistry] registerForRequest: skillLoadResult required');
+    }
+
+    const declared = new Set([
+      ...(skillLoadResult.tools?.always_on || []),
+      ...(skillLoadResult.tools?.on_demand || []),
+    ]);
+    const skillNames = new Set([
+      ...(skillLoadResult.tools?.always_on_skill_names || []),
+      ...(skillLoadResult.tools?.on_demand_skill_names || []),
+    ]);
+
+    const active = new Set();
+    const activatedBySkill = [];
+
+    const considerTool = (toolName, scope) => {
+      if (scope === 'shared') {
+        active.add(toolName);
+        return;
+      }
+      if (Array.isArray(scope) && !scope.includes(agentName)) {
+        return;
+      }
+      if (declared.has(toolName)) {
+        active.add(toolName);
+        activatedBySkill.push(toolName);
+        return;
+      }
+      // Implicit prefix: <agent>__<skill>__... or <skill>__...
+      const parts = toolName.split('__');
+      const skillCandidate = parts.length >= 3 && parts[0] === agentName
+        ? parts[1]
+        : (parts.length >= 2 ? parts[0] : null);
+      if (skillCandidate && skillNames.has(skillCandidate)) {
+        active.add(toolName);
+        activatedBySkill.push(toolName);
+      }
+    };
+
+    for (const [name, entry] of this._builtins) considerTool(name, entry.scope);
+    for (const [name, entry] of this._apiTools) considerTool(name, entry.scope);
+    for (const [name, entry] of this._tools) considerTool(name, entry.scope);
+
+    this._activeForRequest = active;
+    this._lastActivated = activatedBySkill;
+
+    for (const toolName of activatedBySkill) {
+      _appendToolCallLog({
+        event: 'activation',
+        source: 'on-demand-skill',
+        agent: agentName,
+        tool: toolName,
+      });
+    }
+
+    return () => {
+      this._activeForRequest = null;
+      this._lastActivated = [];
+    };
   }
 
   /**
