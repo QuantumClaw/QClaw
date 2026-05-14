@@ -226,15 +226,27 @@ async function _runBootstrap(sessionContext, cacheKey) {
  * registry._buildSystemPrompt → loadSkills via context.bootstrap so
  * that 7 markdown files don't re-read on every message inside the
  * 30-min cache window.
+ *
+ * Slice 3b extension: tool-ownership rollup from the same loadSkills
+ * call is captured on bootstrap.skills.always_on_tools so the
+ * ToolRegistry per-request gate can reuse the always-on portion of
+ * the active set without re-reading the always-on frontmatter every
+ * message inside the 30-min cache window.
  */
 async function _layer6Skills(agentName, userId, warnings) {
   try {
     const { loadSkills } = await import('./skill-loader.js');
     const result = await loadSkills({ agent: agentName, message: '', userId });
-    return { always_on: result.always_on };
+    return {
+      always_on: result.always_on,
+      always_on_tools: {
+        tools: result.tools?.always_on || [],
+        skill_names: result.tools?.always_on_skill_names || [],
+      },
+    };
   } catch (err) {
     warnings.push(`skills layer failed: ${err.message}`);
-    return { always_on: [] };
+    return { always_on: [], always_on_tools: { tools: [], skill_names: [] } };
   }
 }
 
