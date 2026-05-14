@@ -3,6 +3,7 @@ name: ghl
 category: on-demand
 surface: both
 keywords: [ghl, contacts, opportunities, conversations]
+tools: [ghl__search_contacts, ghl__get_contact, ghl__list_opportunities, ghl__list_pipelines]
 description: GoHighLevel CRM HTTP surface — contacts, opportunities, tasks, notes, conversation messages
 ---
 

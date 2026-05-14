@@ -3,6 +3,7 @@ name: stripe
 category: on-demand
 surface: both
 keywords: [stripe, customer, invoice, payment]
+tools: [stripe__list_payments, stripe__list_customers, stripe__list_invoices]
 description: Stripe billing read surface — customers, invoices, payment intents, subscriptions
 ---
 

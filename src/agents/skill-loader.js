@@ -54,6 +54,15 @@ const TOKEN_CHARS_PER_TOKEN = 4; // standard rough estimate
  * @property {Array<{name, content, frontmatter, matched_keywords, density}>} on_demand
  * @property {Array<{name, reason, matched_keywords?, density?}>} considered_but_dropped
  * @property {number} total_token_estimate
+ * @property {{always_on: string[], on_demand: string[], always_on_skill_names: string[], on_demand_skill_names: string[]}} tools
+ *   Slice 3b: tool-ownership rollup. `always_on` and `on_demand` are the
+ *   explicit tool-name lists collected from each loaded skill's
+ *   frontmatter `tools:` field. `always_on_skill_names` and
+ *   `on_demand_skill_names` carry the skill names themselves so the
+ *   ToolRegistry can apply skill-prefix-implicit ownership (any tool
+ *   named `<agent>__<skill>__*` or `<skill>__*` is implicitly owned by
+ *   that skill). The registry combines explicit + implicit + 'shared'
+ *   scope to compute the per-request active set.
  */
 
 /**
@@ -119,6 +128,7 @@ function readAllSkills() {
       category: fm.category,
       surface: fm.surface,
       keywords: Array.isArray(fm.keywords) ? fm.keywords : [],
+      tools: Array.isArray(fm.tools) ? fm.tools : [],
       description: fm.description || '',
       content,
       filename: file,
@@ -175,7 +185,7 @@ export async function loadSkills(context = {}) {
     : alwaysOnSkills.map(s => ({
         name: s.name,
         content: s.content,
-        frontmatter: { category: s.category, surface: s.surface, description: s.description },
+        frontmatter: { category: s.category, surface: s.surface, description: s.description, tools: s.tools },
       }));
 
   // 4. Route on-demand candidates against message.
@@ -192,7 +202,7 @@ export async function loadSkills(context = {}) {
     return {
       name: m.name,
       content: skill.content,
-      frontmatter: { category: skill.category, surface: skill.surface, description: skill.description },
+      frontmatter: { category: skill.category, surface: skill.surface, description: skill.description, tools: skill.tools },
       matched_keywords: m.matched_keywords,
       density: m.density,
     };
@@ -204,6 +214,19 @@ export async function loadSkills(context = {}) {
     matched_keywords: m.matched_keywords,
     density: m.density,
   }));
+
+  // 5b. Slice 3b — tool-ownership rollup. Two-part shape: explicit tool
+  // names declared in frontmatter, plus the skill names so the registry
+  // can resolve skill-prefix-implicit ownership (<agent>__<skill>__*).
+  const toolsFromFrontmatter = (skill) => Array.isArray(skill?.frontmatter?.tools)
+    ? skill.frontmatter.tools.filter(t => typeof t === 'string' && t.length > 0)
+    : [];
+  const tools = {
+    always_on: always_on.flatMap(toolsFromFrontmatter),
+    on_demand: on_demand.flatMap(toolsFromFrontmatter),
+    always_on_skill_names: always_on.map(s => s.name),
+    on_demand_skill_names: on_demand.map(s => s.name),
+  };
 
   // 6. Token estimate.
   const totalChars = always_on.reduce((sum, s) => sum + s.content.length, 0)
@@ -219,6 +242,7 @@ export async function loadSkills(context = {}) {
     always_on: always_on.map(s => s.name),
     on_demand: on_demand.map(s => ({ name: s.name, matched: s.matched_keywords, density: s.density })),
     dropped: considered_but_dropped.map(s => ({ name: s.name, reason: s.reason, density: s.density })),
+    tools_declared: { always_on: tools.always_on, on_demand: tools.on_demand },
     total_chars: totalChars,
   });
 
@@ -227,5 +251,6 @@ export async function loadSkills(context = {}) {
     on_demand,
     considered_but_dropped,
     total_token_estimate,
+    tools,
   };
 }

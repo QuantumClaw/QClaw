@@ -288,13 +288,32 @@ export class Agent {
       relevantKnowledge = memory.knowledge.search(textMessage, 5);
     }
 
+    // Slice 3b: route skills once per message and share the result with
+    // both the system-prompt assembly and the ToolRegistry per-request
+    // gate. _buildSystemPrompt accepts an optional pre-computed
+    // skillResult and skips its internal loadSkills call when one is
+    // passed — same loadSkills output, two downstream consumers, one
+    // skill-load.log entry, one routing decision.
+    let skillResult = null;
+    try {
+      skillResult = await loadSkills({
+        agent: this.name,
+        message: textMessage,
+        bootstrap: context?.bootstrap || null,
+        userId: context?.userId,
+      });
+    } catch (err) {
+      log.warn(`_processNonReflex: loadSkills failed: ${err.message} — continuing without routed skills`);
+    }
+
     const systemPrompt = await this._buildSystemPrompt(
       graphContext,
       knowledgeContext,
       relevantKnowledge,
       context?.bootstrap || null,
       textMessage,
-      context?.userId
+      context?.userId,
+      skillResult
     );
 
     // H2 fix (2026-05-14): char-budget raised 100k → 300k. Charlie calls
@@ -348,19 +367,40 @@ export class Agent {
       { role: 'user', content: userContent }
     ];
 
+    // Slice 3b: open the ToolRegistry per-request gate. The gate
+    // computes the active tool set from the message's SkillLoadResult
+    // (shared tools + tools owned by loaded skills) and short-circuits
+    // out-of-scope tool calls with a structured error. cleanupTools()
+    // resets the gate so post-message callers (dashboard /api/tools,
+    // CLI, next message) see the full registered set again. The
+    // cleanup is in finally so a thrown LLM call cannot leak the gate.
+    const toolRegistry = this.services.toolRegistry;
+    let cleanupTools = () => {};
+    if (toolRegistry && skillResult && typeof toolRegistry.registerForRequest === 'function') {
+      try {
+        cleanupTools = toolRegistry.registerForRequest(skillResult, this.name);
+      } catch (err) {
+        log.warn(`_processNonReflex: registerForRequest failed: ${err.message} — continuing without per-request gate`);
+      }
+    }
+
     // Call LLM — use tool executor if available (agentic), otherwise direct completion (chat-only)
     let result;
-    if (this.services.toolExecutor) {
-      result = await this.services.toolExecutor.run(messages, {
-        model: route.model,
-        system: systemPrompt
-      });
-    } else {
-      const completion = await router.complete(messages, {
-        model: route.model,
-        system: systemPrompt
-      });
-      result = { ...completion, toolCalls: [] };
+    try {
+      if (this.services.toolExecutor) {
+        result = await this.services.toolExecutor.run(messages, {
+          model: route.model,
+          system: systemPrompt
+        });
+      } else {
+        const completion = await router.complete(messages, {
+          model: route.model,
+          system: systemPrompt
+        });
+        result = { ...completion, toolCalls: [] };
+      }
+    } finally {
+      cleanupTools();
     }
 
     // Store in conversation memory (working memory / episodic log)
@@ -492,7 +532,7 @@ You exist to make your human's life easier and their business more profitable. Y
     return history.slice(cutoff);
   }
 
-  async _buildSystemPrompt(graphContext, knowledgeContext, relevantKnowledge, bootstrap = null, textMessage = '', userId = null) {
+  async _buildSystemPrompt(graphContext, knowledgeContext, relevantKnowledge, bootstrap = null, textMessage = '', userId = null, precomputedSkillResult = null) {
     // bootstrap (Slice 1): when present, replaces the per-message
     // soul/values assembly with the cached BootstrapResult. Falls back
     // to the legacy this.soul path when null.
@@ -556,16 +596,24 @@ You exist to make your human's life easier and their business more profitable. Y
     // when present (Layer 6 cache from Task 8); on-demand portion runs fresh
     // against textMessage. Failure here is non-fatal — the prompt still gets
     // the rest of its context.
-    let skillResult = null;
-    try {
-      skillResult = await loadSkills({
-        agent: this.name,
-        message: textMessage,
-        bootstrap,
-        userId,
-      });
-    } catch (err) {
-      log.warn(`_buildSystemPrompt: loadSkills failed: ${err.message} — continuing without routed skills`);
+    //
+    // Slice 3b: when _processNonReflex has already routed skills for the
+    // ToolRegistry per-request gate, it threads its skillResult in via
+    // precomputedSkillResult so we don't re-route. Other callers
+    // (heartbeat, dashboard, anywhere _buildSystemPrompt is invoked
+    // without the gate) still get the legacy internal loadSkills call.
+    let skillResult = precomputedSkillResult;
+    if (!skillResult) {
+      try {
+        skillResult = await loadSkills({
+          agent: this.name,
+          message: textMessage,
+          bootstrap,
+          userId,
+        });
+      } catch (err) {
+        log.warn(`_buildSystemPrompt: loadSkills failed: ${err.message} — continuing without routed skills`);
+      }
     }
 
     // Always-on skills go BEFORE Trust Kernel — they're identity-layer adjacent

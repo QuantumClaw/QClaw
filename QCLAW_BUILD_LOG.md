@@ -10001,3 +10001,125 @@ Five commits on the branch, one per Unit:
 - Confirm Charlie's tool list (dashboard `GET /api/tools`) no
   longer contains `spawn_agent` or `filesystem__*` entries and
   every entry now carries a `scope` field.
+
+---
+
+## [2026-05-14] Slice 3b — Skill ↔ tool registration coupling
+
+Branch `cc/slice3b-skill-tool-coupling-20260514-1808`. Closes failure
+pattern D' (tool exists, defining skill not surfaced) by making
+per-message tool visibility a function of per-message skill routing.
+Slice 3 sub-slice 2 of 3 — 3a anchored the registration interface,
+3c will narrow shell_exec.
+
+**Behavioural change:** Charlie's per-message tool list is now
+narrowed by skill routing. Domain tools (`ghl__*`, `stripe__*`,
+`charlie__trading-api__*`, `charlie__n8n-api__*`,
+`charlie__n8n-router__*`, `charlie__stripe__*`, `charlie__ghl__*`)
+appear only when their owning skill's keyword matches the user's
+message. Built-ins and shared utility presets (`google_*`,
+`openweather__*`, `youtube__*`, `n8n__trigger_webhook`, etc.) stay
+visible unconditionally.
+
+### What changed (this PR)
+
+Four commits on the branch, one per Unit:
+
+- `338676c` — Unit 1: `SkillLoadResult.tools` rollup + frontmatter
+  spec. `loadSkills()` now collects an optional `tools:` array
+  from each loaded skill's frontmatter (additive, backward-
+  compatible) and returns a `tools` rollup
+  `{always_on, on_demand, always_on_skill_names, on_demand_skill_names}`.
+  `skill-load.log` gains a `tools_declared` telemetry field.
+  `CHARLIE_OVERHAUL.md` Component 3 documents the
+  explicit-vs-implicit ownership rule.
+
+- `2b985ad` — Unit 2: `ToolRegistry.registerForRequest` + structured
+  out-of-scope error. Registry gains an `_activeForRequest` Set
+  gate; when null, every registered tool is visible (legacy path
+  for boot, dashboard `/api/tools`, CLI). `registerForRequest`
+  computes the active set from (a) `'shared'` scope, (b) declared
+  ownership, (c) implicit prefix ownership; returns a cleanup
+  handle. `executeTool()` returns `{error: 'out_of_scope', tool,
+  suggestion}` for tools outside the gate — the suggestion names
+  the owning skill, the wrong-agent scope, or `'does not exist'`.
+  `tool-call.log` gains `'activation'` events (source
+  `'on-demand-skill'`).
+
+- `c53e77e` — Unit 3: thread `loadSkills` through
+  `_processNonReflex` + Layer 6 cache. The method now routes
+  skills once per message and shares the result with
+  `_buildSystemPrompt` (prompt assembly) and `registerForRequest`
+  (tool gate). The LLM call is wrapped in `try / finally`; the
+  cleanup handle runs even on thrown errors. `_buildSystemPrompt`
+  accepts an optional `precomputedSkillResult` and falls back to
+  its internal `loadSkills` when called from heartbeats /
+  dashboard / CLI. Bootstrap Layer 6 caches
+  `bootstrap.skills.always_on_tools = { tools, skill_names }`
+  alongside `always_on` content so the always-on portion of the
+  active set rebuilds without re-reading frontmatter inside the
+  30-min TTL.
+
+- (this commit) — Unit 4: domain tool ownership migrated.
+  `ghl.md` and `stripe.md` gain `tools:` frontmatter declaring
+  their preset HTTP tools (`ghl__search_contacts` /
+  `__get_contact` / `__list_opportunities` / `__list_pipelines`;
+  `stripe__list_payments` / `__list_customers` /
+  `__list_invoices`). `trading-api.md`, `n8n-api.md`,
+  `n8n-router.md` rely on the implicit `<agent>__<skill>__*`
+  prefix — no frontmatter declaration required. New test
+  `tests/tool-skill-coupling.test.js` (23 checks) — generic
+  message shows shared-only, ghl/stripe/trading-routed messages
+  activate their owned tools, no cross-message leak. The other
+  on-demand skills with no tool surface (`build.md`, `qa.md`,
+  `task-queue.md`, the `community-manager-*` pair,
+  `business-intelligence.md`, `qclaw-dev.md`, `content-studio.md`,
+  `trading.md` (prompt-only)) are unaffected.
+
+### Doc updates (in this PR)
+
+- `CHARLIE_OVERHAUL.md` Component 3 gained the skill frontmatter
+  `tools:` field spec.
+- `CHARLIE_OVERHAUL.md` Component 4 gained the per-request
+  coupling section (`registerForRequest`, out-of-scope contract,
+  always-on tool cache) alongside the Slice 3a registration
+  surface.
+- `CHARLIE_OVERHAUL.md` Slice 3b status flipped to ✓ COMPLETE.
+
+### What verified
+
+`npm test` on the qclaw server — full suite green:
+
+- `tests/tool-skill-coupling.test.js` → 23 passed, 0 failed
+  (new this slice)
+- `tests/tool-registry-scope.test.js` → 16 passed, 0 failed
+  (unchanged from Slice 3a)
+- `tests/skill-loader.test.js` → 52 passed, 0 failed (additive
+  change to SkillLoadResult shape preserved)
+- All other test files pass without modification.
+
+### Followups
+
+- `clipper.md` uses `## Service` instead of `## Auth` so the skill
+  parser does not pick up its baseUrl — zero skill HTTP tools
+  register. Header rename will fix; tracked separately rather
+  than expanding the keyword scope of this slice.
+- The `community-manager-flow-os` and `community-manager-fsc`
+  on-demand skills do not declare or auto-own any tools today;
+  unaffected by this slice but a candidate for ownership work
+  once their tool surface materialises.
+
+### Post-merge for Tyson
+
+- `sudo pm2 reload quantumclaw` to pick up the per-request gate.
+- Smoke test in Telegram:
+  - Generic message → `tool-call.log` shows zero `'activation'`
+    events for that message, only the boot-time `'registration'`
+    events.
+  - "Show me a trading status" → `charlie__trading-api__*`
+    activations appear in `tool-call.log` for that message.
+  - "What leads do we have" → `ghl__*` and `charlie__ghl__*`
+    activations appear.
+- `sudo tail -50 /root/.quantumclaw/tool-call.log` after 2-3
+  Telegram messages — verify per-message activation records
+  appear alongside boot-time registration records.

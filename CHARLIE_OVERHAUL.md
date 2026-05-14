@@ -194,6 +194,27 @@ Hard cap of 4 on-demand skills per prompt. If more match, top 4 by keyword densi
 
 This checklist applies to authoring and to skill-content review. Slice 2b hotfix (2026-05-08) demonstrated the cost of skipping it.
 
+**Skill frontmatter `tools:` field (Slice 3b).** A skill may declare an optional `tools: [...]` array listing the names of tools it owns. The list contains tool-name strings; tool *definitions* live in `src/tools/registry.js`, not in skill `.md` files (skills declare ownership, the registry defines).
+
+```yaml
+---
+name: ghl
+category: on-demand
+surface: both
+keywords: [ghl, contacts, opportunities, conversations]
+tools:
+  - ghl__search_contacts
+  - ghl__get_contact
+  - ghl__list_opportunities
+  - ghl__list_pipelines
+description: GoHighLevel CRM HTTP surface
+---
+```
+
+The frontmatter field is **explicit ownership** — used when a skill claims preset / MCP / built-in tools whose names don't follow the implicit-prefix convention. **Implicit ownership** covers everything else: a skill named `X` automatically owns every tool whose name is `<agent>__X__*` or `X__*` (preset prefix). Skill HTTP tools generated from `## Endpoints` always match the implicit pattern and therefore don't need to be listed.
+
+The skill loader collects declared `tools` arrays into `SkillLoadResult.tools.{always_on, on_demand}`; the ToolRegistry combines these with implicit ownership and `scope: 'shared'` to compute the per-request active tool set (see Component 4).
+
 ### Component 4 — Tool surface overhaul
 
 **Purpose:** Encode lane discipline at the tool level. Closes failure patterns D (phantom tool use) and E (lane violations) structurally.
@@ -261,9 +282,13 @@ handler
 - `ToolRegistry.registerBuiltin(name, definition)` — public API for built-in tools. Replaces the Slice-2-era pattern of `index.js` reaching into `_builtins.set()`. Every definition must carry an explicit `scope`.
 - `ToolRegistry.registerSkillTool(agentName, skillName, parsedSkill, toolDef)` — 4-arg form is mandatory. The legacy 3-arg shim (silently defaulting to `'shared'`) was removed.
 - Preset API tools and MCP tools carry scope assigned from `PRESET_SCOPE_MAP` in `src/tools/registry.js`; default is `'shared'` if not listed.
-- Every registration call emits one `{event:'registration',source,tool,scope,...}` JSONL record to `tool-call.log` (see `LOCATIONS.md` Operational layer). Slice 3b extends the same log to routing decisions; Slice 3c covers per-call execution.
+- Every registration call emits one `{event:'registration',source,tool,scope,...}` JSONL record to `tool-call.log` (see `LOCATIONS.md` Operational layer).
 
-Out-of-scope tool calls return structured `{error: 'out_of_scope', suggestion: 'delegate to <correct_agent>'}` (deferred to Slice 3b, when scope is actually enforced at call time).
+**Per-request coupling (Slice 3b):** `ToolRegistry.registerForRequest(skillLoadResult, agentName)` is the new entry point invoked once per message by `_processNonReflex`. It computes the active tool set from (a) every `'shared'` scope tool, (b) every tool whose owning skill is loaded for this message — explicit ownership via the skill's frontmatter `tools:` array, implicit ownership via the `<agent>__<skill>__*` and `<skill>__*` prefix conventions. The call returns a cleanup handle that must be invoked in a finally block; outside the gate (boot, dashboard `/api/tools`, CLI), every registered tool is visible. Each tool activated by a skill emits an `{event:'activation', source:'on-demand-skill', ...}` record to `tool-call.log`.
+
+**Out-of-scope tool calls** return structured `{error: 'out_of_scope', tool, suggestion}` from `executeTool()` (Slice 3b). The suggestion names the owning skill and its routing keywords when the tool is known, the owning agent scope when the call comes from a wrong agent, or `'does not exist'` when the tool name is unknown. The JSON-stringified payload surfaces back to the LLM as a tool result, so the model can correct course (delegate, rephrase to trigger the skill, or stop calling phantom tools).
+
+**Always-on tool cache (Slice 3b):** `bootstrap.skills.always_on_tools = { tools, skill_names }` is captured in Layer 6 alongside `bootstrap.skills.always_on`. Inside the 30-min bootstrap TTL, the always-on portion of the active tool set rebuilds without re-reading always-on skill frontmatter. On-demand tools are still resolved per message — they're keyword-routed against the user's text, not cacheable.
 
 ### Component 5 — Verification gates
 
@@ -431,9 +456,9 @@ Per-keyword exhaustive routing tests landed: `skill-router.test.js` 27 → 134 c
 
 `ToolRegistry` public API anchored: `registerBuiltin(name, def)` + `registerSkillTool(agentName, skillName, parsedSkill, toolDef)` are the two registration surfaces; the legacy 3-arg `registerSkillTool` shim that silently scoped every skill tool to `'shared'` is gone (now throws). Every tool entry — built-in, preset HTTP, MCP, skill-defined — carries an explicit `scope` field (`'shared'` or `[agent_name, ...]`); `PRESET_SCOPE_MAP` scopes `stripe`/`ghl` to `['charlie']`, everything else to `'shared'`. `index.js` no longer reaches into the private `_builtins` map — `has()`, `getBuiltin()`, `registerBuiltin()` cover the surface. New `~/.quantumclaw/tool-call.log` (JSONL, 0600) emits one record per registration event with `{ts, event, source, tool, scope, ...}`. Dashboard `POST /api/agents/spawn` removed (zero callers). `spawn_agent` built-in removed (created dead stubs, auto-approved). Filesystem MCP preset removed (failed to start every restart) along with its `gatedTools` / `riskWeights` entries and the unreachable `'4. Filesystem writes under any src/ path'` branch in `approval-gate.check()`. `n8n-router` gate string removed from `approval-gate` + `executor` (dead literal — actual skill tool names are `charlie__n8n-router__create_webhook_*`). `n8n-api.md` self-naming mismatch corrected to the slugs the parser actually produces. Phantom `Supabase:execute_sql` in `archive/charlie-cto.md` corrected to `supabase_select` (the `supabase_select` tool itself is still not registered — Slice 3b decision). `verification-reflexes.md` and `lanes.md` re-classify `n8n_workflow_update` as write-only. `LOCATIONS.md:68` corrected to the real registry path; tool-registration canonical paths + shared__ rule pointer documented. New test `tests/tool-registry-scope.test.js` (16 checks) asserts every registered tool has scope. No behavioural change to which tools Charlie can call — scope is metadata in 3a.
 
-**Slice 3b — Skill-loading ↔ tool-registration coupling.** Next.
+**Slice 3b — Skill-loading ↔ tool-registration coupling.** ✓ COMPLETE 2026-05-14
 
-Couples scope metadata from 3a to skill loading: tool registration becomes a function of `loadSkills()` output rather than a separate boot-time loop. Out-of-scope tool calls return structured `{error: 'out_of_scope', suggestion: 'delegate to <correct_agent>'}`. Per-keyword tool routing tests. `supabase_select` registration vs `delegation.md` prose drop decision.
+`SkillLoadResult` gains a `tools` rollup (`{always_on, on_demand, always_on_skill_names, on_demand_skill_names}`) capturing every skill's declared frontmatter `tools:` plus the loaded skill names themselves. `ToolRegistry.registerForRequest(skillLoadResult, agentName)` computes a per-request active-tool gate from (a) every `'shared'` tool, (b) every tool whose owning skill is loaded — explicit ownership via frontmatter, implicit via `<agent>__<skill>__*` and `<skill>__*` prefix conventions; the call returns a cleanup handle that `_processNonReflex` invokes in a finally block. Outside the gate (boot, dashboard `/api/tools`, CLI), every registered tool is visible — legacy behaviour preserved. `executeTool()` short-circuits with structured `{error: 'out_of_scope', tool, suggestion}` for tools outside the gate; the suggestion names the owning skill, the wrong-agent scope, or `'does not exist'`. `tool-call.log` gains `'activation'` events (source `'on-demand-skill'`) alongside the boot-time `'registration'` events from 3a. Bootstrap Layer 6 caches `bootstrap.skills.always_on_tools` alongside `always_on` content so the always-on portion of the active set rebuilds without re-reading frontmatter inside the 30-min TTL. `ghl.md` and `stripe.md` declare preset ownership via the new frontmatter field; `trading-api.md`, `n8n-api.md`, `n8n-router.md` rely on the implicit prefix. New test `tests/tool-skill-coupling.test.js` (23 checks) — generic message shows shared-only, ghl/stripe/trading-routed messages activate their owned tools, no cross-message leak. **Behavioural change:** Charlie's per-message tool list is now narrowed by skill routing — domain tools appear only when their skill keyword routes.
 
 **Slice 3c — `shell_exec` narrowing + hygiene.** After 3b.
 
