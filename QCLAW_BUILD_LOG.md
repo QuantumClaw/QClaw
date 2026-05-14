@@ -9780,3 +9780,101 @@ Pending Tyson post-merge:
   audit-log entries are reaching 30-cap (was 50) without errors.
 
 End of session 2026-05-14 memory drop hotfix.
+
+## [2026-05-14] Prompt dump diagnostic — landed, ran, reverted
+
+One cohesive entry covering the temporary instrumentation episode that
+followed the memory-drop hotfix. Build log entry was deliberately
+deferred from the PR #16 commit (per Brief 5) so the full add → ran →
+verdicted → reverted arc lands in one block.
+
+### Trigger
+
+The memory-drop hotfix (PR #15, H1+H2+H3) merged and deployed earlier
+on 2026-05-14. Verification repro: `/session` reset → "tell me about
+Content Studio Workflow B" → 5 turns of unrelated topics → "what was
+that workflow ID again?". Pre-hotfix, this consistently dropped the
+Workflow B reference. Post-hotfix, the first two repro runs **failed**
+in a different way: Charlie confidently answered "Workflow A
+(Qf39NEOEgz2W0uls)" instead of "Workflow B (qeE2hCSFoB6fU926)",
+asserting "Based on the recent context in my prompt, the last workflow
+we were discussing was Workflow A..." — confident answer, not a
+"lost context" acknowledgement.
+
+Three hypotheses to disambiguate:
+
+- **H5a** — history isn't reaching the prompt at runtime (hotfix in
+  code but something strips downstream).
+- **H5b** — history reaches the prompt but Workflow B reference is
+  buried under Charlie's own long outputs (salience failure).
+- **H5c** — Workflow B reference is present and prominent; Charlie is
+  ignoring it (model-behaviour limit or prompt-instruction gap).
+
+### Instrumentation (PR #16, commit `1a73ec0`)
+
+Single-file change in `src/agents/registry.js:_processNonReflex`,
+gated on `process.env.QCLAW_PROMPT_DUMP === '1'`. When set, wrote one
+file per non-reflex turn to `/tmp/charlie_prompt_dump_<iso>.txt` at
+mode 0600 containing the full assembled system prompt, the resolved
+truncated history (role + channel + timestamp + full content per
+entry), and the user message. When unset, zero I/O, zero behaviour
+change. Workstation smoke (`/tmp/dump-smoke.mjs`) verified both halves
+of the gate. Build log entry deferred to this commit so the whole
+episode lands in one cohesive block.
+
+### Investigation
+
+Tyson merged PR #16, added `QCLAW_PROMPT_DUMP=1` to
+`~/.quantumclaw/.env`, `pm2 reload quantumclaw`, then ran 3 consecutive
+7-turn repros. **All three answered correctly** — Workflow B
+(qeE2hCSFoB6fU926) held through 5 intervening topic turns each time.
+Combined with the 2 pre-instrumentation failures, the symptom is
+2 / 5 = 40% — intermittent, not deterministic.
+
+H5a is rejected by the 3 successful runs (history reaches the prompt
+fine). H5b vs H5c can't be disambiguated from successful-run dumps
+alone — they'd need a failure-case dump to compare against. Since the
+hotfix is holding empirically and the residual symptom is
+probabilistic, deferring the H5b/c distinction to a future
+re-occurrence is the right call.
+
+### Revert (this commit)
+
+Instrumentation removed via `git revert 1a73ec0`. `src/agents/registry.js`
+is now identical to its post-PR-#15 state (verified empty diff against
+`121b5ef`). No residual `QCLAW_PROMPT_DUMP` / `charlie_prompt_dump`
+references anywhere in `src/`. Full test suite: 660 passed, 1
+pre-existing probes workstation failure unchanged.
+
+### Followup (verbatim, per brief)
+
+> **Intermittent context salience** (observed 2026-05-14, hotfix-era).
+> Twice observed Charlie answering "Workflow A" when "Workflow B" was
+> the session's opening reference, after 5 turns of intervening topics.
+> Three subsequent identical-sequence re-runs all answered correctly.
+> Hypothesis: probabilistic salience failure under recency bias from
+> Charlie's own long outputs. If pattern re-emerges, instrument with
+> `QCLAW_PROMPT_DUMP=1` and capture failure-case dump. Not currently
+> blocking.
+
+### PR #15 hotfix status
+
+- H1 channel/userId filter at `src/agents/registry.js:_processNonReflex`
+  — in place, verified.
+- H2 `historyLimit = 24` + `MAX_CONTEXT_CHARS = 300000` — in place,
+  verified.
+- H3 Layer 4 fold-in (`bootstrap.recent.audit_log` +
+  `bootstrap.recent.memory` in `_buildSystemPrompt`) — in place,
+  verified.
+- No regressions introduced by the prompt-dump revert.
+
+### Post-merge for Tyson
+
+- `ssh qclaw`, remove the `QCLAW_PROMPT_DUMP` line from
+  `~/.quantumclaw/.env`, `sudo pm2 reload quantumclaw`.
+- `sudo rm /tmp/charlie_prompt_dump_*.txt` (cleanup the captured dumps
+  — the 3 successful runs + any earlier files).
+- Confirm: send Charlie a normal Telegram message, no new dump file
+  should land in `/tmp/`.
+
+End of session 2026-05-14 prompt-dump diagnostic episode.
