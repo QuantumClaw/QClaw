@@ -317,10 +317,13 @@ async function _layer4Recent(services, warnings) {
   }
 
   // Audit log: AuditLog.recent(limit) returns last N entries (newest first).
+  // H3 fix (2026-05-14): cap at 30 to match recent.memory's limit (line ~305).
+  // Layer 4 is now wired into _buildSystemPrompt; symmetric caps keep the
+  // prompt budget predictable. Audit ref: /tmp/memory_drop_diagnostic_audit.md.
   let audit_log = { source: 'unavailable', entries: [] };
   if (services?.audit && typeof services.audit.recent === 'function') {
     try {
-      const entries = services.audit.recent(50);
+      const entries = services.audit.recent(30);
       const source = services.audit.db ? 'sqlite' : 'jsonl';
       audit_log = { source, entries };
     } catch (err) {

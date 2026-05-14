@@ -9612,3 +9612,171 @@ endpoint) will exercise all four paths end-to-end. Expected behaviour:
   `Awo65rdSe5BvDHtC`.
 - `N8N_WORKFLOW_INDEX.md` line 248 — original Bug (b) note on
   empty-Draft-ID Telegram pattern (same shape now fixed here).
+
+## [2026-05-14] Memory drop hotfix — H1 + H2 + H3
+
+Branch `cc/memory-drop-hotfix-20260514-1043`. Audit grounding:
+`/tmp/memory_drop_diagnostic_audit.md` (Brief 1 deliverable). Closes
+three findings in one PR: H1 cross-channel contamination in history
+fetch, H2 history-trim cap too tight, H3 dead Layer 4 wiring.
+
+Bug-fix dispatch, not a design change — `CHARLIE_OVERHAUL.md` untouched.
+
+### What changed (this PR)
+
+Three commits on the branch, one per finding, all mine:
+
+- `3e77853` — **H1.** `src/agents/registry.js:_processNonReflex` now passes
+  `{ channel: context?.channel, userId: context?.userId }` into
+  `memory.getHistory()`. Pre-fix it was an unfiltered agent-level fetch,
+  so heartbeat / CLI / dashboard writes could displace Telegram-
+  conversation messages out of the history window — the proximate cause
+  of the 2026-05-12 symptom. `src/core/heartbeat.js:_askLearnQuestion`
+  gained an explanatory comment marking its unfiltered getHistory call
+  as intentional cross-channel (auto-learn fires outside any user
+  context). `src/dashboard/server.js:751` was already correct (passes
+  channel + userId from req.query). New test file
+  `tests/registry-history-isolation.test.js` (10 checks): asserts the
+  channel + userId filter contract — no CLI / dashboard leakage into
+  Telegram, no other-user leakage on the same channel, undefined-options
+  parity with the unfiltered heartbeat case, limit honoured under
+  filter. `package.json` chains the new file as the 13th test.
+
+- `9f4c325` — **H2.** `src/agents/registry.js:_processNonReflex` — two
+  constants raised:
+  - `historyLimit`: flattened from `knowledgeContext.length > 100 ? 8 : 20`
+    to a flat `24`. The prior ternary was a band-aid for prompt bloat
+    under heavy KnowledgeStore content; `_truncateHistory` immediately
+    below is the actual char-budget ceiling, making the message-count
+    cap redundant. The diagnostic confirmed the 8-message effective cap
+    (4 user-assistant turns) was the proximate cause of the symptom.
+  - `MAX_CONTEXT_CHARS`: `100000` → `300000`. Charlie calls Claude
+    (typically Opus 4.x, 200k-token context ≈ ~800k chars). 300k chars
+    ≈ ~75k tokens — ~38% of the smallest standard Claude 4 context,
+    leaving ~125k tokens of headroom for the response and tool
+    round-trips.
+  - Both constants carry rationale comments pointing at the 2026-05-14
+    audit so the reasoning survives the next someone-doesn't-recall-this
+    moment.
+
+- (this commit) — **H3.** `src/agents/bootstrap.js:_layer4Recent` —
+  audit-log cap lowered from `50` → `30` to match `recent.memory`'s
+  `limit:30`. `src/agents/registry.js:_buildSystemPrompt` —
+  `bootstrap.recent.audit_log` and `bootstrap.recent.memory` are now
+  threaded into the prompt, in order `probes → audit_log → memory`,
+  each with a labelled section header naming the entry count.
+  Pre-fix, both were populated by bootstrap but never reached
+  `_buildSystemPrompt` — dead Layer 4 wiring. Charlie's prompt now
+  carries the last 30 audit-log entries (timestamp, agent/action,
+  detail truncated to 80 chars) and the last 30 conversation-memory
+  entries (timestamp, [channel], role, content truncated to 120 chars).
+  Plus this build log entry.
+
+### Doc updates (in this PR)
+
+- `QCLAW_BUILD_LOG.md` — this entry.
+- `CHARLIE_OVERHAUL.md` — **deliberately unchanged.** This is a bug
+  fix, not an architectural surface change.
+- `LOCATIONS.md` — **deliberately unchanged.** All files and code paths
+  are already documented; no new locations.
+
+### What verified
+
+**Individual test files (npm test `&&` chain still shorts on the
+pre-existing probes.test.js workstation failure documented in Slice 2c
+followups — unaffected by this hotfix):**
+
+- `tests/smoke.test.js` → 24 passed, 0 failed
+- `tests/agent-mutex.test.js` → 7 passed, 0 failed
+- `tests/approval-parser-handler.test.js` → 29 passed, 0 failed
+- `tests/approval-gate-notifier.test.js` → 13 passed, 0 failed
+- `tests/approvals.test.js` → 13 passed, 0 failed
+- `tests/bootstrap.test.js` → 32 passed, 0 failed
+- `tests/probes.test.js` → 28 passed, **1 pre-existing failure**
+  (workstation-only `pm2_processes: failure carries error string`)
+- `tests/identity-canonicalization.test.js` → 10 passed, 0 failed
+- `tests/skill-frontmatter.test.js` → 249 passed, 0 failed
+- `tests/cli-skill-list.test.js` → 59 passed, 0 failed
+- `tests/skill-router.test.js` → 134 passed, 0 failed
+- `tests/skill-loader.test.js` → 52 passed, 0 failed
+- `tests/registry-history-isolation.test.js` → **10 passed**, 0 failed
+
+**Total: 660 passed, 1 pre-existing failure** (probes.test.js
+unchanged from main). Net hotfix additions: +10 test assertions
+(H1 isolation contract).
+
+**H3 prompt-assembly smoke test (workstation, `/tmp/h3-smoke.mjs`):**
+- Built a synthetic bootstrap with two memory entries (Telegram channel,
+  user+assistant pair referencing "Workflow Qf39") and one audit_log
+  entry (`charlie/completion: Trace requested for Qf39`).
+- Called `agent._buildSystemPrompt(...)` directly.
+- Verified the rendered prompt contains:
+  - `## Recent activity (audit log, last 1)` section
+  - `## Recent context (conversation memory, last 2)` section
+  - The audit entry detail `charlie/completion: Trace requested for Qf39`
+  - The memory entry content `Which workflow are we tracing?`
+  - Section ordering: probes → audit_log → memory.
+
+### 7 Pillars + security gate
+
+- Frontend: n/a — no UI changes.
+- Backend: no new endpoints. `getHistory` filter passthrough is an
+  internal contract change; signature unchanged (third arg already
+  existed). Inputs validated upstream (channel and userId originate
+  from Telegram / dashboard / req.query, all already checked at their
+  entry points).
+- Databases: no schema changes. `conversations` table already had
+  `channel` and `user_id` columns and the relevant indexes
+  (`idx_conv_thread (agent, channel, user_id)`).
+- Authentication: no auth changes.
+- Payments/Financial: n/a.
+- Security: no new credentials. The fold-in puts conversation memory
+  entries into the system prompt — same data Charlie already had
+  via `getHistory`, just under a different label. No privilege
+  escalation. Memory entries truncated at 120 chars per line, audit
+  entries at 80 chars — bounded prompt growth.
+- Infrastructure: no PM2 changes by Claude Code. Tyson reloads
+  `quantumclaw` post-merge so registry / bootstrap pick up the new
+  constants and the H3 fold-in.
+
+### Out of scope
+
+**Logs at `/tmp/bootstrap_2026-05-12_window.log` et al. still not
+present.** The H1 cache-eviction sub-mechanism remains unverified.
+Code-evidence for H1 + H2 was strong enough to act without them per
+the audit and the brief. If the logs arrive later and surface a
+distinct cache-eviction pattern, that's a separate follow-up.
+
+**Slice 3a** — tool surface overhaul (audit T7 primary). Queued
+separately.
+
+**Cognee entities/relationships population** — Phase 5+ work.
+
+### Followups (this dispatch)
+
+| Priority | Item | Source |
+|----------|------|--------|
+| LOW | `tests/probes.test.js` — `pm2_processes: failure carries error string` env-guard. Pre-existing on main; carried over from Slice 2c followup table unchanged. | this / 2c |
+| INFO | Prompt-budget impact of H3 fold-in: ~30 audit lines × ~100 chars ≈ ~3 KB plus ~30 memory lines × ~140 chars ≈ ~4 KB. ~7 KB of system-prompt growth per message inside the bootstrap cache window. Well within the new 300k char-budget. Monitor `bootstrap.log` after first hot bootstrap to confirm `total_chars` stays bounded. | this |
+| INFO | `historyLimit` is now flat 24 regardless of knowledge size. If the char-budget guard ever needs to drop messages because knowledge content is genuinely massive, the symptom would manifest as truncated-conversation behaviour with no other obvious cause. Add a `log.warn` when `_truncateHistory` cuts messages so silent drops become observable. Not in this hotfix scope. | this |
+| INFO | H1 channel/userId filter relies on `context.channel` being set by upstream callers. Confirmed live at `src/channels/manager.js:434` (Telegram, sets `channel: 'telegram', userId: ctx.from.id`). Dashboard path (`src/dashboard/server.js`) sets it too. CLI and heartbeat intentionally don't (cross-channel reads still work via the falsy-options path). If a new entry point is added later, it must pass channel/userId or accept cross-channel behavior — worth surfacing in `LOCATIONS.md` if a third Telegram-like entry point lands. | this |
+
+### Verified live
+
+Pending Tyson post-merge:
+- [ ] `pm2 reload quantumclaw` — required for this hotfix (registry +
+  bootstrap modules changed).
+- [ ] Spot-check Charlie's next Telegram message: the system prompt
+  (visible via `/bootstrap-status` log or by sending a non-trivial
+  message and checking `tail -3 ~/.quantumclaw/skill-load.log` plus
+  any prompt log) should show the new `## Recent activity` and
+  `## Recent context` sections.
+- [ ] Repro test for the original symptom: deliberately exceed 4
+  user-assistant turns in a Telegram conversation about a specific
+  workflow, then ask a context-dependent follow-up that doesn't
+  re-reference the workflow. Pre-fix this would force the loss;
+  post-fix Charlie should retain the reference.
+- [ ] Optional: tail `~/.quantumclaw/audit.jsonl` and confirm
+  audit-log entries are reaching 30-cap (was 50) without errors.
+
+End of session 2026-05-14 memory drop hotfix.
