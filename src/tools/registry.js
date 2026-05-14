@@ -836,6 +836,21 @@ export class ToolRegistry {
     this._activeForRequest = active;
     this._lastActivated = activatedBySkill;
 
+    // Slice 3b.1: emit a single 'on_demand_routing' summary record per
+    // call — fires unconditionally so log inspection can distinguish
+    // "gate fired but no on-demand skills routed" from "gate code never
+    // ran". The per-tool 'activation' records below are kept for granular
+    // telemetry (which specific tools the routing pulled in).
+    _appendToolCallLog({
+      event: 'on_demand_routing',
+      agent: agentName,
+      routed_always_on_skills: [...(skillLoadResult.tools?.always_on_skill_names || [])],
+      routed_on_demand_skills: [...(skillLoadResult.tools?.on_demand_skill_names || [])],
+      declared_tools: [...declared],
+      activated_by_skill: [...activatedBySkill],
+      active_set_size: active.size,
+    });
+
     for (const toolName of activatedBySkill) {
       _appendToolCallLog({
         event: 'activation',
@@ -846,6 +861,19 @@ export class ToolRegistry {
     }
 
     return () => {
+      // Slice 3b.1: emit a deregistration record so the cleanup is
+      // observable. Carries the tool count plus the previously
+      // skill-activated set — boot-time 'shared' tools are not echoed
+      // (they re-activate on the next request from the same boot-time
+      // registration record).
+      const cleared = this._lastActivated.slice();
+      const priorSize = this._activeForRequest ? this._activeForRequest.size : 0;
+      _appendToolCallLog({
+        event: 'deregistration',
+        agent: agentName,
+        cleared_skill_tools: cleared,
+        prior_active_set_size: priorSize,
+      });
       this._activeForRequest = null;
       this._lastActivated = [];
     };
