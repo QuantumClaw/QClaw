@@ -5,7 +5,7 @@
  * Default agent is "echo" — the primary assistant.
  */
 
-import { readdirSync, existsSync, readFileSync } from 'fs';
+import { readdirSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { log } from '../core/logger.js';
 import { parseSkill, skillToTools, executeSkillTool } from './skill-parser.js';
@@ -322,6 +322,36 @@ export class Agent {
       userId: context?.userId,
     });
     const truncatedHistory = this._truncateHistory(fullHistory, availableForHistory);
+
+    // ─── Temporary diagnostic instrumentation (2026-05-14) ─────────────
+    // REVERT post-investigation. Gated entirely behind QCLAW_PROMPT_DUMP=1.
+    // When unset, this block performs zero I/O and has zero behaviour
+    // impact. Captures the full assembled prompt + resolved truncated
+    // history + user message to /tmp/charlie_prompt_dump_<iso>.txt at
+    // mode 0600, one file per turn. Used to disambiguate H5a/b/c after
+    // the PR #15 memory-drop hotfix verification failed twice.
+    if (process.env.QCLAW_PROMPT_DUMP === '1') {
+      try {
+        const now = new Date();
+        const isoTs = now.toISOString();
+        const fileTs = isoTs.replace(/[:.]/g, '-');
+        const dumpPath = `/tmp/charlie_prompt_dump_${fileTs}.txt`;
+        const header = `=== PROMPT DUMP ${isoTs} userId=${context?.userId ?? 'null'} agent=${this.name} channel=${context?.channel ?? 'unknown'} historyLength=${truncatedHistory.length} ===\n\n`;
+        const promptBlock = `--- SYSTEM PROMPT (${systemPrompt.length} chars) ---\n${systemPrompt}\n\n`;
+        const historyBlock = `--- HISTORY (${truncatedHistory.length} entries, resolved after _truncateHistory) ---\n`
+          + truncatedHistory.map((h, i) =>
+              `[${i}] ${h.role}${h.channel ? ` @${h.channel}` : ''}${h.timestamp ? ` ${h.timestamp}` : ''}:\n${h.content || ''}`
+            ).join('\n\n')
+          + (truncatedHistory.length === 0 ? '(empty)' : '')
+          + '\n\n';
+        const userBlock = `--- USER MESSAGE (${textMessage.length} chars) ---\n${textMessage}\n`;
+        writeFileSync(dumpPath, header + promptBlock + historyBlock + userBlock, { mode: 0o600 });
+        log.debug(`prompt-dump: wrote ${dumpPath}`);
+      } catch (err) {
+        log.warn(`prompt-dump: write failed: ${err.message}`);
+      }
+    }
+    // ─── End diagnostic instrumentation ────────────────────────────────
 
     // Build user message — multimodal if images provided
     let userContent;
