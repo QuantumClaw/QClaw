@@ -10123,3 +10123,130 @@ Four commits on the branch, one per Unit:
 - `sudo tail -50 /root/.quantumclaw/tool-call.log` after 2-3
   Telegram messages — verify per-message activation records
   appear alongside boot-time registration records.
+
+---
+
+## [2026-05-14] Slice 3b.1 — Per-message coupling: verified failure, fix, and live verification
+
+PR #19 (Slice 3b) merged earlier today, pm2 reloaded, then verified
+**broken** against the live `tool-call.log`:
+
+- 86 entries, all timestamped 18:01–18:40Z (process boot).
+- Zero entries between 18:40Z (boot) and the diagnostic window.
+- `skill-load.log` shows real user messages did run through
+  `_processNonReflex` (entries at 18:40:52Z, 18:46:02Z, 18:46:40Z
+  with `userId: "1375806243"`) — so the routing path was reached,
+  not a wrong-codepath issue.
+
+### Failure shape (post-audit)
+
+Hybrid: observability blind + test-bench gap, not a code-wiring
+miss.
+
+- `registerForRequest` was wired into `_processNonReflex` correctly
+  and the active-set computation worked, but the gate emitted only
+  per-tool `'activation'` records — and only for tools that needed
+  a skill route to activate. Generic messages route zero on-demand
+  skills, so the gate emitted zero events: indistinguishable from
+  "code never ran" by log inspection alone.
+- No `'deregistration'` record on cleanup, so the closing half of
+  the lifecycle was also invisible.
+- `tests/tool-skill-coupling.test.js` (23 checks) drove
+  `registerForRequest` in isolation, never through
+  `Agent._processNonReflex`. Catches in-process bugs in the
+  method's logic; cannot catch an integration regression at
+  `_processNonReflex`.
+
+The PR description's "Charlie's per-message tool list now narrows
+by skill routing" was, post-merge, an unverified claim: true in
+spirit (the code did narrow) but untestable from the artefacts
+shipped with the PR. The discipline gap is what Slice 4
+verification gates exist to close structurally.
+
+### What changed (this PR)
+
+Two commits on `cc/slice3b1-per-message-coupling-fix-20260514-1853`:
+
+- **registry.js + test** — `registerForRequest` now emits an
+  unconditional `'on_demand_routing'` summary record per call,
+  carrying `routed_always_on_skills`, `routed_on_demand_skills`,
+  `declared_tools`, `activated_by_skill`, `active_set_size`.
+  Cleanup handle emits a `'deregistration'` record with
+  `cleared_skill_tools` and `prior_active_set_size`. Per-tool
+  `'activation'` records are preserved (granular per-tool
+  telemetry).
+  
+  `tests/tool-skill-coupling.test.js` grows from 23 to 41 checks.
+  +11 log-file assertions over the existing in-process flow
+  (counts and shapes of the new event types). +7 end-to-end
+  checks that drive `Agent.process()` with a stub router and
+  stub `toolExecutor` that captures the tool list visible to the
+  LLM — confirms the gate narrows the LLM-facing tool list
+  through `_processNonReflex`, not just inside the registry.
+
+- **scripts/verify-coupling.js + docs** — the reproducible live
+  verification harness. Builds a `ToolRegistry`, seeds preset +
+  skill entries, drives three `agent.process()` calls (generic /
+  ghl-routing / trading-routing) against a stub LLM, prints the
+  resulting `tool-call.log` excerpt. From now on this is the
+  standard for any slice claiming behavioural change to the tool
+  surface — the PR description includes its output verbatim,
+  not a paraphrase. `CHARLIE_OVERHAUL.md` Slice 3b status
+  amended with the verified-then-amended note pointing to 3b.1
+  and `scripts/verify-coupling.js`.
+
+### What verified
+
+`npm test` on the qclaw server — full suite green:
+
+- `tests/tool-skill-coupling.test.js` → 41 passed, 0 failed
+  (was 23 in 3b)
+- `tests/tool-registry-scope.test.js` → 16 passed, 0 failed
+  (unchanged from 3a)
+
+Live verification via `node scripts/verify-coupling.js` on the
+qclaw server (excerpt embedded in PR #20):
+
+- generic message → 5 tools visible to stub LLM (shared only).
+  `routed_on_demand_skills: []`, `activated_by_skill: []`,
+  `active_set_size: 5`.
+- "what ghl contacts do we have" → 7 tools visible. Routes ghl;
+  activates `ghl__search_contacts` and
+  `charlie__ghl__get_contacts_contact_id`.
+- "show me the trading scanner status" → 6 tools visible. Routes
+  `trading` and `trading-api`; activates
+  `charlie__trading-api__get_simulations`.
+- Each call emits exactly one `'on_demand_routing'` summary AND
+  one `'deregistration'` record. Counts match.
+
+### Slice 4 followup (filed at the top of priority list)
+
+Slice 4 verification gates exist specifically to close the class
+of false completion claim that produced this episode. Until they
+land:
+
+- Slices that claim behavioural change to a runtime surface
+  MUST include a live verification log excerpt in the PR
+  description — not a unit-test summary.
+- `scripts/verify-coupling.js` is the model for the
+  "reproducible harness + log excerpt" pattern. Other
+  behavioural surfaces (gate enforcement, dispatch routing,
+  state-doc writes) should grow their own verify-X scripts as
+  they mature.
+- "tests passed" is necessary, not sufficient. The current
+  discipline relies on out-of-band log inspection; Slice 4's
+  hard runtime gates take this off the human path.
+
+### Post-merge for Tyson
+
+- `sudo pm2 reload quantumclaw` to pick up the new event types.
+- Send three Telegram messages (generic, "what ghl contacts",
+  "trading scanner status").
+- `sudo tail -30 /root/.quantumclaw/tool-call.log` — should
+  show three `'on_demand_routing'` records and three
+  `'deregistration'` records (plus per-tool `'activation'`
+  records for the two domain messages). Generic message must
+  have an `'on_demand_routing'` record with empty
+  `routed_on_demand_skills` and empty `activated_by_skill`.
+- If the log shape matches the verify-coupling.js excerpt above,
+  the per-message gate is fired in the live runtime.
