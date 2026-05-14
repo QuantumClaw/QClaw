@@ -157,7 +157,7 @@ export class ToolExecutor {
           }
 
           // AGEX: Content queue intercept
-          if (this.contentQueue && this._isPublishingAction(call.name, call.args)) {
+          if (this.contentQueue && this._isPublishingAction(call.name)) {
             const queueId = this.contentQueue.add(
               this._extractContentData(call.name, call.args),
               options.agent || 'unknown'
@@ -451,18 +451,10 @@ export class ToolExecutor {
     return null;
   }
 
-  _isPublishingAction(toolName, toolArgs) {
-    const argsStr = JSON.stringify(toolArgs).toLowerCase();
-    const publishKeywords = ['publish', 'post', 'send', 'deploy', 'live'];
-    
-    if (toolName === 'n8n-router') {
-      return publishKeywords.some(kw => argsStr.includes(kw));
-    }
-    
+  _isPublishingAction(toolName) {
     if (toolName.includes('wordpress') || toolName.includes('social') || toolName.includes('youtube')) {
       return true; // Always queue these
     }
-    
     return false;
   }
 
@@ -490,10 +482,6 @@ export class ToolExecutor {
       data.platform = 'youtube';
       data.title = toolArgs.title || '';
       data.body = toolArgs.description || '';
-    } else if (toolName === 'n8n-router') {
-      data.type = 'automation';
-      data.platform = 'n8n';
-      data.body = JSON.stringify(toolArgs);
     }
 
     return data;

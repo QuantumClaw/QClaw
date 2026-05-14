@@ -52,7 +52,7 @@ If the answer is here, **answer from your prompt.** Do not run a tool. Examples:
 - "What did we ship this week?" → answer from build log.
 
 **External state.** Not in your prompt. Lives in live systems. Use tools to fetch:
-- Live n8n execution status, workflow runs → `n8n_workflow_update` / n8n MCP
+- Live n8n execution status, workflow runs → `charlie__n8n-api__*` read endpoints (workflows/executions); `n8n_workflow_update` is write-only
 - Supabase rows (heartbeats, drafts, jobs) → Supabase MCP
 - GHL contacts, conversations, opportunities → GHL skill endpoints
 - Stripe customer/invoice state → Stripe skill endpoints

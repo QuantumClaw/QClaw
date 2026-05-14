@@ -55,6 +55,7 @@ files and are still mutable via the dashboard. Reconciliation TBD.
 - Gate log: `~/.quantumclaw/gate.log` (file-based, will surface in QClaw dashboard post-Phase-5)
 - Skill load log: `~/.quantumclaw/skill-load.log` (file-based, JSON Lines, mode 0600, written by `src/agents/skill-loader.js` from Slice 2b — one entry per `loadSkills()` call. Supabase migration deferred post-Phase-4.) `userId` field semantics: Telegram-sourced calls carry the Telegram user id; non-Telegram callers (scheduled heartbeat tasks in `src/core/heartbeat.js`, CLI `agent.process()` invocations in `src/cli/index.js`) pass no userId, which surfaces as the string `"null"` in the log — by design, since these calls have no Telegram user. Identified Slice 2c Task 6.
 - Claude Code dispatch log: Supabase table `claude_code_dispatches` (Phase 4 Slice 5)
+- Tool registration / call log: `~/.quantumclaw/tool-call.log` (file-based, JSON Lines, mode 0600, written by `src/tools/registry.js` from Slice 3a — one entry per registration event with `{ts, event, source, tool, scope, ...}`). Tests can override via `QCLAW_TOOL_CALL_LOG_PATH`. Slice 3b extends the same log to routing decisions; Slice 3c covers per-call execution.
 
 ## Capability layer
 
@@ -65,7 +66,7 @@ files and are still mutable via the dashboard. Reconciliation TBD.
 - Bootstrap Layer 6: `bootstrap.skills.always_on` — populated by `_layer6Skills` (`src/agents/bootstrap.js`); cached per session by the existing 30-min bootstrap TTL; reused by `loadSkills` via `context.bootstrap` so always-on skills don't re-read on every message inside the cache window.
 - Generated keyword reference: `KEYWORD_REFERENCE.md` at repo root — generated from skill frontmatter via `node scripts/regen-keyword-reference.js`. Marked GENERATED at top; do not hand-edit. Will be retired when intent classification replaces keyword routing (Phase 5+).
 - Skill symlinks (Charlie runtime): `/root/.quantumclaw/workspace/agents/charlie/skills/` — every file is a symlink into `/root/QClaw/src/agents/skills/`. As of Slice 2b: 15 symlinks (17 post-Slice-2a Task 1, minus 2 archived in 2b — `charlie-cto.md` and `agent-coordination.md`).
-- Tool registry: code-defined in `src/agents/tools/` (Phase 4 Slice 3 will narrow per audit T7)
+- Tool registry: `src/tools/registry.js` — `ToolRegistry` class. Three storage maps: `_builtins` (`get_current_time`, `calculate`, `web_fetch`, `search_knowledge`, `shell_exec`, `n8n_workflow_update`), `_apiTools` (preset HTTP tools + per-agent skill-defined HTTP tools), `_tools` (live MCP server tools). Public registration surface: `registerBuiltin(name, def)`, `registerSkillTool(agentName, skillName, parsedSkill, toolDef)`, `enablePreset`, `addCustom`, `addRemote`. Every entry carries an explicit `scope` field — `'shared'` for utility/memory/comms/read-only tools, or `[agent_name, ...]` for domain tools (Slice 3a `shared__` rule; see CHARLIE_OVERHAUL.md Component 4). Sibling files in `src/tools/`: `executor.js` (agentic loop + AGEX gates), `mcp-client.js` (MCP stdio/SSE transport), `shell-exec.js` (factory), `n8n-workflow-update.js` (factory). Scope is metadata in Slice 3a — Slice 3b couples to skill loading; Slice 3c enforces at call time.
 
 ## Reference docs (Tyson and Claude Code)
 

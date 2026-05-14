@@ -364,7 +364,7 @@ export class CredentialManager {
 
   /**
    * Issue envelopes for multiple keys at once.
-   * Convenience wrapper used by spawn_agent and skill execution.
+   * Convenience wrapper used by skill execution.
    *
    * @param {string[]} keys          - Secret keys to issue
    * @param {string} recipientId     - Child AID id or agent/skill name

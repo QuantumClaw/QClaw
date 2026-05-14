@@ -7,10 +7,10 @@
  * Decision order in check():
  *   0. autoApproveTools short-circuit
  *   1. Verb-scoped destructive-pattern match (shell tools only)
- *   2. Skill-dir allowlist bypass (fs + shell tools with path/cwd)
+ *   2. Skill-dir allowlist bypass (shell tools with cwd targeting
+ *      /root/QClaw/src/agents/skills/)
  *   3. Gated tool list
- *   4. filesystem__write_file path contains src/
- *   5. Stripe charge special-case
+ *   4. Stripe charge special-case
  *
  * Verb-scoping (step 1) replaces the old JSON.stringify(args).includes()
  * keyword scan, which false-triggered on any sed script / file content
@@ -21,7 +21,7 @@
  * Skill-dir allowlist (step 2) lets Charlie edit his own skill files
  * under /root/QClaw/src/agents/skills/ without Telegram approval. Scope
  * is tight: that exact directory, not /root/QClaw/** — source code edits
- * still require approval via the gatedTools + src/ rules.
+ * still require approval via the gatedTools rules.
  */
 
 import path from 'path';
@@ -45,16 +45,10 @@ export class ApprovalGate {
 
     this.notifier = config.notifier || null;
 
-    this.autoApproveTools = config.autoApproveTools || [
-      'spawn_agent',
-    ];
+    this.autoApproveTools = config.autoApproveTools || [];
 
     this.gatedTools = config.gatedTools || [
-      'filesystem__write_file',
-      'filesystem__edit_file',
-      'filesystem__move_file',
       'shell_execute',
-      'n8n-router',
     ];
 
     // Verb-scoped destructive patterns. Compare against the first shell
@@ -66,11 +60,7 @@ export class ApprovalGate {
     this.skillEditAllowlist = config.skillEditAllowlist || SKILL_EDIT_ALLOWLIST;
 
     this.riskWeights = {
-      filesystem__write_file: 'medium',
-      filesystem__edit_file: 'medium',
-      filesystem__move_file: 'low',
       shell_execute: 'high',
-      'n8n-router': 'high',
     };
   }
 
@@ -178,16 +168,7 @@ export class ApprovalGate {
       };
     }
 
-    // 4. Filesystem writes under any src/ path (scope: whole repo)
-    if (toolName === 'filesystem__write_file' && toolArgs?.path?.includes('src/')) {
-      return {
-        requiresApproval: true,
-        reason: 'Writing to src/ directory',
-        riskLevel: 'high',
-      };
-    }
-
-    // 5. Stripe charge — verb-scoped against explicit action field,
+    // 4. Stripe charge — verb-scoped against explicit action field,
     // not JSON.stringify scan.
     if (toolName.includes('stripe')) {
       const action = toolArgs?.action || toolArgs?.operation || toolArgs?.type;

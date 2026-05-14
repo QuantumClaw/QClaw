@@ -231,9 +231,9 @@ export class Agent {
           if (parsed) {
             const tools = skillToTools(parsed);
             for (const tool of tools) {
-              this.services.toolRegistry.registerSkillTool(skill.name, parsed, tool);
+              this.services.toolRegistry.registerSkillTool(this.name, skill.name, parsed, tool);
             }
-            log.debug(`Skill [${skill.name}]: registered ${tools.length} tools`);
+            log.debug(`Skill [${skill.name}]: registered ${tools.length} tools (scope: ${this.name})`);
           }
         }
       }
@@ -549,7 +549,7 @@ You exist to make your human's life easier and their business more profitable. Y
 
     // Add agent identity (AGEX AID)
     if (this.aid) {
-      parts.push(`\n## Identity\n- **Agent ID (AID):** ${this.aid.aid_id}\n- **Trust Tier:** ${this.aid.trust_tier}\n- **Type:** ${this.aid.agent?.type || 'worker'}\n- You can spawn sub-agents using the spawn_agent tool. Each gets its own AID with delegated permissions.`);
+      parts.push(`\n## Identity\n- **Agent ID (AID):** ${this.aid.aid_id}\n- **Trust Tier:** ${this.aid.trust_tier}\n- **Type:** ${this.aid.agent?.type || 'worker'}`);
     }
 
     // Slice 2b: route skills. Always-on portion reuses bootstrap.skills.always_on

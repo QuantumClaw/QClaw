@@ -285,9 +285,7 @@ Stuff currently broken, suboptimal, or pending. Charlie reads this section to kn
 
 ### Tool surface
 
-- Filesystem MCP fails to start every restart. Pending Phase 4 Slice 3 removal.
-- `spawn_agent` tool creates dead stubs. Pending Phase 4 Slice 3 removal.
-- Phantom tool reference: `Supabase:execute_sql` in `charlie-cto.md:16`. To be replaced with `supabase_select` per Phase 4 Slice 3.
+- (Resolved 2026-05-14, Slice 3a) Filesystem MCP preset removed from `PRESET_SERVERS`; the dashboard `POST /api/agents/spawn` endpoint and the `spawn_agent` built-in are both gone; the `Supabase:execute_sql` reference in `archive/charlie-cto.md` corrected to `supabase_select`. The `supabase_select` tool itself is still not registered (no Supabase preset in `PRESET_SERVERS`) — Slice 3b decides whether to add the preset or drop the always-on prose reference in `delegation.md`.
 
 ### Skill files
 

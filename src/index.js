@@ -30,7 +30,6 @@ import { createShellExecTool } from './tools/shell-exec.js';
 import { createN8nWorkflowUpdateTool } from './tools/n8n-workflow-update.js';
 import { RateLimiter } from './security/rate-limiter.js';
 import { ContentQueue } from './security/content-queue.js';
-import { ScopedSecretProxy } from './security/scoped-secret-proxy.js';
 import { banner } from './cli/brand.js';
 import { log } from './core/logger.js';
 import { writeFileSync, unlinkSync } from 'fs';
@@ -203,126 +202,23 @@ class QuantumClaw {
       const toolStatus = await this.tools.init();
 
       // Wire the search_knowledge built-in to the live memory graph
-      if (this.tools._builtins.has('search_knowledge') && this.memory.graphQuery) {
-        const originalEntry = this.tools._builtins.get('search_knowledge');
-        const originalFn = originalEntry?.fn || (typeof originalEntry === 'function' ? originalEntry : null);
-        this.tools._builtins.set('search_knowledge', {
-          description: originalEntry?.description || 'Search the knowledge graph for entities, relationships, and stored memories',
-          inputSchema: originalEntry?.inputSchema || { type: 'object', properties: { query: { type: 'string', description: 'Natural language search query' } }, required: ['query'] },
+      if (this.tools.has('search_knowledge') && this.memory.graphQuery) {
+        const originalEntry = this.tools.getBuiltin('search_knowledge');
+        const originalFn = originalEntry?.fn;
+        this.tools.registerBuiltin('search_knowledge', {
+          scope: 'shared',
+          description: originalEntry.description,
+          inputSchema: originalEntry.inputSchema,
           fn: async (args) => {
             const graphResult = await this.memory.graphQuery(args.query || args.q || '');
             if (graphResult.results?.length > 0) {
               return graphResult.results.map(r => r.content || r).join('\n\n');
             }
-            // Fall back to original built-in if no graph results
+            // Fall back to the registry stub if no graph results
             return originalFn ? await originalFn(args) : 'No knowledge found.';
           }
         });
       }
-
-      // Wire the spawn_agent built-in for agentic sub-agent creation
-      this.tools._builtins.set('spawn_agent', {
-        description: 'Spawn a new sub-agent with a specific role and scoped permissions',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'Unique name for the agent (lowercase, alphanumeric)' },
-            role: { type: 'string', description: 'Role description for the agent' },
-            model_tier: { type: 'string', enum: ['simple', 'standard', 'advanced'], description: 'Model tier (default: simple)' },
-            scopes: { type: 'array', items: { type: 'string' }, description: 'Permission scopes (e.g. chat, crm, code)' }
-          },
-          required: ['name', 'role']
-        },
-        fn: async (args) => {
-          const { name, role, model_tier, scopes } = args;
-          if (!name || !role) return 'Error: name and role are required';
-
-          const spawnStart = Date.now();
-          const withDeadline = (label, promise, ms) => Promise.race([
-            promise,
-            new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)),
-          ]);
-
-          try {
-            const { Agent } = await import('./agents/registry.js');
-            const { existsSync, mkdirSync, writeFileSync } = await import('fs');
-            const { join } = await import('path');
-
-            const safeName = name.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-            const agentDir = join(this.config._dir, 'workspace', 'agents', safeName);
-
-            const tSetup = Date.now();
-            mkdirSync(agentDir, { recursive: true });
-            const soulContent = `# ${safeName}\n\nYou are **${safeName}**, a specialised sub-agent.\n\n## Role\n\n${role}\n\n## Rules\n\n- You are a ${model_tier || 'simple'}-tier agent — be token-efficient\n- Scoped access: ${(scopes || ['chat']).join(', ')}\n- Report to the primary agent\n`;
-            writeFileSync(join(agentDir, 'SOUL.md'), soulContent);
-            log.debug(`[spawn_agent:${safeName}] setup (mkdir+SOUL) ${Date.now() - tSetup}ms`);
-
-            // Generate child AID — 5s deadline to avoid hanging the whole spawn
-            let childAid = null;
-            if (this.credentials?.generateChildAID) {
-              const tAid = Date.now();
-              try {
-                childAid = await withDeadline(
-                  'generateChildAID',
-                  this.credentials.generateChildAID(safeName, role, scopes || []),
-                  5000
-                );
-                writeFileSync(join(agentDir, 'aid.json'), JSON.stringify(childAid, null, 2));
-                log.debug(`[spawn_agent:${safeName}] generateChildAID ${Date.now() - tAid}ms`);
-              } catch (err) {
-                log.debug(`[spawn_agent:${safeName}] generateChildAID failed after ${Date.now() - tAid}ms: ${err.message} — continuing without child AID`);
-              }
-            }
-
-            // ── AGEX credential delegation ──
-            const childRecipientId = childAid?.aid_id || safeName;
-            let scopedSecrets = this.credentials;
-
-            if (this.credentials?.issueEnvelope) {
-              const tEnv = Date.now();
-              try {
-                const keysForScopes = this._resolveKeysForScopes(scopes || ['chat']);
-                const envelopes = await withDeadline(
-                  'issueEnvelopes',
-                  this.credentials.issueEnvelopes(keysForScopes, childRecipientId, 3600),
-                  5000
-                );
-                scopedSecrets = new ScopedSecretProxy(envelopes, this.secrets, safeName);
-                log.debug(`[spawn_agent:${safeName}] issueEnvelopes (${envelopes.length}) ${Date.now() - tEnv}ms`);
-                this.audit.log('system', 'credential_delegation', safeName, {
-                  envelopes: envelopes.map(e => e.toJSON()),
-                  recipientAid: childRecipientId,
-                });
-              } catch (err) {
-                log.debug(`[spawn_agent:${safeName}] issueEnvelopes failed after ${Date.now() - tEnv}ms: ${err.message} — using parent credentials`);
-              }
-            }
-
-            // Load into registry with scoped credentials
-            const tLoad = Date.now();
-            const agent = new Agent(safeName, agentDir, {
-              router: this.router, memory: this.memory,
-              audit: this.audit, toolExecutor: this.toolExecutor,
-              trustKernel: this.trustKernel,
-              secrets: scopedSecrets,
-              toolRegistry: this.tools,
-            });
-            await agent.load();
-            this.agents.agents.set(safeName, agent);
-            log.debug(`[spawn_agent:${safeName}] agent.load() ${Date.now() - tLoad}ms (total ${Date.now() - spawnStart}ms)`);
-
-            this.audit.log('system', 'agent_spawned', safeName, { role, scopes });
-
-            const aidInfo = childAid ? ` AID: ${childAid.aid_id.slice(0, 12)}..., Tier ${childAid.trust_tier}.` : '';
-            const envelopeInfo = scopedSecrets instanceof ScopedSecretProxy
-              ? ` Delegated ${scopedSecrets.activeEnvelopes().length} credential(s).`
-              : '';
-            return `Agent "${safeName}" spawned successfully.${aidInfo}${envelopeInfo} Role: ${role}. Scopes: ${(scopes || ['chat']).join(', ')}.`;
-          } catch (err) {
-            return `Failed to spawn agent: ${err.message}`;
-          }
-        }
-      });
 
       // AGEX Security Stack
       const workspaceDir = this.config._dir ? join(this.config._dir, 'workspace') : join(homedir(), '.quantumclaw', 'workspace');
@@ -334,12 +230,14 @@ class QuantumClaw {
 
       // Register execution tools — shell_exec + n8n_workflow_update.
       // Both declare longRunning so the executor waits up to 11 min for approval.
-      this.tools._builtins.set('shell_exec', createShellExecTool({
-        approvalGate, audit: this.audit, auditActor: 'charlie',
-      }));
-      this.tools._builtins.set('n8n_workflow_update', createN8nWorkflowUpdateTool({
-        approvalGate, audit: this.audit, auditActor: 'charlie',
-      }));
+      this.tools.registerBuiltin('shell_exec', {
+        scope: 'shared',
+        ...createShellExecTool({ approvalGate, audit: this.audit, auditActor: 'charlie' }),
+      });
+      this.tools.registerBuiltin('n8n_workflow_update', {
+        scope: 'shared',
+        ...createN8nWorkflowUpdateTool({ approvalGate, audit: this.audit, auditActor: 'charlie' }),
+      });
       const rateLimiter = new RateLimiter({
         _dir: workspaceDir,
         rateLimits: {
@@ -629,39 +527,6 @@ class QuantumClaw {
     process.on('SIGTERM', () => shutdown('SIGTERM'));
   }
 
-  /**
-   * Map agent scopes (e.g. ['crm', 'chat']) to secret keys that need envelopes.
-   * Used by spawn_agent to determine which credentials to delegate.
-   */
-  _resolveKeysForScopes(scopes) {
-    // Scope-to-key mapping — which secret keys each scope category requires
-    const SCOPE_KEY_MAP = {
-      crm:       ['ghl_api_key', 'hubspot_api_key'],
-      knowledge: ['notion_api_key', 'airtable_api_key'],
-      payments:  ['stripe_api_key'],
-      code:      ['github_api_key', 'linear_api_key'],
-      voice:     ['elevenlabs_api_key', 'deepgram_api_key'],
-      cloud:     ['oracle_api_key', 'aws_api_key'],
-      // 'chat', 'memory', 'web', 'skills' don't require service credentials
-    };
-
-    const keys = new Set();
-    for (const scope of scopes) {
-      const mapped = SCOPE_KEY_MAP[scope];
-      if (mapped) {
-        for (const k of mapped) keys.add(k);
-      }
-    }
-
-    // If scopes include '*' or 'all', delegate everything
-    if (scopes.includes('*') || scopes.includes('all')) {
-      for (const vals of Object.values(SCOPE_KEY_MAP)) {
-        for (const k of vals) keys.add(k);
-      }
-    }
-
-    return [...keys];
-  }
 }
 
 // Start

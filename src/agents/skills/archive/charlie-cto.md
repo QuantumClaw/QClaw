@@ -19,7 +19,7 @@ DO NOT ask Tyson for information. Use your tools directly:
 "What's the trading room state?" →
 1. Call n8n:get_workflow_details with 3YahxqOguET3pifj (Market Scanner)
 2. Call n8n:execute_workflow with 3YahxqOguET3pifj to get fresh scan
-3. Call Supabase:execute_sql to query trading_simulations and trading_positions
+3. Call supabase_select to query trading_simulations and trading_positions
 4. Report back with actual data
 
 "Is the scanner working?" →

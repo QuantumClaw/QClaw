@@ -26,9 +26,9 @@ GET /executions?workflowId={{workflow_id}}&status={{status}} - Filter executions
 
 ## Diagnostic approach
 When asked about ANY n8n workflow:
-1. Use get_workflows to list all workflows and find the one you need by name
+1. Use get_workflows_limit_200 to list all workflows and find the one you need by name
 2. Use get_workflows_id with the workflow's ID to inspect its nodes
-3. Use get_executions_workflowid_id_status_id with status=error to find recent failures
+3. Use get_executions_workflowid_workflow_id_status_status with status=error to find recent failures
 4. Use get_executions_id on a failing execution to see the exact error message
 5. Map the failing node type to a likely cause:
    - Anthropic / Claude nodes → credits exhausted

@@ -249,13 +249,21 @@ This checklist applies to authoring and to skill-content review. Slice 2b hotfix
 **Tool registration interface:**
 {
 name, description, parameters,
-scope: [agent_name, ...],
+scope: 'shared' | [agent_name, ...],
 audit_level: 'log' | 'log_and_alert' | 'require_approval',
 rate_limit: {calls_per_minute, calls_per_hour},
 handler
 }
 
-Out-of-scope tool calls return structured `{error: 'out_of_scope', suggestion: 'delegate to <correct_agent>'}`.
+**`shared__` rule (Slice 3a anchor):** a tool is registered with `scope: 'shared'` only when every agent in Charlie + specialists would legitimately need it — utility (`get_current_time`, `calculate`), memory (`search_knowledge`), read-only fetch (`web_fetch`), shared infrastructure (`shell_exec`). Domain tools (`trading_*`, `ghl_*`, `stripe_*`, `content_studio_*`, every skill-defined HTTP tool) carry `scope: [agent_name, ...]`. Skill tools are scoped to the agent whose `skills/` directory they were loaded from. Scope is metadata in Slice 3a — `getToolDefinitions()` does not filter on it yet; Slice 3b couples scope to skill loading and Slice 3c enforces at call time.
+
+**Tool registration surface (Slice 3a):**
+- `ToolRegistry.registerBuiltin(name, definition)` — public API for built-in tools. Replaces the Slice-2-era pattern of `index.js` reaching into `_builtins.set()`. Every definition must carry an explicit `scope`.
+- `ToolRegistry.registerSkillTool(agentName, skillName, parsedSkill, toolDef)` — 4-arg form is mandatory. The legacy 3-arg shim (silently defaulting to `'shared'`) was removed.
+- Preset API tools and MCP tools carry scope assigned from `PRESET_SCOPE_MAP` in `src/tools/registry.js`; default is `'shared'` if not listed.
+- Every registration call emits one `{event:'registration',source,tool,scope,...}` JSONL record to `tool-call.log` (see `LOCATIONS.md` Operational layer). Slice 3b extends the same log to routing decisions; Slice 3c covers per-call execution.
+
+Out-of-scope tool calls return structured `{error: 'out_of_scope', suggestion: 'delegate to <correct_agent>'}` (deferred to Slice 3b, when scope is actually enforced at call time).
 
 ### Component 5 — Verification gates
 
@@ -417,8 +425,19 @@ Per-keyword exhaustive routing tests landed: `skill-router.test.js` 27 → 134 c
 
 **Phase 4 Slice 2 fully closed** with 2a + 2b + 2c all verified live.
 
-**Slice 3 — Tool surface overhaul.** **Next.**
-Tool-registration coupling (audit T7 — deferred from 2b) is the primary scope. Then: narrow tools added (`read_file`, `grep_repo`, `pm2_status`, `n8n_workflow_get`, etc.). `shell_exec` narrowed to read-only allowlist. `spawn_agent` and broken filesystem MCP removed. Tool registration interface with scope.
+**Slice 3 — Tool surface overhaul.** Split into 3a / 3b / 3c per 2026-05-14 design conversation.
+
+**Slice 3a — Registry refactor + dead surface removal.** ✓ COMPLETE 2026-05-14
+
+`ToolRegistry` public API anchored: `registerBuiltin(name, def)` + `registerSkillTool(agentName, skillName, parsedSkill, toolDef)` are the two registration surfaces; the legacy 3-arg `registerSkillTool` shim that silently scoped every skill tool to `'shared'` is gone (now throws). Every tool entry — built-in, preset HTTP, MCP, skill-defined — carries an explicit `scope` field (`'shared'` or `[agent_name, ...]`); `PRESET_SCOPE_MAP` scopes `stripe`/`ghl` to `['charlie']`, everything else to `'shared'`. `index.js` no longer reaches into the private `_builtins` map — `has()`, `getBuiltin()`, `registerBuiltin()` cover the surface. New `~/.quantumclaw/tool-call.log` (JSONL, 0600) emits one record per registration event with `{ts, event, source, tool, scope, ...}`. Dashboard `POST /api/agents/spawn` removed (zero callers). `spawn_agent` built-in removed (created dead stubs, auto-approved). Filesystem MCP preset removed (failed to start every restart) along with its `gatedTools` / `riskWeights` entries and the unreachable `'4. Filesystem writes under any src/ path'` branch in `approval-gate.check()`. `n8n-router` gate string removed from `approval-gate` + `executor` (dead literal — actual skill tool names are `charlie__n8n-router__create_webhook_*`). `n8n-api.md` self-naming mismatch corrected to the slugs the parser actually produces. Phantom `Supabase:execute_sql` in `archive/charlie-cto.md` corrected to `supabase_select` (the `supabase_select` tool itself is still not registered — Slice 3b decision). `verification-reflexes.md` and `lanes.md` re-classify `n8n_workflow_update` as write-only. `LOCATIONS.md:68` corrected to the real registry path; tool-registration canonical paths + shared__ rule pointer documented. New test `tests/tool-registry-scope.test.js` (16 checks) asserts every registered tool has scope. No behavioural change to which tools Charlie can call — scope is metadata in 3a.
+
+**Slice 3b — Skill-loading ↔ tool-registration coupling.** Next.
+
+Couples scope metadata from 3a to skill loading: tool registration becomes a function of `loadSkills()` output rather than a separate boot-time loop. Out-of-scope tool calls return structured `{error: 'out_of_scope', suggestion: 'delegate to <correct_agent>'}`. Per-keyword tool routing tests. `supabase_select` registration vs `delegation.md` prose drop decision.
+
+**Slice 3c — `shell_exec` narrowing + hygiene.** After 3b.
+
+`shell_exec` narrowed to read-only allowlist (`ls`, `cat`, `grep`, `find`, `git status`, `git log`, `git diff`, `pm2 list`, `pm2 logs --nostream`, etc.). `shell_exec` / `shell_execute` name reconciliation (audit Finding 9). Read/write split for the read-only observation tools. Per-specialist tool sets deferred to Slice 6.
 
 **Slice 4 — Verification gates (soft + hard).**
 `verification-reflexes.md` skill written and loaded. `runGates()` runtime function with five gates. Gate log in place.

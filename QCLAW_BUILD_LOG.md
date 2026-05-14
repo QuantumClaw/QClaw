@@ -2,7 +2,7 @@
 
 **Project:** QClaw — Self-hosted Claude agent runtime (Fork of QuantumClaw/QClaw)
 **Owner:** Tyson Venables / Flow OS
-**Last updated:** 13 May 2026
+**Last updated:** 14 May 2026
 **Repo:** https://github.com/tysonven/QClaw
 
 ---
@@ -9878,3 +9878,126 @@ pre-existing probes workstation failure unchanged.
   should land in `/tmp/`.
 
 End of session 2026-05-14 prompt-dump diagnostic episode.
+
+---
+
+## [2026-05-14] Slice 3a — Tool Registry Refactor + Dead Surface Removal
+
+Branch `cc/slice3a-tool-registry-refactor-20260514-1429`. Audit grounding:
+`/tmp/slice3_tool_registration_audit.md` (Brief 2 deliverable, 44 KB).
+Slice 3a is the first of three sub-slices (3a/3b/3c) splitting the
+original Slice 3 scope, anchoring the canonical registration interface
+so 3b has something to couple skill loading against and 3c can narrow
+`shell_exec` against a stable surface. Mechanical-with-decisions: no
+behavioural change to which tools Charlie can call.
+
+### What changed (this PR)
+
+Five commits on the branch, one per Unit:
+
+- `7d28e31` — Unit 1: per-agent scope + tool-call.log scaffold.
+  `Agent.load()` now passes `this.name` through to the 4-arg
+  `registerSkillTool(agentName, skillName, parsedSkill, toolDef)`;
+  the legacy 3-arg shim is gone (throws instead of silent-stripping
+  scope to `'shared'`). `ToolRegistry.registerBuiltin(name, def)`
+  added as the public API. Every built-in carries `scope: 'shared'`;
+  preset HTTP tools and MCP tools pick up scope from a small
+  `PRESET_SCOPE_MAP` (`stripe`/`ghl` → `['charlie']`, everything
+  else → `'shared'`). `listTools()` surfaces scope on every entry.
+  New file `~/.quantumclaw/tool-call.log` (JSONL, 0600) — every
+  registration call emits a `{ts, event, source, tool, scope, ...}`
+  record. New test `tests/tool-registry-scope.test.js` (16 checks)
+  asserts every registered tool has scope and the 3-arg form throws.
+  `CHARLIE_OVERHAUL.md` Component 4 documents the shared__ rule and
+  the registration surface; `LOCATIONS.md` Operational layer
+  declares `tool-call.log`.
+
+- `a5838c0` — Unit 2: `ToolRegistry.has(name)` + `getBuiltin(name)`
+  + the new `registerBuiltin` migrated three of the four `index.js`
+  call sites that previously mutated `_builtins` directly
+  (`search_knowledge` re-wire, `shell_exec`, `n8n_workflow_update`).
+  `spawn_agent` was the fourth — left for Unit 4 to delete cleanly
+  rather than migrate-then-remove.
+
+- `189599b` — Unit 3: dashboard `POST /api/agents/spawn` removed.
+  Audit-phase grep found zero callers outside the endpoint
+  definition itself (a CHANGELOG.md historical mention; the rest
+  was `server.js.bak` backup). Same dead-stub failure mode as
+  `spawn_agent`. Pure deletion — nothing to tighten toward.
+
+- `f68b2ee` — Unit 4: spawn_agent built-in + filesystem MCP preset
+  + `n8n-router` gate string + `n8n-api.md` self-naming all gone.
+  spawn_agent removal also cleaned up the now-orphan
+  `ScopedSecretProxy` import in `index.js` and the
+  `_resolveKeysForScopes` helper, plus the SOUL.md system-prompt
+  suffix that mentioned the tool. Filesystem MCP removal cleaned
+  up `filesystem__write_file`/`__edit_file`/`__move_file` from
+  `gatedTools` and `riskWeights` and dropped the now-unreachable
+  `'4. Filesystem writes under any src/ path'` branch inside
+  `check()`. `_isSkillDirOperation` is preserved because
+  `shell_exec`'s `cwd` argument still flows through it — the
+  audit flagged it as filesystem-only-serving, but that read was
+  too narrow. `n8n-router` gate string removed from
+  `executor._isPublishingAction` (signature reduced to single
+  toolName arg), `executor._extractContentData`, and the approval
+  gate's `gatedTools`/`riskWeights`. `n8n-api.md` Diagnostic
+  approach corrected: `get_workflows` → `get_workflows_limit_200`,
+  `get_executions_workflowid_id_status_id` →
+  `get_executions_workflowid_workflow_id_status_status` (now
+  matches what the skill parser actually produces).
+
+- (this commit) — Unit 5: mechanical C3 phantoms + doc updates +
+  Slice 3a status flip. `archive/charlie-cto.md`
+  `Supabase:execute_sql` → `supabase_select`.
+  `verification-reflexes.md` and `lanes.md` re-classify
+  `n8n_workflow_update` from a read tool to a write tool
+  (read-context references swapped to `charlie__n8n-api__*`).
+  `LOCATIONS.md:68` corrected — was pointing at
+  `src/agents/tools/` (does not exist); now names
+  `src/tools/registry.js` as the canonical path and documents the
+  shared__ rule pointer. `FLOW_OS_STATE.md` §7 Tool surface block
+  collapsed into a single Slice 3a resolution note (filesystem
+  MCP, spawn_agent, and the Supabase phantom all closed; the
+  underlying `supabase_select` registration question is left open
+  for Slice 3b). `CHARLIE_OVERHAUL.md` Slice 3a status flipped to
+  ✓ COMPLETE.
+
+### Out of scope (Slice 3b)
+
+- Coupling tool registration to skill loading
+- Per-keyword tool routing tests
+- Out-of-scope tool call structured error response
+- `supabase_select` registration vs. `delegation.md` prose drop
+
+### Out of scope (Slice 3c)
+
+- `shell_exec` read-only allowlist
+- Per-specialist tool sets (Slice 6)
+- `shell_exec` vs `shell_execute` name reconciliation (audit
+  Finding 9)
+
+### Out of scope (Slice 4)
+
+- Three C3 hallucination-class phantoms — these need gate
+  enforcement, not rename (audit Findings 11, 12, 15)
+
+### What verified
+
+`npm test` on the qclaw server — full suite green:
+
+- `tests/tool-registry-scope.test.js` → 16 passed, 0 failed
+  (new this slice)
+- All pre-existing test files pass without modification.
+- Probe `grep -rn 'spawn_agent\|filesystem__write_file\|filesystem__edit_file\|filesystem__move_file' src/` returns one stale comment that this commit also cleans
+  up; one match in `src/agents/skills/n8n-router.md` is the skill
+  filename, not the gate string.
+
+### Post-merge for Tyson
+
+- `sudo pm2 reload quantumclaw` to pick up the registry refactor.
+- First boot will create `~/.quantumclaw/tool-call.log` (mode 0600)
+  and start writing registration events. Confirm the file appears
+  and contains one line per registered tool.
+- Confirm Charlie's tool list (dashboard `GET /api/tools`) no
+  longer contains `spawn_agent` or `filesystem__*` entries and
+  every entry now carries a `scope` field.
