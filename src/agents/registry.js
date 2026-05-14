@@ -297,12 +297,22 @@ export class Agent {
       context?.userId
     );
 
-    const MAX_CONTEXT_CHARS = 100000;
+    // H2 fix (2026-05-14): char-budget raised 100k → 300k. Charlie calls
+    // Claude (typically Opus 4.x, 200k-token context ≈ ~800k chars).
+    // 300k chars ≈ ~75k tokens — leaves ~125k tokens of model headroom
+    // for the response and tool round-trips. _truncateHistory below is
+    // the real ceiling on what reaches the model.
+    const MAX_CONTEXT_CHARS = 300000;
     const systemChars = systemPrompt.length;
     const messageChars = textMessage.length;
     const availableForHistory = MAX_CONTEXT_CHARS - systemChars - messageChars;
 
-    const historyLimit = knowledgeContext.length > 100 ? 8 : 20;
+    // H2 fix (2026-05-14): flat 24 (was `knowledgeContext.length > 100 ? 8 : 20`).
+    // The prior ternary was a band-aid for prompt-bloat under heavy knowledge;
+    // _truncateHistory(availableForHistory) is the actual char-budget ceiling,
+    // making the message-count cap redundant. 8-message cap (4 turns) was
+    // confirmed too tight by the 2026-05-12 context-loss diagnostic.
+    const historyLimit = 24;
     // H1 fix (2026-05-14): scope history to the (channel, userId) of the
     // current message so heartbeat / CLI / dashboard writes can't pollute
     // the Telegram conversation a user is mid-flight in. Pre-fix this was
