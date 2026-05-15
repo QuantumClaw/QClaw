@@ -294,6 +294,21 @@ Stuff currently broken, suboptimal, or pending. Charlie reads this section to kn
 - `content-studio.md` is a 440-byte stub. Rebuild from `FLOW_OS_SPECIALISTS.md` in Phase 4 Slice 2.
 - `community-manager.md` (both Flow OS and FSC) does not exist. Create in Phase 4 Slice 2.
 - Files to archive: `charlie-cto.md` (superseded by `CHARLIE_ROLE.md`), `agent-coordination.md` (frozen Echo agent), `n8n-api.md.backup.*` (stale backup).
+- **HIGH (2026-05-14, Slice 3b.1 verification) — `ghl.md` keyword coverage gap.**
+  - Symptom: "what leads do we have right now" did not route `ghl.md` (tool-call.log entry 19:08:45Z showed `routed_on_demand_skills:[]` and `active_set_size:6`).
+  - Root cause: `ghl.md` frontmatter keywords don't include "leads", "contacts", or "pipeline" — the most natural words a user would use to ask about GHL data.
+  - Fix shape: add keywords to `ghl.md` frontmatter. Likely a 5-minute dispatch.
+  - Priority HIGH — Charlie can't reach GHL tools through natural phrasing, will keep falling back to `shell_exec` which 3c will block.
+- **LOW (2026-05-14, Slice 3b.1 verification) — Trading API 401 even when tools activated.**
+  - Symptom: "status of trading" routed `trading-api` correctly (tool-call.log entry 19:09:13Z showed 4 `trading-api` tools activated), but Charlie reported all three trading endpoints returning 401 Unauthorised.
+  - Root cause: pre-existing auth wiring bug in the `trading-api` skill — either `secrets.dashboard_auth_token` is missing/expired or the trading-worker is genuinely down. Separate from 3b.
+  - Fix shape: separate diagnostic dispatch on `trading-api` auth wiring + trading-worker process state.
+  - Priority LOW — trading cluster is deactivated per 2026-05-13; auth fix only useful after Polymarket funds and worker diagnostic resolve.
+- **LOW (2026-05-14, Slice 3b.1 verification) — Trading skill self-awareness gap.**
+  - Symptom: Charlie correctly recalled from bootstrap that trading cluster is deactivated, then tried `trading-api` tools anyway, reported 401 as a fix-worthy bug.
+  - Root cause: `trading-api.md` skill has no instruction like "if trading cluster is deactivated per state doc, do not attempt tool calls; report deactivation state and offer reactivation path."
+  - Fix shape: skill content edit, one paragraph. Out of any current slice scope — file as standalone followup.
+  - Priority LOW — cosmetic; tools will fail-loud anyway via the 401, no system impact.
 
 ### Content pipelines
 
