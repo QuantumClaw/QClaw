@@ -2,10 +2,19 @@
  * QuantumClaw — shell_exec tool
  *
  * Executes a shell command on the qclaw server as the quantumclaw user
- * (currently root — quantumclaw PM2 runs under root). Three safety tiers:
+ * (currently root — quantumclaw PM2 runs under root). Four safety tiers:
+ *
+ *   0. Allowlist (Slice 3c) — primary defence. First verb (or first-two-word
+ *      verb for `git X`, `pm2 X`) must be on the read-only allowlist in
+ *      `shell-exec-allowlist.js`. Chaining / command substitution rejected
+ *      at the same layer; pipes permitted with every segment allowlisted.
+ *      Non-allowlisted commands return `{error:'not_allowlisted',...}` and
+ *      never reach approval.
  *
  *   1. DENY_PATTERNS — hard-block. Never executed, never routed to approval.
- *      Covers secret exfiltration and pipe-to-shell RCE patterns.
+ *      Covers secret exfiltration and pipe-to-shell RCE patterns. Still
+ *      catches allowlisted verbs aimed at forbidden paths (e.g.
+ *      `cat /root/.quantumclaw/.env`).
  *
  *   2. DESTRUCTIVE_PATTERNS — require inline Telegram approval.
  *      Covers anything that deletes/kills/force-pushes/redirects-to-root.
@@ -17,15 +26,16 @@
  * Default 60s timeout, max 300s.
  *
  * Threat model note: shell_exec makes Charlie's LLM a root-code-execution
- * endpoint. DENY + DESTRUCTIVE + QC-dir gates narrow the blast radius but
- * don't close it — a novel "safe-looking" command that does damage will
- * pass. Audit log is the detective control. See QCLAW_BUILD_LOG.md Apr 21
- * Phase 1 Session 1 for the full trade-off.
+ * endpoint. Slice 3c's allowlist closes the "novel safe-looking command"
+ * gap by inverting the gate from blocklist to allowlist — only read-only
+ * verbs pass. DENY remains as a second-line catch for forbidden-path
+ * touches by allowlisted verbs. See QCLAW_BUILD_LOG.md Slice 3c entry.
  */
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { log } from '../core/logger.js';
+import { checkAllowlist } from './shell-exec-allowlist.js';
 
 const execAsync = promisify(exec);
 
@@ -73,7 +83,7 @@ const QUANTUMCLAW_DIR_RE = /\/root\/\.quantumclaw\b/;
 
 export function createShellExecTool({ approvalGate, audit, auditActor = 'charlie' }) {
   return {
-    description: 'Execute a shell command on the qclaw server. Destructive commands (rm -rf, sudo, kill, git reset --hard, etc) or any command touching /root/.quantumclaw require inline Telegram approval. Secret-exfiltration patterns are hard-denied. Default 60s timeout.',
+    description: 'Execute a read-only shell command on the qclaw server. Allowlisted verbs only: ls, cat, head, tail, wc, sort, uniq, grep, find, awk, sed, git status, git log, git diff, pm2 list, pm2 logs --nostream. Pipes (|) permitted; chaining (;, &&, ||) and command substitution ($(...), backticks) rejected. find -delete / -exec, sed -i, and pm2 logs without --nostream rejected. Non-allowlisted commands return {error:"not_allowlisted",suggestion:...}; allowlisted commands still pass through DENY (secret paths) and DESTRUCTIVE (redirects, sudo) gates. For write operations use claude_code_dispatch (Slice 5) or escalate to Tyson. Default 60s timeout.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -94,6 +104,29 @@ export function createShellExecTool({ approvalGate, audit, auditActor = 'charlie
       const startedAt = Date.now();
 
       if (!command) return { error: 'Missing command', exit_code: -1 };
+
+      // 0. Allowlist (Slice 3c) — first-line defence. Non-allowlisted
+      //    verbs, chaining, and command substitution are rejected here
+      //    BEFORE the approval system is consulted.
+      const allowlistCheck = checkAllowlist(command);
+      if (!allowlistCheck.allowed) {
+        log.warn(`shell_exec NOT ALLOWLISTED [${allowlistCheck.reason}]: ${command.slice(0, 160)}`);
+        audit?.log?.(auditActor, 'shell_exec_not_allowlisted', command.slice(0, 200), {
+          reason: allowlistCheck.reason,
+          verb: allowlistCheck.verb,
+          flag: allowlistCheck.flag,
+          pattern: allowlistCheck.pattern,
+        });
+        return {
+          error: 'not_allowlisted',
+          reason: allowlistCheck.reason,
+          verb: allowlistCheck.verb,
+          flag: allowlistCheck.flag,
+          command: command.slice(0, 200),
+          suggestion: allowlistCheck.suggestion,
+          exit_code: -1,
+        };
+      }
 
       // 1. DENY — hard block
       for (const { name, re } of DENY_PATTERNS) {
