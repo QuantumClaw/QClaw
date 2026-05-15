@@ -309,6 +309,16 @@ Stuff currently broken, suboptimal, or pending. Charlie reads this section to kn
   - Root cause: `trading-api.md` skill has no instruction like "if trading cluster is deactivated per state doc, do not attempt tool calls; report deactivation state and offer reactivation path."
   - Fix shape: skill content edit, one paragraph. Out of any current slice scope — file as standalone followup.
   - Priority LOW — cosmetic; tools will fail-loud anyway via the 401, no system impact.
+- **LOW (2026-05-15, Slice 3c.1 audit) — `Agent: unknown` in approval prompts for `shell_exec`.**
+  - Symptom: Slice 3c live smoke test 2026-05-15 17:00 Athens produced approval prompt with `Agent: unknown`. `src/tools/executor.js` line 135 uses `options.agent || 'unknown'` when calling `approvalGate.requestApproval`. `src/agents/registry.js` line 391 does NOT pass `agent` in the options object to `toolExecutor.run(messages, {model, system})`.
+  - Root cause: the agent context flow from `agent.process()` → `toolExecutor.run()` is missing the agent name. The executor knows what tool is being called but not which agent asked.
+  - Fix shape: thread `agent: this.name` (or equivalent) through the `toolExecutor.run` options. Small dispatch (single file, single line, plus a test).
+  - Priority LOW — cosmetic in the prompt only; audit log records `auditActor` correctly because that's wired at tool-construction time.
+- **MEDIUM (2026-05-15, Slice 3c.1 audit) — `_matchDestructivePattern` future-greediness watch.**
+  - Symptom: brief 3c.1 speculated `_matchDestructivePattern` was catching `pm2 list`. Audit found it was actually step 3 (gatedTools) that caught it; the destructive verb-scoped patterns correctly distinguish `pm2 stop/delete/restart` from `pm2 list/logs`. Not a current bug.
+  - Watch shape: when Slice 6 adds per-specialist read-only tools, the destructive verb list should be reviewed against the new verb surfaces. If anyone adds e.g. `git push` as an allowlisted form, the gate's `_matchDestructivePattern` would still gate `git push --force`, which is the correct second-line behaviour — but the interaction between allowlist and gate destructive patterns is now load-bearing. Document the interaction in the inline comment near `_matchDestructivePattern`.
+  - Fix shape: documentation-only at present; revisit when Slice 6 expands the allowlist surface.
+  - Priority MEDIUM — no functional issue today, but the layered defences now depend on each other in a non-obvious way; a future expansion of either layer needs to consider both.
 
 ### Content pipelines
 

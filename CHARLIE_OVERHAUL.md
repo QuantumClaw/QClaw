@@ -462,7 +462,7 @@ Per-keyword exhaustive routing tests landed: `skill-router.test.js` 27 → 134 c
 
 **Slice 3b.1 amendment (2026-05-14).** PR #19's test passed against the in-process `registerForRequest` API but missed two integration gaps that only surfaced once the gate fired on the live runtime: (1) the gate emitted no log event when no on-demand skills routed, so generic messages produced zero tool-call.log entries — indistinguishable from "code never ran"; (2) the test never drove `Agent._processNonReflex`, so a regression at that integration point would not have been caught. Slice 3b.1 (PR #20) adds an unconditional `'on_demand_routing'` summary record per `registerForRequest` call (carries `routed_always_on_skills`, `routed_on_demand_skills`, `declared_tools`, `activated_by_skill`, `active_set_size`) plus a `'deregistration'` record per cleanup, and rewrites the test to drive `agent.process()` end-to-end with a stub router/executor that records the tool list visible to the LLM. `scripts/verify-coupling.js` is the reproducible live verification harness — its log excerpt is now the standard for any slice that claims behavioural change to the tool surface.
 
-**Slice 3c — `shell_exec` narrowing + hygiene.** ✓ COMPLETE 2026-05-15
+**Slice 3c — `shell_exec` narrowing + hygiene.** ✓ COMPLETE 2026-05-15 — *verified-then-amended* (see Slice 3c.1)
 
 `shell_exec` gate inverted from blocklist to allowlist. New
 `src/tools/shell-exec-allowlist.js` exports `checkAllowlist(command)`;
@@ -509,13 +509,44 @@ four cases (allowlisted forms, 8 non-allowlisted rejections,
 `tests/shell-exec-allowlist.test.js` (55 checks) wired into npm test;
 all existing tests still green.
 
-**Slice 3 family ✓ FULLY CLOSED 2026-05-15.** Slice 3a (registry
-refactor + dead surface removal, PR #18, 2026-05-14) ✓ COMPLETE.
-Slice 3b (skill-loading ↔ tool-registration coupling, PR #19,
-2026-05-14) ✓ COMPLETE. Slice 3b.1 (per-message coupling observability
-+ end-to-end test, PR #20, 2026-05-14) ✓ COMPLETE. Slice 3c
-(allowlist + name reconciliation, this PR, 2026-05-15) ✓ COMPLETE.
-Slice 4 (verification gates) begins next session.
+**Slice 3c.1 amendment (2026-05-15) — gate ordering.** PR #23's
+Slice 3c shipped the allowlist as the inner first-line check inside
+`shell-exec.js` and the test/harness pair exercised that function in
+isolation. Both passed. The live runtime failed: the `ToolExecutor`
+invokes `ApprovalGate.check()` *before* the tool function runs, and
+`shell_exec` is in `gatedTools` — step 3 of the gate caught every
+`shell_exec` call (including `pm2 list`) and gated for approval
+before the inner allowlist could speak. Live smoke test 2026-05-15
+17:00 Athens: "check pm2 status" produced a high-risk approval prompt
+for `shell_exec({"command":"pm2 list"})`. Slice 3c.1 (PR #TBD,
+2026-05-15) adds an early branch to `ApprovalGate.check()` that
+consults `checkAllowlist()` for `toolName === 'shell_exec'` and
+returns `requiresApproval:false` for any non-empty command — the
+inner allowlist in `shell-exec.js` remains the single source of truth
+for the `not_allowlisted` response shape, now functioning as a
+redundant second-line defence. New harness
+`scripts/verify-approval-gate-allowlist-ordering.js` exercises the
+LIVE `ToolExecutor → ApprovalGate.check() → ToolRegistry.executeTool()
+→ shell-exec.fn()` call path with real instances — 13 commands, 53
+assertions, including a notifier-fired-zero-times sanity check. New
+test `tests/approval-gate-allowlist-ordering.test.js` (36 checks)
+codifies the contract. Lesson: a verification harness that exercises
+the inner unit in isolation is not enough — for any slice that
+modifies a layered defence, the harness must drive the layer above
+the change. This is the second consecutive slice that shipped with
+isolated unit tests passing while runtime was broken (3b.1 was the
+first); Slice 4 (verification gates) becomes the next priority for
+structural mitigation.
+
+**Slice 3 family ✓ FULLY CLOSED 2026-05-15 (revised).** Slice 3a
+(registry refactor + dead surface removal, PR #18, 2026-05-14)
+✓ COMPLETE. Slice 3b (skill-loading ↔ tool-registration coupling,
+PR #19, 2026-05-14) ✓ COMPLETE. Slice 3b.1 (per-message coupling
+observability + end-to-end test, PR #20, 2026-05-14) ✓ COMPLETE.
+Slice 3c (allowlist + name reconciliation, PR #23, 2026-05-15)
+✓ COMPLETE — verified-then-amended. Slice 3c.1 (gate ordering fix +
+live-path harness, PR #TBD, 2026-05-15) ✓ COMPLETE. Slice 4
+(verification gates) begins next session.
 
 **Slice 4 — Verification gates (soft + hard).**
 `verification-reflexes.md` skill written and loaded. `runGates()` runtime function with five gates. Gate log in place.

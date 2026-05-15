@@ -10573,3 +10573,187 @@ as an always-on skill from Slice 2b; Slice 4 adds the `runGates()`
 runtime function and the five hard gates per Component 5.
 
 End of session 2026-05-15 Slice 3c.
+
+---
+
+## [2026-05-15] Slice 3c.1 — Gate-ordering fix: allowlist must precede approval-gate steps
+
+**TL;DR.** Slice 3c (PR #23) added the read-only allowlist inside
+`shell-exec.js` at the top of the tool function and claimed
+"allowlist as primary defence, approval gates as second-line". The
+test (`tests/shell-exec-allowlist.test.js`) and verification harness
+(`scripts/verify-shell-allowlist.js`) both passed because both
+invoked `createShellExecTool().fn(args)` in isolation. The live
+runtime failed: `ToolExecutor.run()` invokes `approvalGate.check()`
+BEFORE the tool function runs. `shell_exec` is in the default
+`gatedTools` list — step 3 of the gate caught every `shell_exec`
+call (including `pm2 list`) and demanded approval before the inner
+allowlist could speak. Second consecutive slice this week to ship
+with isolated unit tests passing while runtime was broken (3b.1 was
+the first).
+
+### Live failure — verbatim
+
+Smoke test 2026-05-15 ~17:00 Athens. Tyson sent "check pm2 status"
+to Charlie via Telegram. Approval prompt fired:
+
+```
+Tool: shell_exec
+Agent: unknown
+Risk: high
+Action: shell_exec({"command":"pm2 list"})
+```
+
+Expected per Slice 3c contract: `pm2 list` runs without prompt
+(allowlisted). Observed: gate fired at step 3 (gatedTools includes
+'shell_exec') with riskLevel:'high', a prompt was sent to Telegram,
+and Charlie blocked awaiting human decision. The inner allowlist in
+`shell-exec.js` lines 108-129 was never consulted.
+
+### Audit findings
+
+1. **Gate ordering bug (primary).** `src/tools/executor.js` lines
+   130-146 invokes `approvalGate.check()` before
+   `tools.executeTool()`. `src/security/approval-gate.js` `check()`
+   pre-3c.1 step order: 0. autoApproveTools, 1.
+   `_matchDestructivePattern`, 2. skill-dir bypass, 3. gatedTools,
+   4. Stripe charge. `shell_exec` is in gatedTools by default
+   (`src/index.js` line 225-227 constructs `ApprovalGate` with
+   `gatedTools: this.config.tools?.requireApproval` and the
+   constructor defaults to `['shell_exec']`). Step 3 caught every
+   shell_exec call.
+
+2. **Brief's hypothesized root cause was off, but the fix shape was
+   right.** Brief speculated `_matchDestructivePattern` matched
+   `pm2 list`. Audit confirmed it does NOT — `DEFAULT_DESTRUCTIVE_
+   PATTERNS` contains `pm2 stop`, `pm2 delete`, `pm2 restart` as
+   two-word verbs, and `_matchDestructivePattern` matches exact
+   first-two tokens. `pm2 list` → `firstTwo = "pm2 list"` → no
+   pattern match → returns null. The actual greedy catch was at
+   step 3 (the entire `shell_exec` tool gated). Recording this so
+   future audits don't chase the wrong line.
+
+3. **`Agent: unknown` in approval prompt.** `executor.js` line 135
+   uses `options.agent || 'unknown'`. `src/agents/registry.js` line
+   391 calls `toolExecutor.run(messages, {model, system})` — no
+   `agent` field passed. Filed as separate followup in
+   `FLOW_OS_STATE.md`. Out of scope for 3c.1 (the approval prompt
+   should not fire AT ALL for `pm2 list`; the prompt's labelling is
+   a secondary issue).
+
+4. **`scripts/verify-shell-allowlist.js` gap.** Calls
+   `tool.fn(args)` directly. Never instantiates `ApprovalGate`,
+   never invokes `approvalGate.check()`. Passed in isolation while
+   the layer above was broken. This is the same failure pattern as
+   Slice 3b — verification harness exercised the inner unit, not
+   the layered call site.
+
+### Fix — three units
+
+**Unit 1 — `src/security/approval-gate.js` early branch (commit 26bbe79).**
+New step 1 in `check()`:
+
+```js
+if (toolName === 'shell_exec') {
+  const command = toolArgs?.command;
+  if (typeof command === 'string' && command.trim().length > 0) {
+    const allowlistResult = checkAllowlist(command);
+    if (allowlistResult.allowed) { /* log debug */ }
+    else { /* log debug not_allowlisted */ }
+    return { requiresApproval: false };
+  }
+  // empty/missing command falls through to legacy gatedTools path
+}
+```
+
+Allowlisted commands bypass the gate; the tool function runs and
+the audit log records `shell_exec` with the result. Non-allowlisted
+commands also bypass the gate so the inner allowlist in
+`shell-exec.js` produces the single-source-of-truth
+`{error:'not_allowlisted', reason, verb, suggestion}` response.
+The inner allowlist now functions as a redundant second-line
+defence — fine.
+
+**Unit 2 — `scripts/verify-approval-gate-allowlist-ordering.js`
+(commit 41f62b8).** New harness that drives the LIVE
+`ToolExecutor` per-tool-call body against real `ApprovalGate`, real
+`ExecApprovals`, real `ToolRegistry`, real `shell_exec`. 13 test
+commands, 53 assertions:
+- C1: 4 allowlisted (pm2 list, ls /tmp, git log, cat) → no
+  prompt, fn runs, numeric exit_code.
+- C2: 6 non-allowlisted (whoami, rm -rf, pm2 stop, curl|sh,
+  chained, command sub) → no prompt, error=not_allowlisted with
+  suggestion text.
+- C3: 3 DENY-path (cat .env, cat .ssh, cat .secrets) → no prompt,
+  error="Command denied by policy" with pattern_matched.
+- Sanity: notifier fired zero times across all 13 commands.
+
+The harness instruments `approvalGate.requestApproval` so any
+attempted prompt is recorded and returned as denied (no 10-min
+hang). Slice 3c's harness must be re-run alongside this one for
+any future shell-exec / gate work; both passing is the contract.
+
+**Unit 3 — `tests/approval-gate-allowlist-ordering.test.js` + docs
+(this commit).** 36 unit-level assertions on `approval-gate.check()`
+contract: allowlisted → false, not-allowlisted → false,
+destructive verb at gate → false (inner allowlist handles),
+ssh_exec unchanged (destructive pattern still gates), empty
+command falls through, autoApproveTools wins. Wired into npm test.
+`CHARLIE_OVERHAUL.md` Slice 3c amended to "verified-then-amended"
+with a Slice 3c.1 pointer. `FLOW_OS_STATE.md` followups filed for
+"Agent: unknown" and the destructive-pattern interaction watch.
+
+### Verification — live call path
+
+```
+$ node scripts/verify-approval-gate-allowlist-ordering.js
+... 53 passed, 0 failed
+$ node tests/approval-gate-allowlist-ordering.test.js
+... 36 passed, 0 failed
+$ node tests/shell-exec-allowlist.test.js
+... 55 passed, 0 failed
+$ node tests/approval-gate-notifier.test.js
+... 13 passed, 0 failed
+```
+
+Pre-existing test flake unrelated to this slice:
+`probes.test.js: pm2_processes: failure carries error string` —
+fails on dev box because pm2 actually runs locally and the test
+expects probe failure. Pre-existed on `main` at `70d42ed`. Not
+touched by 3c.1.
+
+### Lesson and Slice 4 motivation
+
+Slice 3b shipped a registry coupling that worked in tests but
+emitted no log event when no skills routed, so generic messages
+showed zero tool-call.log entries — indistinguishable from "code
+never ran". Slice 3c shipped a layered defence where the test
+exercised the inner layer in isolation while the layer above
+caught everything. Both passed unit tests; both broke on first
+runtime use. Common pattern: **verification harness exercised the
+inner unit, not the layered call site.**
+
+Mitigation in Slice 3c.1: a harness that drives the executor-level
+call sequence end-to-end against real instances. Structural
+mitigation in Slice 4: a runtime verification gate that detects
+"claimed behaviour vs observed log shape" mismatches and surfaces
+them before a slice ships. Slice 4 is now the explicit next
+priority.
+
+### Slice 3 family closure (revised)
+
+- Slice 3a (PR #18, 2026-05-14) — registry refactor + dead surface
+  removal — ✓ COMPLETE
+- Slice 3b (PR #19, 2026-05-14) — skill-loading ↔ tool-registration
+  coupling — ✓ COMPLETE (verified-then-amended via 3b.1)
+- Slice 3b.1 (PR #20, 2026-05-14) — per-message coupling
+  observability + end-to-end test — ✓ COMPLETE
+- Slice 3c (PR #23, 2026-05-15) — allowlist + name reconciliation
+  — ✓ COMPLETE (verified-then-amended via 3c.1)
+- Slice 3c.1 (this PR, 2026-05-15) — gate-ordering fix + live-path
+  harness — ✓ COMPLETE
+
+Slice 3 family ✓ FULLY CLOSED (revised). Slice 4 (verification
+gates) begins next session.
+
+End of session 2026-05-15 Slice 3c.1.
