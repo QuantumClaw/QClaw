@@ -319,6 +319,16 @@ Stuff currently broken, suboptimal, or pending. Charlie reads this section to kn
   - Watch shape: when Slice 6 adds per-specialist read-only tools, the destructive verb list should be reviewed against the new verb surfaces. If anyone adds e.g. `git push` as an allowlisted form, the gate's `_matchDestructivePattern` would still gate `git push --force`, which is the correct second-line behaviour — but the interaction between allowlist and gate destructive patterns is now load-bearing. Document the interaction in the inline comment near `_matchDestructivePattern`.
   - Fix shape: documentation-only at present; revisit when Slice 6 expands the allowlist surface.
   - Priority MEDIUM — no functional issue today, but the layered defences now depend on each other in a non-obvious way; a future expansion of either layer needs to consider both.
+- **LOW (2026-05-15, Slice 3c.1 adversarial review) — `awk -i inplace` executes; no DISALLOWED_FLAGS entry for awk.**
+  - Symptom: `awk -i inplace 'script' /tmp/foo` (gawk in-place mode) is allowlisted today because `awk` is on the read-only single-verb list but `DISALLOWED_FLAGS` has no entry for awk. Functionally equivalent to `sed -i` (which IS blocked via `DISALLOWED_FLAGS.sed = ['-i', '--in-place']`).
+  - Root cause: pre-existing gap from Slice 3c, surfaced by the Slice 3c.1 adversarial review. The destructive form of `awk` is a runtime extension (`-i inplace`, `--include`) that the original allowlist author didn't enumerate.
+  - Fix shape: add `awk: ['-i', '--include']` to `DISALLOWED_FLAGS` in `src/tools/shell-exec-allowlist.js` + one assertion in `tests/shell-exec-allowlist.test.js`. ~5-line dispatch.
+  - Priority LOW — would require either a malicious agent or a prompt-injected agent to weaponise; no live exploit path observed; pure defence-in-depth. Out of scope for 3c.1.
+- **LOW (2026-05-15, Slice 3c.1 adversarial review) — `pm2 restart` / `pm2 reload` documentation drift.**
+  - Symptom: `src/tools/shell-exec.js` line 60 comment claims "pm2 restart and pm2 reload are recovery ops and NOT gated". Reality: they aren't on the allowlist (`TWO_WORD_VERBS` has only `pm2 list`, `pm2 logs`), so they're now blocked outright by the allowlist with `error: not_allowlisted` before any gate runs. Also: `pm2 restart` IS in `DEFAULT_DESTRUCTIVE_PATTERNS` in `approval-gate.js`, which is a contradictory second signal.
+  - Root cause: comment predates Slice 3c allowlist; documentation never updated.
+  - Fix shape: either (a) add `pm2 restart`, `pm2 reload` to `TWO_WORD_VERBS` AND remove `pm2 restart` from `DEFAULT_DESTRUCTIVE_PATTERNS` (if Tyson wants Charlie to be able to run them without approval), or (b) update the shell-exec.js line 60 comment to reflect "blocked outright; use claude_code_dispatch or escalate to Tyson" (if Charlie should NOT run these directly). Tyson decision required.
+  - Priority LOW — no live failure; comment is misleading future readers. Out of scope for 3c.1.
 
 ### Content pipelines
 

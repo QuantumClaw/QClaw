@@ -545,8 +545,46 @@ PR #19, 2026-05-14) ✓ COMPLETE. Slice 3b.1 (per-message coupling
 observability + end-to-end test, PR #20, 2026-05-14) ✓ COMPLETE.
 Slice 3c (allowlist + name reconciliation, PR #23, 2026-05-15)
 ✓ COMPLETE — verified-then-amended. Slice 3c.1 (gate ordering fix +
-live-path harness, PR #TBD, 2026-05-15) ✓ COMPLETE. Slice 4
+live-path harness, PR #24, 2026-05-15) ✓ COMPLETE. Slice 4
 (verification gates) begins next session.
+
+**Slice 3c.1 post-review remediation (2026-05-15).** Before flipping
+PR #24 ready-for-review the change went through an adversarial
+review. The review found a CRITICAL security regression introduced
+by Slice 3c.1 itself: with the gate-ordering fix in place,
+`shell_exec({command: "pm2 list\necho pwned"})` was allowlisted by
+`checkAllowlist()` (because `CHAIN_REJECT_PATTERNS` in
+`shell-exec-allowlist.js` lines 53-60 caught `;`, `&&`, `||`, `&`,
+`$(`, backtick — but NOT `\n` or `\r`), the early shell_exec branch
+in `ApprovalGate.check()` returned `requiresApproval:false`, and
+`execAsync(command, { shell: '/bin/bash', cwd: '/root/QClaw' })`
+executed both lines as root with NO approval prompt. Pre-3c.1 the
+`gatedTools: ['shell_exec']` step in `ApprovalGate.check()` would
+have forced Telegram approval for the full command body. Slice 3c.1
+removed that backstop. Remediation: two commits on the same branch
+— (a) add `{ name: 'newline', re: /[\r\n]/ }` to
+`CHAIN_REJECT_PATTERNS` plus 21-assertion regression test that
+drives the live executor sequence with newline / CR / CRLF
+injections, and (b) extend the verification harness with a C4
+case-set (cat / ls redirect-outside-/tmp, sudo pm2 list) that
+drives the allowlisted-verb-with-inner-DESTRUCTIVE shape through
+the same `runOneCall` flow — closing a harness gap the docstring
+at lines 5-7 had falsely claimed coverage on. Harness now 78/78
+passing (was 53/53; 25 new assertions).
+
+**Adversarial review becomes standard.** This was the third
+consecutive slice in eight days (3b.1, 3c → 3c.1, 3c.1 itself) to
+ship into review with isolated tests passing while a runtime or
+threat-model contract was broken. Common pattern: harnesses
+exercise happy-path shapes from the original author's mental
+model, not adversarial shapes from an attacker's. Adversarial
+review pre-PR is now the explicit mitigation for the Slice 3
+family closure, and **the protocol should become standard for all
+future slices touching security boundaries** — minimum: every
+slice that modifies `ApprovalGate`, `shell-exec*`, `executor`,
+secrets handling, or tool registration / scope enforcement. Slice
+4's `runGates()` will codify this in the runtime, but until then
+it is a per-PR procedural step.
 
 **Slice 4 — Verification gates (soft + hard).**
 `verification-reflexes.md` skill written and loaded. `runGates()` runtime function with five gates. Gate log in place.

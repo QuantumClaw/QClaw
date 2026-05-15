@@ -10757,3 +10757,150 @@ Slice 3 family ✓ FULLY CLOSED (revised). Slice 4 (verification
 gates) begins next session.
 
 End of session 2026-05-15 Slice 3c.1.
+
+---
+
+## [2026-05-15] Slice 3c.1 — pre-PR adversarial review caught CRITICAL newline-injection regression
+
+**TL;DR.** Slice 3c.1's gate-ordering fix landed three commits (26bbe79,
+41f62b8, c54d727) on `cc/slice3c1-allowlist-ordering-fix-20260515-1944`
+and PR #24 was opened in draft. Before flipping ready-for-review the
+PR was put through an adversarial review. The review found a CRITICAL
+regression introduced by Slice 3c.1 itself: the new early shell_exec
+branch in `ApprovalGate.check()` (commit 26bbe79) consults
+`checkAllowlist()` and returns `requiresApproval:false`, but
+`CHAIN_REJECT_PATTERNS` in `src/tools/shell-exec-allowlist.js` lines
+53-60 catches `;`, `&&`, `||`, `&`, `$(`, and backtick — but NOT
+`\n` or `\r`. Bash treats newline as `;`. The pre-3c.1 backstop was
+the `gatedTools` step in `ApprovalGate.check()`, which would have
+forced any shell_exec call through Telegram approval, exposing the
+full command body to Tyson. Slice 3c.1 removed that backstop.
+
+### Verbatim repro — adversarial probe
+
+```
+shell_exec({command: "pm2 list\necho pwned"})
+```
+
+Pre-fix path: `ApprovalGate.check('shell_exec', {command:'pm2 list\necho pwned'})`
+→ early shell_exec branch → `checkAllowlist('pm2 list\necho pwned')`
+→ splits on `|` only (no `|` present), so single segment
+`'pm2 list\necho pwned'`, tokens `['pm2', 'list\necho', 'pwned']`,
+firstTwo = `'pm2 list\necho'`... wait — the actual splitter is
+`split(/\s+/)` which DOES treat `\n` as whitespace. So tokens become
+`['pm2', 'list', 'echo', 'pwned']`, firstTwo = `'pm2 list'` (allowlisted).
+`checkAllowlist` returned `{allowed:true, segments:1}`. Gate returned
+`{requiresApproval:false}`. `shell-exec.fn` ran `execAsync('pm2 list\necho pwned',
+{ shell: '/bin/bash', cwd: '/root/QClaw' })` as root. Both lines
+executed. Audit log recorded a single `shell_exec` action with
+`command: "pm2 list\necho pwned"` truncated to 200 chars. **No
+approval prompt fired.** Attack vector: any prompt injection that
+gets Charlie to emit a shell_exec call with `"<allowlisted-verb>\n<arbitrary>"`.
+
+Confirmed empirically pre-fix:
+
+```
+$ node -e "import('./src/tools/shell-exec-allowlist.js').then(({checkAllowlist}) => { console.log(JSON.stringify(checkAllowlist('pm2 list\necho pwned'), null, 2)); });"
+{
+  "allowed": true,
+  "segments": 1
+}
+```
+
+### Fix — newline added to CHAIN_REJECT_PATTERNS
+
+Commit (Commit A on the remediation branch): `src/tools/shell-exec-allowlist.js`
+gains `{ name: 'newline', re: /[\r\n]/ }` in `CHAIN_REJECT_PATTERNS`.
+Post-fix:
+
+```
+$ node -e "import('./src/tools/shell-exec-allowlist.js').then(({checkAllowlist}) => { console.log(JSON.stringify(checkAllowlist('pm2 list\necho pwned'), null, 2)); });"
+{
+  "allowed": false,
+  "reason": "chain_or_substitution",
+  "pattern": "newline",
+  "suggestion": "command chaining / substitution (newline) is not permitted. run sub-commands as separate shell_exec calls. pipes (|) are allowed."
+}
+```
+
+Regression test added to `tests/approval-gate-allowlist-ordering.test.js`
+(21 new assertions in a "Newline-injection regression (Slice 3c.1
+adversarial review)" section). Drives the live executor sequence
+(real `ApprovalGate` + real `ToolRegistry` + real `shell_exec` via
+`registerBuiltin`, calling `approvalGate.check()` then
+`tools.executeTool()`). Asserts error=`not_allowlisted`, reason=
+`chain_or_substitution`, suggestion mentions `newline`, exit_code=-1,
+notifier fires zero times. Covers `\n` after allowlisted verb, `\r`
+alone, simple-verb + `\n`, and CRLF.
+
+### Harness gap closed — C4 inner-DESTRUCTIVE path
+
+Commit B added a C4 case-set to `scripts/verify-approval-gate-allowlist-ordering.js`
+that drives the allowlisted-verb-with-inner-DESTRUCTIVE shape through
+the full executor sequence:
+
+- `cat /tmp/x > /etc/passwd` (allowlisted verb `cat`, redirect-outside-/tmp DESTRUCTIVE)
+- `ls > /etc/attack.txt` (allowlisted verb `ls`, redirect-outside-/tmp DESTRUCTIVE)
+- `sudo pm2 list` (sudo DESTRUCTIVE)
+
+For each: outer gate's early shell_exec branch returns
+`requiresApproval:false` (verb is allowlisted), then `shell-exec.fn()`
+reaches the `DESTRUCTIVE_PATTERNS` check and fires
+`approvalGate.requestInlineApproval`. The harness's instrumented
+`requestInlineApproval` records the call and auto-denies; tool
+returns `{error:'Approval denied', exit_code:-1}`. Distinct shape
+from C1/C2/C3 (where the inline-approval path is never reached).
+
+This closes a harness gap the adversarial review flagged: the
+docstring at lines 5-7 claimed "inner allowlist + DENY +
+DESTRUCTIVE" coverage but the C3 cases only drove DENY. Same shape
+of gap as Slice 3c (harness green, runtime broken). Could not ship
+3c.1 with the same gap.
+
+Harness output: 78 passed, 0 failed (was 53 passed; 25 new).
+
+Also added: newline-injection case to C2 (`pm2 list\necho pwned`)
+for harness completeness — lands as
+`error=not_allowlisted`, reason=`chain_or_substitution`.
+
+### Followups filed (separate dispatches)
+
+Filed in `FLOW_OS_STATE.md` Section 7 → Tool surface:
+
+- **LOW — `awk -i inplace` executes.** No `DISALLOWED_FLAGS` entry
+  for awk. Equivalent to `sed -i` (which IS blocked). Pre-existing
+  from Slice 3c, surfaced by 3c.1 adversarial review.
+- **LOW — `pm2 restart` / `pm2 reload` documentation drift.**
+  shell-exec.js line 60 comment claims these are "recovery ops NOT
+  gated" but they're not on the allowlist either, so blocked outright
+  with `not_allowlisted`. Also: `pm2 restart` is in the gate's
+  `DEFAULT_DESTRUCTIVE_PATTERNS` (contradictory second signal).
+  Pre-existing from Slice 3c.
+
+### Process win
+
+The adversarial-review-before-PR-ready protocol caught a CRITICAL bug
+that:
+- the unit test `tests/shell-exec-allowlist.test.js` (55 checks, all
+  passing) missed — no test case exercised `\n` or `\r` in the command
+  body
+- the live-path harness `scripts/verify-approval-gate-allowlist-ordering.js`
+  (53 checks, all passing) missed — the C2 non-allowlisted set only
+  included `;`, `&&`, `$()` chain shapes
+- the new unit test `tests/approval-gate-allowlist-ordering.test.js`
+  (36 checks, all passing) missed — only exercised gate.check() in
+  isolation, not the full executor sequence with a real shell-exec
+
+This is the third consecutive slice in eight days to ship into
+review with isolated tests passing while the runtime / threat-model
+contract was broken (3b.1, 3c → 3c.1 was the first two; 3c.1 itself
+was the third). Common pattern: **the harness exercises happy-path
+shapes from the original author's mental model, not adversarial
+shapes from an attacker's mental model.** Adversarial review pre-PR
+is now the explicit mitigation. Slice 3 family closes with: Slice 3a
++ 3b + 3b.1 + 3c + 3c.1 + adversarial review of 3c.1 → green.
+
+The PR (#24) remains in draft pending a second pass from the
+adversarial reviewer; only un-drafted after that returns clean.
+
+End of session 2026-05-15 Slice 3c.1 remediation.
