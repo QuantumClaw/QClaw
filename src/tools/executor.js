@@ -442,7 +442,7 @@ export class ToolExecutor {
     if (toolName.startsWith('filesystem__write') || toolName.startsWith('filesystem__edit') || toolName.startsWith('filesystem__move')) {
       return 'file_changes';
     }
-    if (toolName === 'shell_execute') {
+    if (toolName === 'shell_exec') {
       return 'shell_commands';
     }
     if (toolName.includes('stripe') || toolName.includes('ghl') || toolName.includes('n8n')) {

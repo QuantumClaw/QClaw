@@ -37,7 +37,10 @@ const DEFAULT_DESTRUCTIVE_PATTERNS = [
   'pm2 stop', 'pm2 delete', 'pm2 restart',
 ];
 
-const SHELL_TOOLS = ['shell_exec', 'shell_execute', 'ssh_exec'];
+// Canonical shell tool is `shell_exec`; `ssh_exec` is retained as the slot for
+// the future remote-exec path. `shell_execute` was a dormant alias (never
+// registered) dropped in Slice 3c (2026-05-15).
+const SHELL_TOOLS = ['shell_exec', 'ssh_exec'];
 
 export class ApprovalGate {
   constructor(approvals, config = {}) {
@@ -48,7 +51,7 @@ export class ApprovalGate {
     this.autoApproveTools = config.autoApproveTools || [];
 
     this.gatedTools = config.gatedTools || [
-      'shell_execute',
+      'shell_exec',
     ];
 
     // Verb-scoped destructive patterns. Compare against the first shell
@@ -60,7 +63,7 @@ export class ApprovalGate {
     this.skillEditAllowlist = config.skillEditAllowlist || SKILL_EDIT_ALLOWLIST;
 
     this.riskWeights = {
-      shell_execute: 'high',
+      shell_exec: 'high',
     };
   }
 

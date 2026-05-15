@@ -462,9 +462,60 @@ Per-keyword exhaustive routing tests landed: `skill-router.test.js` 27 → 134 c
 
 **Slice 3b.1 amendment (2026-05-14).** PR #19's test passed against the in-process `registerForRequest` API but missed two integration gaps that only surfaced once the gate fired on the live runtime: (1) the gate emitted no log event when no on-demand skills routed, so generic messages produced zero tool-call.log entries — indistinguishable from "code never ran"; (2) the test never drove `Agent._processNonReflex`, so a regression at that integration point would not have been caught. Slice 3b.1 (PR #20) adds an unconditional `'on_demand_routing'` summary record per `registerForRequest` call (carries `routed_always_on_skills`, `routed_on_demand_skills`, `declared_tools`, `activated_by_skill`, `active_set_size`) plus a `'deregistration'` record per cleanup, and rewrites the test to drive `agent.process()` end-to-end with a stub router/executor that records the tool list visible to the LLM. `scripts/verify-coupling.js` is the reproducible live verification harness — its log excerpt is now the standard for any slice that claims behavioural change to the tool surface.
 
-**Slice 3c — `shell_exec` narrowing + hygiene.** After 3b.
+**Slice 3c — `shell_exec` narrowing + hygiene.** ✓ COMPLETE 2026-05-15
 
-`shell_exec` narrowed to read-only allowlist (`ls`, `cat`, `grep`, `find`, `git status`, `git log`, `git diff`, `pm2 list`, `pm2 logs --nostream`, etc.). `shell_exec` / `shell_execute` name reconciliation (audit Finding 9). Read/write split for the read-only observation tools. Per-specialist tool sets deferred to Slice 6.
+`shell_exec` gate inverted from blocklist to allowlist. New
+`src/tools/shell-exec-allowlist.js` exports `checkAllowlist(command)`;
+`shell-exec.js` consults it ahead of the existing DENY / DESTRUCTIVE /
+quantumclaw-dir gates. Allowlisted verbs (per Component 4 Narrowed):
+`ls`, `cat`, `head`, `tail`, `wc`, `sort`, `uniq`, `grep`, `find`,
+`awk`, `sed`, `git status`, `git log`, `git diff`, `pm2 list`,
+`pm2 logs` (with `--nostream` required). Per-verb rules: `find -delete /
+-exec / -execdir / -fprint / -fprintf / -ok` rejected; `sed -i /
+--in-place` rejected; `pm2 logs` without `--nostream` rejected
+(streaming hangs the agent). Chaining / substitution rejected at the
+allowlist layer: `;`, `&&`, `||`, standalone `&`, `$(`, backticks.
+Pipes (`|`) permitted with every segment allowlisted.
+
+**Defence in depth preserved.** Allowlisted commands still flow through
+the existing DENY (secret paths, pipe-to-shell), DESTRUCTIVE (rm -rf,
+sudo, kill, redirects-to-root), and quantumclaw-dir gates — verified
+`cat /root/.quantumclaw/.env` passes the allowlist (cat is allowed) but
+is hard-blocked by DENY and never reaches approval. Non-allowlisted
+commands return structured `{error:'not_allowlisted', reason, verb,
+suggestion}` and never consult the approval system.
+
+**Name reconciliation (audit Finding 9).** Canonical name is
+`shell_exec`. `shell_execute` was a dormant alias (nothing registered
+under it); the references in `src/security/approval-gate.js`
+(SHELL_TOOLS list, gatedTools default, riskWeights key) and
+`src/tools/executor.js` _categorizeToolCall were inert and have been
+flipped to `shell_exec`. Gating still worked end-to-end because
+`shell-exec.js` calls `approvalGate.requestInlineApproval()` with
+`tool: 'shell_exec'` directly; the wrong-name defaults were never reached.
+
+**Read/write split for future Slice 6 observation tools.** Slice 6 will
+introduce per-specialist read-only observation tools (`read_file`,
+`grep_repo`, `list_dir`, `git_status`, etc.) that replace today's
+`shell_exec` invocations with structured, scope-limited surfaces.
+Slice 3c documents the split: `shell_exec` is the catch-all read-only
+surface (allowlist-narrowed); Slice 6 tools are typed, audited, and
+scoped to specialist agents. `shell_exec` retains its scope='shared'
+status as the floor surface until per-specialist tooling lands.
+
+Verification harness: `scripts/verify-shell-allowlist.js` exercises
+four cases (allowlisted forms, 8 non-allowlisted rejections,
+3 DENY-layering proofs, 1 QC-dir approval-still-fires). New test
+`tests/shell-exec-allowlist.test.js` (55 checks) wired into npm test;
+all existing tests still green.
+
+**Slice 3 family ✓ FULLY CLOSED 2026-05-15.** Slice 3a (registry
+refactor + dead surface removal, PR #18, 2026-05-14) ✓ COMPLETE.
+Slice 3b (skill-loading ↔ tool-registration coupling, PR #19,
+2026-05-14) ✓ COMPLETE. Slice 3b.1 (per-message coupling observability
++ end-to-end test, PR #20, 2026-05-14) ✓ COMPLETE. Slice 3c
+(allowlist + name reconciliation, this PR, 2026-05-15) ✓ COMPLETE.
+Slice 4 (verification gates) begins next session.
 
 **Slice 4 — Verification gates (soft + hard).**
 `verification-reflexes.md` skill written and loaded. `runGates()` runtime function with five gates. Gate log in place.
