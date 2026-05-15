@@ -572,6 +572,64 @@ the same `runOneCall` flow — closing a harness gap the docstring
 at lines 5-7 had falsely claimed coverage on. Harness now 78/78
 passing (was 53/53; 25 new assertions).
 
+**Slice 3c.1 scope amendment — round-2 review (2026-05-15).** Round-1
+remediation went back for a second adversarial pass and surfaced 2
+CRITICAL + 2 HIGH allowlist-escape bypasses on top of the newline
+fix:
+
+- **CRITICAL #1 — awk shell-escape.**
+  `shell_exec({command: 'awk BEGIN{system("echo PWNED")}'})` returns
+  `{allowed:true}` from `checkAllowlist`, executes `echo PWNED` via
+  awk's `system()` builtin under bash as root with no approval prompt.
+  Variants: `-e BEGIN{system(...)}`, `'BEGIN{print | "cmd"}'`,
+  `getline ... | "cmd"`, awk's `|&` coprocess operator.
+- **CRITICAL #2 — sed `e` command shell-escape.**
+  `sed -e "1e echo PWN" /tmp/x` — GNU sed's `e` command executes shell
+  per pattern-matched line. Only `-i` / `--in-place` were in
+  `DISALLOWED_FLAGS`.
+- **HIGH #1 — sed internal file I/O.**
+  `sed -e "1r /etc/shadow"` reads arbitrary files; `sed -e "w /file"`
+  writes to arbitrary files. Same surface: `R` / `W`. Bypasses the
+  shell-redirect DESTRUCTIVE regex via sed's internal commands.
+- **HIGH #2 — `..` path-traversal through redirect-outside-/tmp.**
+  `cat /tmp/x > /tmp/../etc/passwd` passes the DESTRUCTIVE regex
+  `>\s*\/(?!dev/null|tmp/)` because it sees `> /tmp/` and exempts.
+  Bash resolves `/tmp/../etc/passwd` → `/etc/passwd`. Same with
+  `/tmp/./../etc/passwd`.
+
+**Decision per Tyson: drop awk + sed from `ALLOWED_VERBS` rather than
+chase enumerated flag/body bans.** Rationale: both verbs expose
+shell-spawn surfaces that can't be safely enumerated. awk runs shell
+from inside its quoted program body (`BEGIN{system(...)}`, `|`-from-
+program, `|&`). GNU sed has the `e` command (shell) plus `r`/`w`/`R`/
+`W` (file I/O). Any future awk/sed feature could open a new bypass.
+The agent rarely needs awk/sed for read-only work — `grep -E`,
+`head`, `tail`, and `cat` cover the common cases. For complex
+transforms, `claude_code_dispatch` (Slice 5) is the right path.
+
+**Scope amendment (this PR):** Slice 3c.1 expanded from "gate
+ordering fix" to **"gate ordering + allowlist hardening"**:
+
+- Remove `awk`, `sed` from `SINGLE_VERBS` in
+  `src/tools/shell-exec-allowlist.js`. Remove now-dead
+  `DISALLOWED_FLAGS.sed` entry.
+- Add `{ name: 'parent-dir traversal', re: /\.\./ }` to
+  `CHAIN_REJECT_PATTERNS` — blanket rejection of `..` anywhere in
+  the command body. Conservative-but-clean: rejects all `..` paths
+  even for non-redirect uses, but allowlisted read-only verbs
+  rarely need relative paths and can use absolute forms.
+- Regression tests for all four round-2 findings driven through the
+  live executor sequence (real `ApprovalGate` + real `ToolRegistry`
+  + real `shell_exec`) in `tests/approval-gate-allowlist-ordering.test.js`.
+- New C5 case-set in `scripts/verify-approval-gate-allowlist-ordering.js`
+  covering the same eight cases; harness now 135/135 passing
+  (was 78/78; 57 new assertions).
+- Resolves the previously-LOW `awk -i inplace` followup in
+  `FLOW_OS_STATE.md` (now closed by dropping the verb).
+
+See **Slice 3d (planned)** for the structural redesign that
+replaces enumeration with an explicit argv-parser approach.
+
 **Adversarial review becomes standard.** This was the third
 consecutive slice in eight days (3b.1, 3c → 3c.1, 3c.1 itself) to
 ship into review with isolated tests passing while a runtime or
@@ -588,6 +646,26 @@ it is a per-PR procedural step.
 
 **Slice 4 — Verification gates (soft + hard).**
 `verification-reflexes.md` skill written and loaded. `runGates()` runtime function with five gates. Gate log in place.
+
+**Slice 3d — Allowlist redesign.** PLANNED.
+Two-round adversarial review on Slice 3c.1 surfaced 4 CRITICALs in
+the allowlist-by-enumeration design (chaining via newline, awk
+shell-escape, sed shell-escape, sed file I/O). Drop-the-verb
+approach worked for 3c.1 but is unsustainable as the read-only
+surface expands. Slice 3d evaluates two paths:
+
+- **(a)** Narrow the allowlist to a verb set safely auditable by
+  enumeration (e.g. 5-8 verbs total with no shell-spawn surface —
+  `ls`, `cat`, `head`, `tail`, `wc`, `pm2 list`, `git status` are
+  candidates; `grep`/`find` need flag re-audit; everything else
+  goes through `claude_code_dispatch`).
+- **(b)** Replace the allowlist with an explicit safe-command
+  parser that constructs argv lists rather than parsing shell
+  strings — no `bash -c`, no quoting issues, no chaining surface.
+
+Triggered after Slice 4 (verification gates) lands. Threat model:
+prompt-injection-driven `shell_exec` call construction. Status:
+PLANNED. Reference: this PR's round-2 adversarial review.
 
 **Slice 5 — Claude Code delegation bridge.**
 Supabase table, `claude_code_dispatch` tool, PM2 dispatcher worker, result write-back, gate integration.

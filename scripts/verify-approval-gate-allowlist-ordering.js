@@ -21,7 +21,7 @@
  * cases where no prompt is expected, or asserted as required for the
  * inner-DESTRUCTIVE cases (C4).
  *
- * Four acceptance cases:
+ * Five acceptance cases:
  *   C1. Allowlisted command (`pm2 list`, `ls /tmp`) — no approval
  *       prompt, shell_exec fn runs, command output returned.
  *   C2. Non-allowlisted command (`whoami`, `rm -rf /tmp/foo`,
@@ -40,6 +40,16 @@
  *       Closes the C3-shape harness gap that the Slice 3c.1
  *       adversarial review flagged: docstring claimed coverage,
  *       previous C3 cases only drove DENY.
+ *   C5. Round-2 adversarial findings (Slice 3c.1, 2026-05-15):
+ *       awk BEGIN{system(...)} (CRITICAL #1), awk -e variant,
+ *       awk 'BEGIN{print | "sh"}' variant, sed -e "1e ..." (CRITICAL
+ *       #2), sed "1r /etc/shadow" (HIGH #1 sed r-cmd), sed -e "w ..."
+ *       (HIGH #1 sed w-cmd), and `cat /tmp/x > /tmp/../etc/passwd`
+ *       path-traversal (HIGH #2). All must surface as
+ *       error=not_allowlisted at the tool layer with no approval
+ *       prompt fired. Decision per Tyson: drop awk + sed verbs +
+ *       reject `..` anywhere in command body — rather than chase
+ *       enumerated flag/body bans.
  *
  * Run: node scripts/verify-approval-gate-allowlist-ordering.js
  */
@@ -295,8 +305,74 @@ async function main() {
       r.executeResult?.exit_code === -1);
   }
 
+  // ── C5: Round-2 adversarial findings (Slice 3c.1) ────────
+  //
+  // Round 2 of adversarial review (2026-05-15) found 2 CRITICAL +
+  // 2 HIGH allowlist-escape bypasses on top of the (already-fixed)
+  // newline-injection finding. Decision per Tyson: drop the rich
+  // verbs (awk, sed) rather than try to enumerate dangerous flags
+  // / body content. Plus a path-traversal `..` rejection.
+  //
+  //   CRITICAL #1: awk BEGIN{system(...)} — shell-spawn from inside
+  //                program body. Variants include `-e BEGIN{}`,
+  //                `'BEGIN{print | "sh"}'`, awk's `|&` coprocess.
+  //   CRITICAL #2: sed -e "1e ..." — GNU sed `e` command runs shell.
+  //   HIGH #1:     sed "1r /etc/shadow" / sed -e "w /file" — sed's
+  //                internal `r`/`w`/`R`/`W` commands read/write
+  //                arbitrary files, bypassing the shell-redirect
+  //                DESTRUCTIVE regex.
+  //   HIGH #2:     cat /tmp/x > /tmp/../etc/passwd — DESTRUCTIVE
+  //                regex `>\s*\/(?!dev\/null|tmp\/)` exempted `/tmp/`
+  //                literally; bash resolves `/tmp/../etc/passwd` to
+  //                `/etc/passwd`.
+  //
+  // All round-2 cases must surface as error=not_allowlisted with no
+  // approval prompt fired. awk + sed cases hit reason=not_allowlisted
+  // (verb dropped). `..`-traversal cases hit reason=chain_or_substitution
+  // (new CHAIN_REJECT_PATTERNS entry, pattern=parent-dir traversal).
+  console.log('\n--- C5: Round-2 adversarial findings (awk/sed dropped + path-traversal blocked) ---');
+  const c5NotifierBefore = notifierFired;
+  const c5Cases = [
+    // CRITICAL #1 — awk shell-escape
+    { name: 'awk BEGIN{system}',     args: { command: 'awk BEGIN{system("echo PWN")}' },               expectReason: 'not_allowlisted' },
+    { name: 'awk -e BEGIN{system}',  args: { command: 'awk -e BEGIN{system("id")}' },                  expectReason: 'not_allowlisted' },
+    { name: 'awk pipe-to-sh',        args: { command: 'awk \'BEGIN{print "x" | "sh"}\'' },             expectReason: 'not_allowlisted' },
+    // CRITICAL #2 — sed `e` command
+    { name: 'sed -e "1e echo PWN"',  args: { command: 'sed -e "1e echo PWN" /tmp/x' },                 expectReason: 'not_allowlisted' },
+    // HIGH #1 — sed file I/O
+    { name: 'sed "1r /etc/shadow"',  args: { command: 'sed "1r /etc/shadow" /tmp/x' },                 expectReason: 'not_allowlisted' },
+    { name: 'sed -e "w /etc/cron"',  args: { command: 'sed -e "w /etc/cron.d/evil" /tmp/x' },          expectReason: 'not_allowlisted' },
+    // HIGH #2 — path-traversal redirect
+    { name: 'cat > /tmp/../etc',     args: { command: 'cat /tmp/x > /tmp/../etc/passwd' },             expectReason: 'chain_or_substitution' },
+    { name: 'cat > /tmp/./../etc',   args: { command: 'cat /tmp/x > /tmp/./../etc/passwd' },           expectReason: 'chain_or_substitution' },
+  ];
+
+  for (const c of c5Cases) {
+    const r = await runOneCall({ tools, approvalGate, name: 'shell_exec', args: c.args });
+    check(`C5.${c.name}: gate returned requiresApproval=false`,
+      r.gateResult?.requiresApproval === false,
+      JSON.stringify(r.gateResult));
+    check(`C5.${c.name}: no outer approval prompt fired`,
+      r.approvalPromptFired === false,
+      r.approvalCallArgs ? JSON.stringify(r.approvalCallArgs) : '');
+    check(`C5.${c.name}: no inner inline-approval fired`,
+      r.inlineApprovalFired === false,
+      r.inlineApprovalArgs ? JSON.stringify(r.inlineApprovalArgs) : '');
+    check(`C5.${c.name}: returned error=not_allowlisted`,
+      r.executeResult?.error === 'not_allowlisted',
+      JSON.stringify(r.executeResult).slice(0, 200));
+    check(`C5.${c.name}: reason=${c.expectReason}`,
+      r.executeResult?.reason === c.expectReason,
+      `got reason=${r.executeResult?.reason}`);
+    check(`C5.${c.name}: response carries suggestion text`,
+      typeof r.executeResult?.suggestion === 'string'
+        && r.executeResult.suggestion.length > 0);
+    check(`C5.${c.name}: exit_code=-1`,
+      r.executeResult?.exit_code === -1);
+  }
+
   // ── Sanity: notifier behaviour ──────────────────────────
-  // C1/C2/C3 must not fire the notifier. C4 must fire it (because
+  // C1/C2/C3/C5 must not fire the notifier. C4 must fire it (because
   // the inner DESTRUCTIVE path goes through requestInlineApproval,
   // which calls notifier before awaiting human decision).
   //
@@ -304,11 +380,14 @@ async function main() {
   // notifier dispatch (it never calls originalRequestInline), so in
   // this harness `notifierFired` stays at 0 across C4 too. The
   // assertion that matters is `inlineApprovalFired === true` per-case
-  // above; this final block confirms the C1/C2/C3 contract is intact.
-  console.log('\n--- Sanity: notifier never fired through C1/C2/C3 path; C4 used inline-approval path ---');
+  // for C4 above; this final block confirms the C1/C2/C3/C5 contract.
+  console.log('\n--- Sanity: notifier never fired through C1/C2/C3/C5 path; C4 used inline-approval path ---');
   check('notifier fired zero times across C1/C2/C3 (inline path bypasses notifier in this harness)',
     notifierFired === c4NotifierBefore,
     `notifier delta across C4=${notifierFired - c4NotifierBefore}`);
+  check('notifier fired zero times across C5 (round-2 findings all rejected pre-approval)',
+    notifierFired === c5NotifierBefore,
+    `notifier delta across C5=${notifierFired - c5NotifierBefore}`);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   rmSync(tmpDir, { recursive: true, force: true });

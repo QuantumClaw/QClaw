@@ -53,8 +53,8 @@ const ALLOWED_FORMS = [
   ['uniq', 'uniq /tmp/foo'],
   ['grep', 'grep -rn pattern src/'],
   ['find', 'find . -name "*.js"'],
-  ['awk', 'awk \'{print $1}\' /tmp/foo'],
-  ['sed', 'sed -n 1,10p /tmp/foo'],
+  // awk + sed dropped 2026-05-15 (Slice 3c.1 round-2 review) — see
+  // "awk + sed no longer allowlisted" section below.
   ['git status', 'git status --short'],
   ['git log', 'git log --oneline -5'],
   ['git diff', 'git diff HEAD~1'],
@@ -68,9 +68,31 @@ for (const [label, command] of ALLOWED_FORMS) {
 }
 
 check('sudo prefix stripped before verb match', checkAllowlist('sudo cat /tmp/foo').allowed === true);
-check('listAllowedVerbs returns 16 entries (11 single + 5 two-word)', listAllowedVerbs().length === 16);
-check('ALLOWLIST_SPEC.singleVerbs has 11 entries', ALLOWLIST_SPEC.singleVerbs.length === 11);
+check('listAllowedVerbs returns 14 entries (9 single + 5 two-word)', listAllowedVerbs().length === 14);
+check('ALLOWLIST_SPEC.singleVerbs has 9 entries (awk + sed removed)', ALLOWLIST_SPEC.singleVerbs.length === 9);
 check('ALLOWLIST_SPEC.twoWordVerbs has 5 entries', ALLOWLIST_SPEC.twoWordVerbs.length === 5);
+
+console.log('\n=== awk + sed dropped from allowlist (Slice 3c.1 round-2 review) ===');
+//
+// Round-2 adversarial review (2026-05-15) found 2 CRITICAL bypasses:
+//   - awk BEGIN{system("...")}  — runs shell from inside awk body
+//   - sed -e "1e ..."           — GNU sed `e` command runs shell
+// plus HIGH-severity sed file-I/O bypasses (`r`/`w`/`R`/`W`).
+// Decision per Tyson: drop awk + sed from ALLOWED_VERBS rather than
+// chase enumerated flag bans.
+for (const cmd of [
+  'awk \'{print $1}\' /tmp/foo',          // previously allowed
+  'awk BEGIN{system("id")}',              // round-2 CRITICAL #1
+  'awk -e "BEGIN{system(\\"id\\")}"',
+  'sed -n 1,10p /tmp/foo',                // previously allowed
+  'sed -e "1e echo PWN" /tmp/x',          // round-2 CRITICAL #2
+  'sed "1r /etc/shadow" /tmp/x',          // round-2 HIGH (sed `r` file I/O)
+  'sed -e "w /etc/cron.d/evil" /tmp/x',   // round-2 HIGH (sed `w` file I/O)
+]) {
+  const r = checkAllowlist(cmd);
+  check(`'${cmd.slice(0, 50)}...' rejected with reason=not_allowlisted`,
+    r.allowed === false && r.reason === 'not_allowlisted');
+}
 
 console.log('\n=== B. Per-verb flag rules ===');
 
@@ -83,11 +105,10 @@ check('find -delete rejected with reason=disallowed_flag', r_find_delete.allowed
 const r_find_exec = checkAllowlist('find . -name foo -exec rm {} +');
 check('find -exec rejected with reason=disallowed_flag', r_find_exec.allowed === false && r_find_exec.reason === 'disallowed_flag' && r_find_exec.flag === '-exec');
 
-const r_sed_i = checkAllowlist('sed -i s/a/b/ /tmp/foo');
-check('sed -i rejected with reason=disallowed_flag', r_sed_i.allowed === false && r_sed_i.reason === 'disallowed_flag' && r_sed_i.flag === '-i');
-
-const r_sed_inplace = checkAllowlist('sed --in-place s/a/b/ /tmp/foo');
-check('sed --in-place rejected with reason=disallowed_flag', r_sed_inplace.allowed === false && r_sed_inplace.reason === 'disallowed_flag');
+// sed is no longer on the allowlist (Slice 3c.1 round-2 review); the
+// dedicated `-i` / `--in-place` disallowed-flag tests would now hit the
+// not_allowlisted gate first. Coverage of those bodies moved up into the
+// "awk + sed dropped" section, where we assert not_allowlisted directly.
 
 const r_pm2_logs_stream = checkAllowlist('pm2 logs charlie');
 check('pm2 logs without --nostream rejected with reason=missing_required_flag', r_pm2_logs_stream.allowed === false && r_pm2_logs_stream.reason === 'missing_required_flag' && r_pm2_logs_stream.flag === '--nostream');
@@ -117,6 +138,27 @@ for (const [label, cmd] of chains) {
 }
 
 check('background & rejected', checkAllowlist('ls /tmp &').allowed === false && checkAllowlist('ls /tmp &').reason === 'chain_or_substitution');
+
+console.log('\n=== Path-traversal `..` rejected anywhere (Slice 3c.1 round-2 review) ===');
+// Round-2 HIGH #2: `cat /tmp/x > /tmp/../etc/passwd` passes the
+// DESTRUCTIVE `>\s*\/(?!dev\/null|tmp\/)` regex because `> /tmp/` is
+// exempted; bash resolves `/tmp/../etc/passwd` to `/etc/passwd`.
+// Fix: blanket reject `..` anywhere in the command body at the
+// allowlist layer (returns reason=chain_or_substitution,
+// pattern=parent-dir traversal).
+const traversals = [
+  ['plain ../', 'cat /tmp/../etc/passwd'],
+  ['redirect via /tmp/..', 'cat /tmp/x > /tmp/../etc/passwd'],
+  ['double-dot mixed (/./..)', 'cat /tmp/x > /tmp/./../etc/passwd'],
+  ['parent in argument', 'cat ../foo'],
+];
+for (const [label, cmd] of traversals) {
+  const r = checkAllowlist(cmd);
+  check(`'${label}' rejected (${cmd.slice(0, 50)})`,
+    r.allowed === false
+    && r.reason === 'chain_or_substitution'
+    && /parent-dir traversal/.test(r.pattern || ''));
+}
 
 console.log('\n=== Pipes permitted, segments validated ===');
 

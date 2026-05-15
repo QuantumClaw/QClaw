@@ -1,5 +1,5 @@
 /**
- * QuantumClaw — read-only shell command allowlist (Slice 3c)
+ * QuantumClaw — read-only shell command allowlist (Slice 3c, hardened 3c.1)
  *
  * Primary-line defence for `shell_exec`. The check runs before the
  * existing DENY / DESTRUCTIVE / quantumclaw-dir gates in `shell-exec.js`.
@@ -8,14 +8,16 @@
  *   1. Strip a leading `sudo ` (the existing DESTRUCTIVE gate already
  *      flags `sudo` for approval; the allowlist still applies underneath).
  *   2. Reject any command containing `;`, `&&`, `||`, standalone `&`,
- *      `$(`, or backticks — these enable chaining / command substitution
- *      that would let a non-allowlisted verb run behind an allowlisted
- *      one. (Pipes `|` are permitted so `grep … | head -n` works.)
+ *      `$(`, backticks, embedded `\n`/`\r`, or `..` path segments —
+ *      these enable chaining / command substitution / directory
+ *      traversal that would let a non-allowlisted verb or path run
+ *      behind an allowlisted one. (Pipes `|` are permitted so
+ *      `grep … | head -n` works.)
  *   3. Split on `|` into pipeline segments. Every segment's first verb
  *      (or first-two-word verb for `git X`, `pm2 X`) must be in the
  *      allowlist.
- *   4. Per-verb disallowed flags (`find -delete`, `sed -i`) reject the
- *      command outright.
+ *   4. Per-verb disallowed flags (`find -delete`) reject the command
+ *      outright.
  *   5. Per-verb required flags (`pm2 logs` needs `--nostream`) reject if
  *      missing.
  *
@@ -24,13 +26,34 @@
  * existing approval system is never consulted. Allowlisted commands
  * pass through to DENY / DESTRUCTIVE / quantumclaw-dir as before —
  * defence in depth.
+ *
+ * Slice 3c.1 round-2 adversarial-review hardening (2026-05-15):
+ *   - awk dropped (BEGIN{system(...)} / getline | "cmd" / |& coprocess
+ *     all spawn shell from inside the program body — not safely
+ *     enumerable by flag table).
+ *   - sed dropped (GNU sed `e` command runs shell per matched line;
+ *     `r`/`w`/`R`/`W` commands read/write arbitrary files bypassing
+ *     the DESTRUCTIVE redirect regex).
+ *   - `..` rejected anywhere in command (closes `/tmp/../etc/passwd`
+ *     path-traversal that exempted the DESTRUCTIVE redirect-outside-
+ *     /tmp regex via the `/tmp/` literal prefix).
+ *
+ * See Slice 3d (CHARLIE_OVERHAUL.md) for the planned allowlist
+ * redesign that replaces enumeration with an argv-parser approach.
  */
 
 const SINGLE_VERBS = new Set([
   'ls', 'cat', 'head', 'tail', 'wc',
   'sort', 'uniq',
   'grep', 'find',
-  'awk', 'sed',
+  // awk + sed dropped 2026-05-15 (Slice 3c.1 round-2 adversarial review).
+  // Both verbs expose shell-spawn surfaces that can't be safely allowlisted
+  // by flag enumeration: awk's BEGIN{system(...)} / getline | "cmd" / |&
+  // coprocess operator executes shell from inside the program body; GNU
+  // sed's `e` command runs shell per pattern-matched line; sed's `r`/`w`/
+  // `R`/`W` commands read/write arbitrary files bypassing the
+  // DESTRUCTIVE redirect regex. Drop-the-verb is the only safe response
+  // until Slice 3d (allowlist redesign) lands.
 ]);
 
 const TWO_WORD_VERBS = new Set([
@@ -43,7 +66,8 @@ const TWO_WORD_VERBS = new Set([
 
 const DISALLOWED_FLAGS = {
   find: ['-delete', '-exec', '-execdir', '-fprint', '-fprintf', '-ok'],
-  sed: ['-i', '--in-place'],
+  // sed flag table removed alongside the verb (2026-05-15 round-2 review).
+  // Dead surface — sed is no longer reachable.
 };
 
 const REQUIRED_FLAGS = {
@@ -63,6 +87,16 @@ const CHAIN_REJECT_PATTERNS = [
   // finding 2026-05-15: `pm2 list\necho pwned` executed both lines as
   // root with no approval prompt under the post-3c.1 gate ordering).
   { name: 'newline', re: /[\r\n]/ },
+  // `..` anywhere — Slice 3c.1 round-2 adversarial finding: the
+  // shell-exec DESTRUCTIVE regex `>\s*\/(?!dev/null|tmp/)` exempts
+  // `/tmp/` literally, so `cat /tmp/x > /tmp/../etc/passwd` saw
+  // `> /tmp/` and passed. Bash then resolves `/tmp/../etc/passwd`
+  // to `/etc/passwd`. Conservative fix: reject `..` anywhere in the
+  // command body. Read-only allowlist verbs operating on `..`
+  // relative paths are rare and can be expressed via absolute paths
+  // instead. Catches both `> /tmp/../etc/passwd` and the
+  // `/tmp/./../etc/passwd` mixed-form variant.
+  { name: 'parent-dir traversal', re: /\.\./ },
 ];
 
 export function listAllowedVerbs() {

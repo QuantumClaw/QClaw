@@ -10904,3 +10904,169 @@ The PR (#24) remains in draft pending a second pass from the
 adversarial reviewer; only un-drafted after that returns clean.
 
 End of session 2026-05-15 Slice 3c.1 remediation.
+
+## [2026-05-15] Slice 3c.1 — pre-PR adversarial review round 2 caught 2 CRITICAL + 2 HIGH allowlist-escape bypasses
+
+**TL;DR.** Round-2 adversarial pass on the post-newline-fix branch
+surfaced four additional bypasses. Decision per Tyson: drop awk +
+sed from `ALLOWED_VERBS` rather than chase enumerated flag/body
+bans. Plus a path-traversal `..` rejection. Three remediation
+commits on the same branch. Harness now 135/135 passing
+(was 78/78; 57 new assertions). PR #24 still draft.
+
+### Round-2 findings (verbatim repros)
+
+**CRITICAL #1 — awk shell-escape via `system()` builtin.**
+
+```
+shell_exec({command: 'awk BEGIN{system("echo PWNED")}'})
+```
+
+`checkAllowlist` returns `{allowed:true}` (awk is on SINGLE_VERBS,
+no chain pattern, no DESTRUCTIVE hit). `execAsync(command, {shell:
+'/bin/bash'})` invokes awk; awk's `BEGIN{...}` block runs the
+quoted program; `system("echo PWNED")` spawns `/bin/sh -c "echo
+PWNED"` from inside awk. Net effect: arbitrary shell execution as
+root with no approval prompt. Variants enumerated in the test
+file: `awk -e BEGIN{system(...)}`, `awk 'BEGIN{print "x" | "sh"}'`,
+`awk 'BEGIN{getline cmd < "/etc/passwd"; print cmd}'`, awk's `|&`
+coprocess operator.
+
+**CRITICAL #2 — sed shell-escape via the `e` command.**
+
+```
+shell_exec({command: 'sed -e "1e echo PWN_SED" /tmp/x'})
+```
+
+GNU sed's `e` command executes the shell once per pattern-matched
+line. `DISALLOWED_FLAGS.sed` only contained `-i` / `--in-place`;
+the `e` command lives inside the script body, not on the argv.
+Linux qclaw production = RCE.
+
+**HIGH #1 — sed internal file I/O.**
+
+```
+sed -e "1r /etc/shadow" /tmp/x       # reads /etc/shadow to stdout
+sed -e "w /etc/cron.d/evil" /tmp/x   # writes pattern-space lines to /etc/cron.d/evil
+```
+
+sed's `r` (read file into pattern space, printed on output) and
+`w` (write pattern space to file) commands operate via sed's
+internal file machinery — they don't appear as shell redirects, so
+the DESTRUCTIVE `>\s*\/(?!dev\/null|tmp\/)` regex doesn't see
+them. Same surface: `R` (read line by line) and `W` (conditional
+write).
+
+**HIGH #2 — path-traversal through redirect-outside-/tmp.**
+
+```
+shell_exec({command: 'cat /tmp/x > /tmp/../etc/passwd'})
+```
+
+`cat` is allowlisted. The DESTRUCTIVE regex
+`>\s*\/(?!dev\/null|tmp\/)` sees `> /tmp/` and exempts the
+redirect. Bash then resolves `/tmp/../etc/passwd` →
+`/etc/passwd` at exec time. Mixed-dot variant `/tmp/./../etc/passwd`
+same bypass. `tee /tmp/../etc/cron.d/evil` analogous.
+
+### Decision rationale (Tyson, verbatim from brief)
+
+> drop the rich verbs rather than try to enumerate dangerous flags
+> and body content.
+
+The two paths considered:
+
+- **(a)** Enumerate dangerous flags/body content per verb (`awk:
+  ['-i', '--include']`, `sed -e "<digit>e"`, sed `r`/`w`/`R`/`W`,
+  `..` after redirects). Sustainable only if awk/sed body grammars
+  are bounded; both are general-purpose languages. Any future
+  flag or grammar extension reopens the bypass surface.
+- **(b)** Drop awk + sed entirely. Read-only awk/sed cases are
+  covered by `grep -E`, `head`, `tail`, `cat`, `wc`. Complex
+  transforms go through `claude_code_dispatch` (Slice 5).
+  Conservative; agent rarely needs awk/sed for read-only work.
+
+Tyson chose (b). Slice 3d (CHARLIE_OVERHAUL.md planned slices)
+takes the structural redesign — argv-parser instead of
+shell-string parsing.
+
+### Scope amendment
+
+Slice 3c.1 expanded from "gate ordering fix" → **"gate ordering +
+allowlist hardening"**. Single remediation commit on this branch
+covers:
+
+- `src/tools/shell-exec-allowlist.js`:
+  - Remove `'awk'`, `'sed'` from `SINGLE_VERBS`.
+  - Remove dead `DISALLOWED_FLAGS.sed = ['-i', '--in-place']`
+    entry (verb no longer reachable).
+  - Add `{ name: 'parent-dir traversal', re: /\.\./ }` to
+    `CHAIN_REJECT_PATTERNS`. Blanket `..` rejection. Returns
+    `not_allowlisted` with `reason=chain_or_substitution,
+    pattern=parent-dir traversal`. Conservative-but-clean:
+    catches `cat ../foo` too, but allowlisted read-only verbs
+    operating on `..` paths are rare and absolute paths work
+    equally well.
+  - Update docstring header to describe both hardenings.
+- `src/tools/shell-exec.js`: tool `description` field updated to
+  reflect dropped verbs.
+- `tests/shell-exec-allowlist.test.js`: removed awk/sed from
+  ALLOWED_FORMS, added "awk + sed dropped" section with the
+  CRITICAL #1/#2 + HIGH #1 repros asserting `not_allowlisted`,
+  added "Path-traversal `..` rejected anywhere" section with the
+  HIGH #2 repros + plain `..` cases.
+- `tests/approval-gate-allowlist-ordering.test.js`: new section
+  "Round-2 adversarial findings (Slice 3c.1)" — 8 cases driven
+  through the live executor sequence (real ApprovalGate + real
+  ToolRegistry + real shell_exec via registerBuiltin), asserting
+  each surfaces as `error=not_allowlisted` at the tool layer with
+  no notifier fire. Total test now 98/98 (was 57/57; +41 round-2
+  assertions).
+- `scripts/verify-approval-gate-allowlist-ordering.js`: new C5
+  case-set covering the same eight cases. Docstring updated.
+  Harness now 135/135 (was 78/78; +57 round-2 assertions).
+- `FLOW_OS_STATE.md`: `awk -i inplace` LOW followup resolved
+  (closed by dropping the verb). One `pm2 restart/reload` LOW
+  followup remains untouched.
+- `CHARLIE_OVERHAUL.md`: scope-amendment subsection appended to
+  Slice 3c.1; new Slice 3d "Allowlist redesign" entry filed in
+  planned slices.
+
+### Verification (verbatim)
+
+All test files pass individually (16/16, modulo pre-existing
+`probes.test.js` `pm2_processes` dev-env flake unchanged from
+`main`). Harness output captured in PR body.
+
+Ad-hoc adversarial probe (full executor sequence, instrumented to
+count notifier / outerApproval / inlineApproval fires) confirms all
+four findings reach `tools.executeTool()` and return
+`error: 'not_allowlisted'` with `exit_code: -1` — and crucially
+that all three approval-path counters remain at zero for every
+case. Probe script `/tmp/round2-adversarial-probe.js` (not
+committed). Probe output:
+
+```
+=== OVERALL: PASS — all four round-2 findings rejected, no approval paths fired ===
+Total counters: notifier=0, outerApproval=0, inlineApproval=0
+```
+
+### Process win, again
+
+Round-2 caught 4 CRITICAL/HIGH bugs that:
+- the 62-assertion unit test (post-round-1) missed — only exercised
+  `\n` injection
+- the 78-case harness (post-round-1) missed — C2 had `;`/`&&`/`$()`
+  + newline but not awk-body, sed-script, or `..`-traversal shapes
+- the 57-assertion ordering test (post-round-1) missed — only
+  exercised newline injection in the live-executor path
+
+Three rounds of review on the same branch surfacing a CRITICAL
+each time confirms the structural problem: enumeration-by-allowlist
+cannot keep up with adversarial pressure on rich verbs. Slice 3d
+captures the planned redesign. Until that lands, the operational
+posture is: minimum verb set, maximum body restrictions, drop any
+verb that exposes a non-flag-enumerable shell-spawn or file-I/O
+surface.
+
+End of session 2026-05-15 Slice 3c.1 round-2 remediation.
