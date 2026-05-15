@@ -81,6 +81,68 @@ const DESTRUCTIVE_PATTERNS = [
 // DENY patterns run first so .env / .secrets hits are blocked before this.
 const QUANTUMCLAW_DIR_RE = /\/root\/\.quantumclaw\b/;
 
+/**
+ * Disabled stub for shell_exec (Slice 3c.1 scope reduction, 2026-05-15).
+ *
+ * Three consecutive rounds of adversarial review on Slice 3c.1 surfaced
+ * 4 CRITICAL allowlist-escape bypasses across three independent failure
+ * modes (newline chaining, awk/sed body-content shell-escape, sort
+ * --compress-program + env-var/tilde DENY bypass). The pattern indicates
+ * allowlist-by-enumeration is structurally indefensible — Slice 3d
+ * (allowlist redesign) takes over. Until 3d ships, `shell_exec` is
+ * disabled by default via the `QCLAW_SHELL_EXEC_ENABLED` env flag.
+ *
+ * When the flag is unset (default) or set to a non-truthy value, this
+ * stub is registered instead of the real tool. The fn() returns a
+ * structured soft-deny without ever reaching execAsync. The approval
+ * gate's existing shell_exec early-bypass returns requiresApproval:false
+ * for ANY string command, so the stub is reached without a prompt firing.
+ *
+ * To re-enable (e.g. for the round-1 newline-injection regression check),
+ * set `QCLAW_SHELL_EXEC_ENABLED=1`.
+ */
+export function createDisabledShellExecTool({ audit, auditActor = 'charlie' } = {}) {
+  return {
+    description: 'shell_exec is DISABLED pending Slice 3d allowlist redesign. Calls return a structured soft-deny (error=shell_exec_disabled). For tasks that previously required shell execution use claude_code_dispatch (Slice 5) or escalate to Tyson. See CHARLIE_OVERHAUL.md Slice 3c.1 scope reduction and QCLAW_BUILD_LOG.md 2026-05-15 closure entry.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'Shell command (rejected — tool is disabled).' },
+        timeout_ms: { type: 'integer' },
+        cwd: { type: 'string' },
+      },
+      required: ['command'],
+    },
+    longRunning: false,
+    fn: async (args) => {
+      const command = String(args?.command ?? '').slice(0, 200);
+      log.warn(`shell_exec DISABLED (QCLAW_SHELL_EXEC_ENABLED unset/0): ${command.slice(0, 120)}`);
+      audit?.log?.(auditActor, 'shell_exec_disabled', command, {
+        flag: 'QCLAW_SHELL_EXEC_ENABLED',
+        value: process.env.QCLAW_SHELL_EXEC_ENABLED ?? '(unset)',
+      });
+      return {
+        ok: false,
+        error: 'shell_exec_disabled',
+        reason: 'shell_exec is disabled pending Slice 3d allowlist redesign. Use the claude_code_dispatch path (Slice 5) for development tasks requiring shell execution.',
+        command,
+        exit_code: -1,
+      };
+    },
+  };
+}
+
+/**
+ * Returns true when `shell_exec` is enabled for this process.
+ * Reads `QCLAW_SHELL_EXEC_ENABLED` (defaults to '0' / disabled).
+ * Accepted truthy values: '1', 'true', 'yes', 'on' (case-insensitive).
+ * Any other value (including unset) returns false.
+ */
+export function isShellExecEnabled() {
+  const v = String(process.env.QCLAW_SHELL_EXEC_ENABLED ?? '0').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
 export function createShellExecTool({ approvalGate, audit, auditActor = 'charlie' }) {
   return {
     description: 'Execute a read-only shell command on the qclaw server. Allowlisted verbs only: ls, cat, head, tail, wc, sort, uniq, grep, find, awk, sed, git status, git log, git diff, pm2 list, pm2 logs --nostream. Pipes (|) permitted; chaining (;, &&, ||) and command substitution ($(...), backticks) rejected. find -delete / -exec, sed -i, and pm2 logs without --nostream rejected. Non-allowlisted commands return {error:"not_allowlisted",suggestion:...}; allowlisted commands still pass through DENY (secret paths) and DESTRUCTIVE (redirects, sudo) gates. For write operations use claude_code_dispatch (Slice 5) or escalate to Tyson. Default 60s timeout.',

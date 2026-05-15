@@ -26,7 +26,7 @@ import { DeliveryQueue } from './core/delivery-queue.js';
 import { CompletionCache } from './core/completion-cache.js';
 import { ExecApprovals } from './security/approvals.js';
 import { ApprovalGate } from './security/approval-gate.js';
-import { createShellExecTool } from './tools/shell-exec.js';
+import { createShellExecTool, createDisabledShellExecTool, isShellExecEnabled } from './tools/shell-exec.js';
 import { createN8nWorkflowUpdateTool } from './tools/n8n-workflow-update.js';
 import { RateLimiter } from './security/rate-limiter.js';
 import { ContentQueue } from './security/content-queue.js';
@@ -229,11 +229,30 @@ class QuantumClaw {
       this.approvalGate = approvalGate;
 
       // Register execution tools — shell_exec + n8n_workflow_update.
+      // shell_exec is gated by QCLAW_SHELL_EXEC_ENABLED (default '0' /
+      // disabled) for Slice 3c.1 — three rounds of adversarial review
+      // found 4 CRITICAL allowlist bypasses across three independent
+      // failure modes. The real tool is replaced with a soft-deny stub
+      // until Slice 3d (allowlist redesign) ships. See CHARLIE_OVERHAUL.md
+      // Slice 3c.1 scope reduction and QCLAW_BUILD_LOG.md 2026-05-15
+      // closure entry. Re-enable for local regression checks via
+      // QCLAW_SHELL_EXEC_ENABLED=1.
+      const shellExecEnabled = isShellExecEnabled();
+      if (shellExecEnabled) {
+        log.warn('shell_exec ENABLED via QCLAW_SHELL_EXEC_ENABLED — Slice 3d not yet shipped; allowlist bypasses known');
+        this.tools.registerBuiltin('shell_exec', {
+          scope: 'shared',
+          ...createShellExecTool({ approvalGate, audit: this.audit, auditActor: 'charlie' }),
+        });
+      } else {
+        log.info('shell_exec DISABLED (QCLAW_SHELL_EXEC_ENABLED unset/0) — soft-deny stub registered pending Slice 3d');
+        this.tools.registerBuiltin('shell_exec', {
+          scope: 'shared',
+          ...createDisabledShellExecTool({ audit: this.audit, auditActor: 'charlie' }),
+        });
+      }
+      // n8n_workflow_update remains gated by ApprovalGate as before.
       // Both declare longRunning so the executor waits up to 11 min for approval.
-      this.tools.registerBuiltin('shell_exec', {
-        scope: 'shared',
-        ...createShellExecTool({ approvalGate, audit: this.audit, auditActor: 'charlie' }),
-      });
       this.tools.registerBuiltin('n8n_workflow_update', {
         scope: 'shared',
         ...createN8nWorkflowUpdateTool({ approvalGate, audit: this.audit, auditActor: 'charlie' }),
