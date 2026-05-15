@@ -83,7 +83,7 @@ const QUANTUMCLAW_DIR_RE = /\/root\/\.quantumclaw\b/;
 
 export function createShellExecTool({ approvalGate, audit, auditActor = 'charlie' }) {
   return {
-    description: 'Execute a read-only shell command on the qclaw server. Allowlisted verbs only: ls, cat, head, tail, wc, sort, uniq, grep, find, git status, git log, git diff, pm2 list, pm2 logs --nostream. Pipes (|) permitted; chaining (;, &&, ||), command substitution ($(...), backticks), embedded newlines, and `..` path-traversal rejected. find -delete / -exec and pm2 logs without --nostream rejected. Non-allowlisted commands return {error:"not_allowlisted",suggestion:...}; allowlisted commands still pass through DENY (secret paths) and DESTRUCTIVE (redirects, sudo) gates. For write operations use claude_code_dispatch (Slice 5) or escalate to Tyson. Default 60s timeout.',
+    description: 'Execute a read-only shell command on the qclaw server. Allowlisted verbs only: ls, cat, head, tail, wc, sort, uniq, grep, find, awk, sed, git status, git log, git diff, pm2 list, pm2 logs --nostream. Pipes (|) permitted; chaining (;, &&, ||) and command substitution ($(...), backticks) rejected. find -delete / -exec, sed -i, and pm2 logs without --nostream rejected. Non-allowlisted commands return {error:"not_allowlisted",suggestion:...}; allowlisted commands still pass through DENY (secret paths) and DESTRUCTIVE (redirects, sudo) gates. For write operations use claude_code_dispatch (Slice 5) or escalate to Tyson. Default 60s timeout.',
     inputSchema: {
       type: 'object',
       properties: {
