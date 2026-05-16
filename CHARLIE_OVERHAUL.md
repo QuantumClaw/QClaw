@@ -647,45 +647,67 @@ procedural step for any slice that modifies `ApprovalGate`,
 `shell-exec*`, `executor`, secrets handling, or tool registration /
 scope enforcement.
 
-**Slice 3d — Allowlist redesign — ACCELERATED ahead of Slice 4.**
+**Slice 3d — Allowlist redesign — ✓ COMPLETE 2026-05-16.**
 Three rounds of adversarial review on Slice 3c.1 surfaced 4 CRITICAL
 bypasses across three independent failure modes (newline chaining,
 rich-verb body-content shell-escape, regex-on-unexpanded-string vs
-bash-expanded paths). The empirical signal is that
-allowlist-by-enumeration cannot keep pace with adversarial pressure
-on a shell-string parsing model — the design needs structural
-replacement, not more rules. Slice 3d is **ACCELERATED ahead of
-Slice 4** because every future security-relevant slice that ships
-before 3d would inherit the same indefensible foundation. During the
-gap, `shell_exec` is disabled via `QCLAW_SHELL_EXEC_ENABLED=0`
-(Slice 3c.1 reduced scope, this PR); previously-`shell_exec` work
-routes through `claude_code_dispatch` (Slice 5). Tyson drafts the
-design brief separately; this entry reserves the slot with
-motivation and pointers to the three-round adversarial-review
-findings in `QCLAW_BUILD_LOG.md` (2026-05-15 entries).
+bash-expanded paths). Slice 3d replaces the regex-on-shell-string
+allowlist with a structural model:
 
-Design constraints for 3d (Tyson to refine):
+- **Hand-rolled state-machine parser** (`src/tools/shell-exec-parser.js`,
+  ESM, ASCII-only, zero-dep, ~580 LOC incl. the parseAndValidate
+  pipeline). Every shell metacharacter rejects at parse time. Bash
+  never sees the input.
+- **Per-verb schemas** (`src/tools/shell-exec-verb-schemas.js`). v1
+  surface = 5 read-only verbs: `ls`, `cat`, `git status`, `git log`,
+  `pm2 list` (alias `pm2 ls`). Combined short flags rejected;
+  value-flag (`-n`) semantics pinned; ALLOW = `/root/QClaw` only;
+  DENY = `/root/.ssh`, `/root/.aws`, `/root/QClaw/.env`,
+  `/root/QClaw/.git/config`, etc.
+- **realpath + DENY/ALLOW** (`resolvePath`). Symlink swing and `..`
+  traversal closed structurally; resolved realpath substituted into
+  argv before spawn to close the residual TOCTOU race.
+- **Sanitised spawn** (`src/tools/shell-exec-spawn.js`). `shell:false`,
+  absolute-path argv[0], `SAFE_ENV` with `GIT_CONFIG_NOSYSTEM=1` +
+  `GIT_CONFIG_GLOBAL=/dev/null` (neutralises user-level git aliases),
+  30s timeout, 1 MiB combined output cap via hand-rolled accumulator
+  (Node `spawn` has no `maxBuffer`).
+- **Repo-local git-config trust boundary.**
+  `/root/QClaw/.git/config` is the only git config the spawned git
+  reads. A CI regression test
+  (`tests/shell-exec-git-config-safety.test.js`) parses the live
+  config and fails the build if any of a dangerous-key list is
+  present (alias status/log/`!*`, fsmonitor, textconv, driver, gpg
+  program, `[include]` / `[includeIf]` sections, generic
+  command/program/driver/textconv/helper/execute/clean/smudge
+  leaves). git ≥ 2.30 (qclaw baseline, pinned in `LOCATIONS.md`
+  Infrastructure section) is the runtime backstop — its
+  alias-override hardening rejects aliases that override built-in
+  commands.
 
-- Replace regex-on-shell-string with a structural model that operates
-  on parsed argv (e.g. `execFile`-style argv list, no `bash -c`, no
-  quoting, no chaining surface).
-- Bash expansions (`$VAR`, `~`, `<(…)`, `>(…)`, glob, alias) happen
-  before the model sees the command if invoked via `/bin/bash -c`,
-  so the model must run *after* expansion or replace `bash -c`
-  entirely.
-- Verb set should be narrow enough to audit by enumeration (e.g. ≤8
-  verbs total with no shell-spawn surface — `ls`, `cat`, `head`,
-  `tail`, `wc`, `pm2 list`, `git status` as candidates); rich verbs
-  (`grep -E`, `find`) need flag re-audit; awk/sed/sort go through
-  `claude_code_dispatch`.
-- Path arguments validated as absolute, normalized, and inside an
-  explicit allow-list of root prefixes — no `..`, no symlink escape
-  to outside-the-prefix.
+4-round adversarial review convergence pattern: R1 (1 CRITICAL + 2
+HIGH + 4 MEDIUM + 5 LOW; Tyson decided 4 blockers) → R2 (1 HIGH + 2
+MEDIUM + 9 LOW; Tyson decided 3 blockers) → R3 (2 MEDIUM + 7 LOW,
+all implementer-decides) → R4 (3 LOW, all implementer-decides). The
+adversarial-review-before-code protocol caught the symlink class
+(would have been a CRITICAL in code-round 1) and the git-config
+trust boundary (CRITICAL + HIGH) at design phase.
 
-Triggered after PR #24 (Slice 3c.1 reduced) merges. Threat model:
-prompt-injection-driven `shell_exec` call construction. Reference:
-`QCLAW_BUILD_LOG.md` 2026-05-15 closure entry for the four-CRITICAL
-repro set.
+Files: `src/tools/shell-exec.js` (rewritten), `shell-exec-parser.js`
+(new), `shell-exec-verb-schemas.js` (new), `shell-exec-spawn.js`
+(new); `src/security/approval-gate.js` (parser import swap);
+`src/index.js` flag default flipped to enabled.
+Deleted: `src/tools/shell-exec-allowlist.js`,
+`tests/shell-exec-allowlist.test.js`,
+`scripts/verify-shell-allowlist.js`,
+`tests/approval-gate-allowlist-ordering.test.js` (ported to
+`tests/approval-gate-shell-exec-parser.test.js`).
+Verification: `scripts/verify-shell-exec-parser.js`.
+
+**Slice 3 family closure (2026-05-16):** 3a + 3b + 3b.1 + 3c + 3c.1 +
+3d all ✓ COMPLETE.
+
+Code-round adversarial review pending after Unit 3 push.
 
 **Slice 4 — Verification gates (soft + hard).** Moved one slot back
 in the queue (was next after 3c.1; now next after 3d).

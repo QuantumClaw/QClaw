@@ -229,23 +229,21 @@ class QuantumClaw {
       this.approvalGate = approvalGate;
 
       // Register execution tools — shell_exec + n8n_workflow_update.
-      // shell_exec is gated by QCLAW_SHELL_EXEC_ENABLED (default '0' /
-      // disabled) for Slice 3c.1 — three rounds of adversarial review
-      // found 4 CRITICAL allowlist bypasses across three independent
-      // failure modes. The real tool is replaced with a soft-deny stub
-      // until Slice 3d (allowlist redesign) ships. See CHARLIE_OVERHAUL.md
-      // Slice 3c.1 scope reduction and QCLAW_BUILD_LOG.md 2026-05-15
-      // closure entry. Re-enable for local regression checks via
-      // QCLAW_SHELL_EXEC_ENABLED=1.
+      // Slice 3d (2026-05-16): shell_exec is ENABLED by default with the
+      // 5-verb structural surface (ls, cat, git status, git log, pm2
+      // list). The QCLAW_SHELL_EXEC_ENABLED env var is now the
+      // kill-switch (set to 0/false/no/off to register the disabled stub
+      // for emergency rollback). See CHARLIE_OVERHAUL.md Slice 3d
+      // closure narrative and QCLAW_BUILD_LOG.md 2026-05-16 entry.
       const shellExecEnabled = isShellExecEnabled();
       if (shellExecEnabled) {
-        log.warn('shell_exec ENABLED via QCLAW_SHELL_EXEC_ENABLED — Slice 3d not yet shipped; allowlist bypasses known');
+        log.info('shell_exec ENABLED (Slice 3d 5-verb structural surface)');
         this.tools.registerBuiltin('shell_exec', {
           scope: 'shared',
-          ...createShellExecTool({ approvalGate, audit: this.audit, auditActor: 'charlie' }),
+          ...createShellExecTool({ audit: this.audit, auditActor: 'charlie' }),
         });
       } else {
-        log.info('shell_exec DISABLED (QCLAW_SHELL_EXEC_ENABLED unset/0) — soft-deny stub registered pending Slice 3d');
+        log.warn('shell_exec DISABLED (QCLAW_SHELL_EXEC_ENABLED kill-switch active) — soft-deny stub registered');
         this.tools.registerBuiltin('shell_exec', {
           scope: 'shared',
           ...createDisabledShellExecTool({ audit: this.audit, auditActor: 'charlie' }),

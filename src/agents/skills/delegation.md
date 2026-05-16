@@ -18,7 +18,8 @@ Routing work to the right executor with the right context. `CHARLIE_ROLE.md` has
 | Supabase reads | Supabase MCP (`supabase_select`) | Read-only |
 | Supabase schema changes | Claude Code via dispatch | Migrations tracked, never direct |
 | Server commands (PM2, env, file edits) | Claude Code via dispatch | Exact ssh commands in the brief |
-| Read-only shell tasks (process checks, log reads, pm2 list, git status, file reads) | Claude Code via `claude_code_dispatch` — `shell_exec` is DISABLED (Slice 3c.1, pending Slice 3d allowlist redesign). Soft-deny returns `{error:'shell_exec_disabled'}`. If Slice 5 hasn't shipped yet, surface the gap to Tyson and stop. |
+| In-lane shell reads — `ls`/`cat` under `/root/QClaw`, `git status`, `git log -n 20 --oneline`, `pm2 list` | `shell_exec` directly (Slice 3d, 5-verb structural surface). Absolute paths only; separated short flags; `git log -n 20 --oneline` (NOT `git log -n --oneline`). |
+| Out-of-lane shell ops (awk, sed, sort, find, head, tail, grep, log reads, write ops, pm2 restart/stop/delete) | Claude Code via `claude_code_dispatch` — these are not in the v1 `shell_exec` surface and reject as `unknown_verb`. |
 | Specialist work (Content Studio, Clipper, Ads Operator, etc.) | The specialist's skill / pipeline | Coordinate via task-queue + report results |
 | Architectural decisions | Tyson + Claude (chat) | Chat session, never autonomous |
 | Financial actions | Tyson | Hard-disabled at the tool level |
@@ -49,9 +50,9 @@ When dispatching to Claude Code:
 
 Charlie runs alongside several sub-agents (currently: Echo). Some live as `~/.quantumclaw/workspace/agents/<name>/`, others spawn on demand. To coordinate:
 
-- **Read another agent's audit log** for context: dispatch to Claude Code via `claude_code_dispatch` with target `~/.quantumclaw/workspace/agents/<name>/memory/audit.log` — `shell_exec` is DISABLED (Slice 3c.1) and the direct-`cat` pattern is unavailable until Slice 3d lands.
+- **Read another agent's audit log** for context: dispatch to Claude Code via `claude_code_dispatch` with target `~/.quantumclaw/workspace/agents/<name>/memory/audit.log`. The v1 `shell_exec` `cat` surface is scoped to `/root/QClaw/` only — `~/.quantumclaw/` paths are outside ALLOW and reject as `not_in_allow_prefix`.
 - **Check agent registry**: same — dispatch to Claude Code for the read of `~/.quantumclaw/workspace/agents.json`.
-- **Inspect another agent's memory state**: same — dispatch to Claude Code; no `shell_exec` `ls` calls.
+- **Inspect another agent's memory state**: same — `~/.quantumclaw/` is outside the v1 `shell_exec` ALLOW prefix; dispatch to Claude Code.
 - **Assign structured work** to a sub-agent by writing a task in the shared task queue (`charlie_tasks` Supabase table) with `assigned_to: <agent-name>` and clear success criteria. Don't direct-message another agent's runtime.
 - **Aggregate results** from multiple agents into one strategic summary for Tyson — that's your job, not theirs.
 

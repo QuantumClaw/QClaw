@@ -11315,3 +11315,147 @@ PR #24 remains DRAFT. Tyson will dispatch round 4 adversarial review
 after closure ships.
 
 End of session 2026-05-15 Slice 3c.1 closure.
+
+## [2026-05-16] Slice 3d — `shell_exec` structural allowlist redesign — Unit 1 + Unit 2 + Unit 3 SHIP
+
+**TL;DR.** Slice 3d replaces the deleted Slice 3c regex-on-shell-string
+allowlist with a structural model: hand-rolled state-machine parser +
+per-verb schemas + path realpath + DENY/ALLOW + sanitised spawn.
+4 rounds of adversarial review on the design (R1: 1 CRITICAL + 2 HIGH + 4
+MEDIUM + 5 LOW; R2: 1 HIGH + 2 MEDIUM + 9 LOW; R3: 2 MEDIUM + 7 LOW;
+R4: 0 + 0 + 0 + 3 LOW). Tyson decided 4 blockers at v1 and 3 blockers at
+v2; R3 and R4 were implementer-decides. Clean convergence pattern. The
+adversarial-review-before-code protocol caught the symlink class
+(would have been a CRITICAL in code-round 1) and the git-config trust
+boundary (CRITICAL + HIGH gaps) at design phase, not code phase.
+
+3 implementation units. Unit 1 work survived a session crash (mid-Unit-1
+API 500) and was resumed from uncommitted files; structural verification
+against design SSOT in the resume session confirmed all 8 files matched
+spec, all 5 test files green, then committed.
+
+Code-round adversarial review pending after Unit 3 push.
+
+### Files
+
+CREATED:
+- `src/tools/shell-exec-parser.js` (~580 LOC; pure
+  `parseAndValidate(command) → {ok, argv, schemaKey, resolvedPaths} |
+  {ok:false, error, reason, detail}`). State machine over ASCII-only
+  input. No env / fs / spawn at parse time.
+- `src/tools/shell-exec-verb-schemas.js` (~420 LOC). 5 verbs:
+  `ls`, `cat`, `git status`, `git log`, `pm2 list` (`pm2 ls` alias).
+  PathSchema/IntSchema/NoFlagsSchema validators. DENY_PREFIXES (22),
+  DENY_GLOBS (5), hand-rolled `globMatch` (zero-segment + multi-`**`
+  semantics, pinned to tests). DANGEROUS_GIT_CONFIG_*** lists extended
+  for R3 Blocker 1 ([include]/[includeIf]) + R3 Blocker 2
+  (filter clean/smudge).
+- `src/tools/shell-exec-spawn.js` (~170 LOC). `child_process.spawn`
+  with `shell:false`, absolute argv[0], hardcoded `SAFE_ENV` including
+  `GIT_CONFIG_NOSYSTEM=1` + `GIT_CONFIG_GLOBAL=/dev/null` +
+  `GIT_PAGER='cat'` + `GIT_TERMINAL_PROMPT='0'`, 30s timeout, 1 MiB
+  combined output cap via hand-rolled byte accumulator (Node `spawn`
+  has no `maxBuffer`), realpath substitution into argv before spawn.
+  Resolves on both `exit` and pre-exit `error` events (settle-once).
+- `tests/shell-exec-parser.test.js` (64 assertions, 64 passed). Every
+  parse-time rejection category + R1–R4 verbatim attack inputs.
+- `tests/shell-exec-schemas.test.js` (60 assertions, 60 passed). Per-verb
+  flags, positionals, combined-short-flag battery,
+  `git log -n --oneline` value-flag UX rejection.
+- `tests/shell-exec-path-resolve.test.js` (45 assertions, 45 passed).
+  Zero-segment + multi-`**` globMatch battery; every DENY_PREFIXES entry
+  hit; off-by-one boundary; symlink class with /tmp scaffolding +
+  cleanup; ELOOP fallback; resolvedPaths Map semantics.
+- `tests/shell-exec-env-isolation.test.js` (25 assertions, 25 passed).
+  Spy on `child_process.spawn` via `node:test` `mock.method` (round-3
+  L8 redesign — v3 spec was a no-op because `SAFE_ENV.HOME='/root'` is
+  hardcoded). Asserts exact env shape + forbidden env vars
+  (`LD_PRELOAD`, `LD_LIBRARY_PATH`, `NODE_OPTIONS`, `BASH_ENV`,
+  `PROMPT_COMMAND`) NOT propagated.
+- `tests/shell-exec-git-config-safety.test.js` (22 assertions, 22 passed).
+  Live `.git/config` scan via `git config --list --local` + mocked
+  test-of-the-test. Helpful failure message names `credential.helper`
+  exception class (round-4 L4.2).
+- `tests/approval-gate-shell-exec-parser.test.js` (~80 assertions,
+  ported from `approval-gate-allowlist-ordering.test.js`). Gate
+  bypass + tool body owns structural rejection shape +
+  notifier-fired-zero-times across the suite.
+- `scripts/verify-shell-exec-parser.js` (~210 LOC, ~50 assertions).
+  Live executor harness exercising ApprovalGate → ToolRegistry →
+  shell-exec.fn() against every R1–R4 finding + symlink + git-alias +
+  [include] evasion + [filter] clean class + every legitimate verb.
+
+MODIFIED:
+- `src/tools/shell-exec.js` — `createShellExecTool` rewritten to use
+  parseAndValidate + spawnWithCaps. Legacy DENY_PATTERNS,
+  DESTRUCTIVE_PATTERNS, QUANTUMCLAW_DIR_RE deleted from this file.
+  `isShellExecEnabled()` default flipped to TRUE; only explicit
+  `QCLAW_SHELL_EXEC_ENABLED=0|false|no|off` disables (case-insensitive).
+- `src/security/approval-gate.js` — import + early-branch swapped from
+  `checkAllowlist` to `parseAndValidate`. Gate ordering preserved.
+- `src/index.js` — registration comment updated for Slice 3d enabled
+  default.
+- `CHARLIE_ROLE.md` — replaced "shell_exec DISABLED" Slice 3c.1 notice
+  with Slice 3d 5-verb description. `git log -n 20 --oneline` example;
+  `ls -la` rejection rule called out.
+- `src/agents/skills/lanes.md`, `src/agents/skills/delegation.md`,
+  `src/agents/skills/verification-reflexes.md` — routing updated:
+  in-lane `shell_exec` for the 5 verbs; out-of-lane via
+  `claude_code_dispatch`.
+- `LOCATIONS.md` — tool-registry entry rewritten for Slice 3d
+  module map; git ≥ 2.30 baseline pinned in Infrastructure section.
+- `CHARLIE_OVERHAUL.md` — Slice 3d entry replaced with ✓ COMPLETE
+  closure narrative; Slice 3 family closure recorded.
+- `FLOW_OS_STATE.md` — obsolete followups marked resolved (awk -i
+  inplace structurally rejected; pm2 restart/reload doc drift resolved
+  by CHARLIE_ROLE.md rewrite).
+
+DELETED:
+- `src/tools/shell-exec-allowlist.js` (replaced structurally by
+  parser stack).
+- `tests/shell-exec-allowlist.test.js` (tests deleted module).
+- `scripts/verify-shell-allowlist.js` (replaced by
+  `scripts/verify-shell-exec-parser.js`).
+- `tests/approval-gate-allowlist-ordering.test.js` (ported to
+  `approval-gate-shell-exec-parser.test.js`).
+
+### Branch + commit state
+
+Branch `cc/slice3d-shell-exec-parser-20260516-2030`:
+- `304e9b1` Unit 1: argv parser + per-verb schemas + tests
+- `c962e79` Unit 2: re-wire shell-exec.js + approval-gate at the parser
+- (Unit 3 commit on next push)
+
+PR NOT YET OPENED. Code-round adversarial reviewer to attack the
+implementation first; PR-opening is the LAST step after review returns
+clean.
+
+### Pre-merge verification (Tyson, on qclaw)
+
+1. `which pm2` → capture stdout; if empty halt + escalate.
+2. `realpath $(which pm2)` → update `VERB_BINARY['pm2']` if differs
+   from the best-guess `/root/.npm-global/bin/pm2`.
+3. `git --version` → must be ≥ 2.30; if below halt + escalate.
+4. `git config --list --local` on the qclaw working tree → eyeball
+   for dangerous keys before merge.
+
+### Post-deploy smoke battery (Tyson, after merge)
+
+1. `shell_exec({command: 'pm2 list'})` → asserts pm2 path correct.
+2. `shell_exec({command: 'ls /root/QClaw'})` → ALLOW for `ls`.
+3. `shell_exec({command: 'cat /root/QClaw/package.json'})` → ALLOW
+   for `cat`.
+4. `shell_exec({command: 'git status'})` → env-isolation smoke (no
+   PWNED output).
+5. `shell_exec({command: 'git log --oneline -n 5'})` → 5 most recent
+   commits.
+6. `shell_exec({command: 'cat /root/.ssh/id_rsa'})` →
+   `not_in_allow_prefix` or `path_denied`.
+7. `shell_exec({command: 'cat /root/QClaw/.env'})` → `path_denied`
+   with `matchedDeny` being either the literal `/root/QClaw/.env`
+   or the glob `/root/**/.env`.
+8. `shell_exec({command: 'pm2 ls'})` → alias smoke.
+9. `shell_exec({command: 'ls -la /root/QClaw'})` →
+   `invalid_flag/combined_short_flags`.
+
+End of session 2026-05-16 Slice 3d.

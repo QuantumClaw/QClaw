@@ -91,6 +91,12 @@ export async function spawnWithCaps(validated) {
     let totalBytes = 0;
     let capped = false;
     let spawnFailedReason = null;
+    let resolved = false;
+    const settle = (value) => {
+      if (resolved) return;
+      resolved = true;
+      resolve(value);
+    };
 
     const onData = (chunks) => (chunk) => {
       if (capped) return;
@@ -111,8 +117,21 @@ export async function spawnWithCaps(validated) {
       child.stderr.on('data', onData(stderrChunks));
     }
 
+    // spawn emits 'error' for ENOENT on argv[0], EACCES, or invalid cwd.
+    // It may or may not emit 'exit' afterwards depending on the failure
+    // mode. We settle on the first event of either, treating 'error'
+    // before 'exit' as a structural spawn_failed.
     child.on('error', (err) => {
       spawnFailedReason = err && err.code ? err.code : String(err);
+      const duration_ms = Date.now() - startedAt;
+      settle({
+        ok: false,
+        error: 'spawn_failed',
+        reason: spawnFailedReason,
+        exit_code: -1,
+        duration_ms,
+        argv,
+      });
     });
 
     child.on('exit', (code, signal) => {
@@ -121,7 +140,7 @@ export async function spawnWithCaps(validated) {
       const partial_stderr = decodeOutput(Buffer.concat(stderrChunks.map((b) => (Buffer.isBuffer(b) ? b : Buffer.from(b)))));
 
       if (capped) {
-        resolve({
+        settle({
           ok: false,
           error: 'output_cap_exceeded',
           reason: `process emitted >${MAX_OUTPUT_BYTES} bytes`,
@@ -134,7 +153,7 @@ export async function spawnWithCaps(validated) {
         return;
       }
       if (spawnFailedReason) {
-        resolve({
+        settle({
           ok: false,
           error: 'spawn_failed',
           reason: spawnFailedReason,
@@ -145,7 +164,7 @@ export async function spawnWithCaps(validated) {
         return;
       }
       if (signal === 'SIGKILL' && child.killed) {
-        resolve({
+        settle({
           ok: false,
           error: 'timeout',
           reason: `process exceeded ${SPAWN_TIMEOUT_MS} ms`,
@@ -157,7 +176,7 @@ export async function spawnWithCaps(validated) {
         });
         return;
       }
-      resolve({
+      settle({
         ok: true,
         stdout: partial_stdout.slice(0, 4000),
         stderr: partial_stderr.slice(0, 4000),

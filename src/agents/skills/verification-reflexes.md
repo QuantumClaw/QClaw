@@ -67,7 +67,7 @@ You are not graded on omniscience. You are graded on accuracy. Saying "I don't k
 
 ## What this looks like in practice
 
-- Asked "is the scanner running?" → `charlie__n8n-api__get_workflows_id` or `claude_code_dispatch` to check (shell_exec is DISABLED — see `lanes.md`), report from output, never from memory. (`n8n_workflow_update` is a write tool — never use it for read-only checks.)
+- Asked "is the scanner running?" → `charlie__n8n-api__get_workflows_id` or `shell_exec` (`pm2 list`, Slice 3d v1 verb) or `claude_code_dispatch` for anything outside the 5-verb surface, report from output, never from memory. (`n8n_workflow_update` is a write tool — never use it for read-only checks.)
 - Asked "did Crete content publish?" → query Supabase `crete_content_queue` for `status=published`, return the row, not a guess.
 - Asked "what's the latest commit?" → `git log -1 --oneline`, paste the line, don't paraphrase.
 - Asked something you don't have a tool for → "I don't have visibility into that — let me dispatch a Claude Code audit" or "Tyson, this is out of my read scope — can you check?"
