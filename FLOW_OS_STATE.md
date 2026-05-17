@@ -323,6 +323,10 @@ Stuff currently broken, suboptimal, or pending. Charlie reads this section to kn
   - Structurally rejected by Slice 3d: `awk` is not in the v1 verb surface (`ls`, `cat`, `git status`, `git log`, `pm2 list`). `shell_exec({command:"awk -i inplace …"})` returns `{error:'unknown_verb'}` at schema dispatch. The DISALLOWED_FLAGS table itself no longer exists — replaced by per-verb whitelisted-flag schemas, which is an enumeration-free flag-validation surface. Followup closed.
 - **RESOLVED 2026-05-16, Slice 3d — `pm2 restart` / `pm2 reload` documentation drift.**
   - Resolved by `src/tools/shell-exec.js` rewrite in Slice 3d Unit 2 and the `CHARLIE_ROLE.md` rewrite in Unit 3. The legacy comment is gone (the entire DENY_PATTERNS / DESTRUCTIVE_PATTERNS / QUANTUMCLAW_DIR_RE block was deleted). New surface is structurally clear: only `pm2 list` (and `pm2 ls` alias) is in v1. `pm2 restart`, `pm2 reload`, `pm2 stop`, `pm2 delete` all reject as `unknown_verb` at the parser. `DEFAULT_DESTRUCTIVE_PATTERNS` in approval-gate.js is unreachable for `shell_exec` (the early-bypass returns `requiresApproval:false`) — retained for other tools. Followup closed.
+- **LOW (2026-05-17, Slice 3d.1 verification) — VERB_SCHEMAS docstring missing `spawnArgvPrefix`.**
+  - Symptom: `src/tools/shell-exec-verb-schemas.js` file-header docstring lists VERB_BINARY / SAFE_ENV / DENY_PREFIXES / ALLOW_PREFIXES as structural properties but does not mention `spawnArgvPrefix` (added in Slice 3d.1).
+  - Fix shape: add one line to the docstring listing `spawnArgvPrefix` in the same enumeration, with a brief description: "argv prepended to user-validated argv before spawn; never mutable from user input."
+  - Priority LOW — future maintainer signal only.
 
 ### Content pipelines
 
@@ -340,6 +344,16 @@ Stuff currently broken, suboptimal, or pending. Charlie reads this section to kn
 - n8n root SSH disable is parked. DigitalOcean console auth broken — too risky to proceed currently.
 - Process risk: ad-hoc commits getting tangled across Charlie sessions. Mitigated by `CLAUDE_CODE_OPERATING_RULES.md` (committed today). Watch for re-occurrence.
 - SproutCode content automation not yet built. Currently fully manual.
+- **MEDIUM (2026-05-17, Slice 3d/3d.1 verification) — grammY runner unhandled rejection causing quantumclaw restart loops.**
+  - Symptom: quantumclaw process restarts 119 times over ~17 hours (2026-05-16 boot to 2026-05-17 morning). Verified via `sudo pm2 jlist` showing `restart_time: 119`.
+  - Root cause: grammY runner throws on Telegram API errors (429 Too Many Requests, 502 Bad Gateway) instead of catching and retrying. Stack trace in pm2 `quantumclaw-error.log` shows `GrammyError` bubbling from `node_modules/grammy/out/core/client.js:97` and `@grammyjs/runner/out/runner.js:96` unhandled.
+  - Fix shape: wrap grammY runner's update fetching in `src/channels/manager.js` with a catch-and-retry that doesn't kill the process. Likely a try/catch around the runner invocation with exponential backoff on transient API errors (429, 502, 503, 504).
+  - Priority MEDIUM — Charlie still responds correctly during healthy windows; degrades availability during Telegram API instability. Pre-existing, not introduced by any recent slice.
+- **LOW (2026-05-17, Slice 3d.1 verification) — Slice 3d.1 build log paraphrased verbatim error.**
+  - Symptom: Slice 3d.1 build log entry describes the dubious-ownership symptom in Tyson's words rather than capturing the raw git stderr output.
+  - Root cause: CC paraphrased the user-facing report instead of the original git error text from `quantumclaw-error.log`.
+  - Fix shape: edit `QCLAW_BUILD_LOG.md` Slice 3d.1 entry to include the verbatim git stderr line if recoverable from the log archive, OR add a footnote noting the verbatim text is not captured.
+  - Priority LOW — cosmetic; memory hygiene rule is the principle.
 
 ---
 
