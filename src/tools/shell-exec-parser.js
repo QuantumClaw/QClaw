@@ -530,7 +530,16 @@ function validateFlagValue(fSpec, value) {
     }
     return { ok: true };
   }
-  return { ok: true };
+  // Fail-closed for any valueSchema.kind not handled above. Current
+  // schemas only declare kind:'int' (round-1 code review LOW L3), so
+  // this is dead in v1 — but future schema additions that forget to
+  // extend this function would otherwise silently accept any value.
+  return {
+    ok: false,
+    error: 'invalid_flag_value',
+    reason: 'unsupported_value_schema',
+    detail: { kind: vs.kind },
+  };
 }
 
 // ---------- Public entry ----------
