@@ -44,7 +44,7 @@
 
 import path from 'path';
 import { log } from '../core/logger.js';
-import { checkAllowlist } from '../tools/shell-exec-allowlist.js';
+import { parseAndValidate } from '../tools/shell-exec-parser.js';
 
 const SKILL_EDIT_ALLOWLIST = '/root/QClaw/src/agents/skills/';
 
@@ -161,34 +161,29 @@ export class ApprovalGate {
       return { requiresApproval: false };
     }
 
-    // 1. shell_exec read-only allowlist early-bypass (Slice 3c.1)
+    // 1. shell_exec parser/schema early-bypass (Slice 3d, supersedes 3c.1)
     //
     // The executor invokes this gate BEFORE the shell_exec tool function
-    // runs. Pre-fix: `shell_exec` is in gatedTools, so step 4 (numbered
-    // 3 before this slice) gated every shell_exec call for approval,
-    // including read-only verbs like `pm2 list` that Slice 3c added to
-    // the inner allowlist. The inner allowlist check was unreachable
-    // because the gate fired first.
-    //
-    // Post-fix: if the command is on the allowlist, bypass the gate so
-    // the tool function runs. If it is NOT allowlisted, also bypass —
-    // the inner allowlist check in shell-exec.js owns the
-    // `{error:'not_allowlisted', ...}` response shape (single source of
-    // truth). The inner check now functions as a redundant second-line
-    // defence (defence in depth), which is fine.
+    // runs. Slice 3c.1 bypassed for allowlist hits/misses uniformly. Slice
+    // 3d keeps the same bypass semantics but consults
+    // `parseAndValidate` (the authoritative structural gate) instead of
+    // the deleted `checkAllowlist`. Both ok-parses and not-ok-parses
+    // return `{requiresApproval:false}` — the tool body re-runs
+    // parseAndValidate and owns the response shape (single source of
+    // truth, defence in depth via the two-pass design — see design §5).
     if (toolName === 'shell_exec') {
       const command = toolArgs?.command;
       if (typeof command === 'string' && command.trim().length > 0) {
-        const allowlistResult = checkAllowlist(command);
-        if (allowlistResult.allowed) {
-          log.debug(`shell_exec allowlist bypass: ${command.slice(0, 80)}`);
+        const result = parseAndValidate(command);
+        if (result.ok) {
+          log.debug(`shell_exec parse OK [${result.schemaKey}]: ${command.slice(0, 80)}`);
         } else {
-          log.debug(`shell_exec NOT allowlisted at gate (will surface as not_allowlisted in tool fn): ${command.slice(0, 80)}`);
+          log.debug(`shell_exec parse REJECT [${result.error}/${result.reason}]: ${command.slice(0, 80)} (will surface in tool fn)`);
         }
         return { requiresApproval: false };
       }
       // Empty / missing command — fall through to legacy path, where the
-      // tool function will reject with {error:'Missing command'}.
+      // tool function will reject with {error:'empty_command'}.
     }
 
     // 2. Destructive verb match (shell tools only) — always gates, even

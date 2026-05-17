@@ -79,6 +79,7 @@ Before any commit:
 - For code changes: run relevant tests, linters, smoke checks
 - For doc changes: read the file back after writing to confirm it's correct
 - For config or infra changes: verify the change took effect with a probe (e.g. PM2 reload + status check)
+- **CI parity**: If any test reads, realpaths, or spawns with a filesystem path, verify it runs as a non-root user with no access to the production /root tree before declaring ready-for-review. Local dev runs as your user with ambient permissions on your home dir (and `/root` doesn't exist on macOS); GitHub Actions CI runs as a non-root `runner` with `/root` mode 700 owned by root, so `fs.realpathSync('/root/...')` raises EACCES. Tests that hardcode `/root/...` paths will fail closed on CI (`realpath_failed`/EACCES) even when they pass locally — use a per-test-run `/tmp` fixture (see `tests/_shell-exec-fixtures.js`) and a parser/tool DI surface (e.g. `parseAndValidate(command, overrides)`) for any happy-path / ALLOW-pass assertion. Lexical-only rejections (relative-path, lexical DENY pre-check, unknown_verb, parse-time rejections) are CI-safe with production paths because they reject before the filesystem is touched.
 
 The commit message includes a one-line verification summary. Format:
 
