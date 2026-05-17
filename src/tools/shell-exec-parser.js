@@ -26,10 +26,10 @@ import {
   VERB_SCHEMAS,
   VERB_BINARY,
   resolvePath,
+  ALLOWED_CWD as DEFAULT_ALLOWED_CWD,
 } from './shell-exec-verb-schemas.js';
 
 const MAX_INPUT_BYTES = 8192;
-const ALLOWED_CWD = '/root/QClaw';
 
 // ---------- Pre-tokenisation sanity checks ----------
 
@@ -343,12 +343,14 @@ function isLikelyCombinedShort(token, schema) {
   return true;
 }
 
-function applySchema(argv, dispatch, schema) {
+function applySchema(argv, dispatch, schema, options) {
   // Walk argv after the verb tokens. Partition into flags + positionals.
   const verbN = dispatch.verbTokens;
   const positionalSchema = schema.positional || { min: 0, max: 0 };
   const positionalIndices = [];
   const positionals = [];
+  const allowedCwd = (options && options.allowedCwd) || DEFAULT_ALLOWED_CWD;
+  const allowedPrefixesPerVerb = options && options.allowedPrefixesPerVerb;
 
   // Enforce argv length cap (defence against pathological inputs that
   // pass parse but balloon argv).
@@ -463,15 +465,27 @@ function applySchema(argv, dispatch, schema) {
   // Per-positional validation. For PathSchema, defer to resolvePath
   // (filesystem access). Build resolvedPaths map keyed by absolute
   // argv index.
+  //
+  // Per-verb ALLOW prefix override: if options.allowedPrefixesPerVerb
+  // names this verb (e.g. {ls: ['/tmp/fixture']}), use that list
+  // instead of the schema's baked-in prefixes. Production: no override
+  // → schema list (['/root/QClaw']) is used. Test-only injection
+  // surface — see tests/_shell-exec-fixtures.js.
   const resolvedPaths = new Map();
   if (positionalSchema.perArgSchema && positionalSchema.perArgSchema.kind === 'path') {
+    const schemaAllowedPrefixes = positionalSchema.perArgSchema.allowedPrefixes;
+    const overrideForThisVerb = allowedPrefixesPerVerb
+      ? allowedPrefixesPerVerb[dispatch.schemaKey]
+      : undefined;
+    const allowedPrefixes = overrideForThisVerb || schemaAllowedPrefixes;
     for (let p = 0; p < positionals.length; p++) {
       const lexical = positionals[p];
       const argvIndex = positionalIndices[p];
       const res = resolvePath(
         lexical,
-        ALLOWED_CWD,
-        positionalSchema.perArgSchema.allowedPrefixes,
+        allowedCwd,
+        allowedPrefixes,
+        options,
       );
       if (!res.ok) {
         // path_denied / not_in_allow_prefix are their own error
@@ -544,13 +558,36 @@ function validateFlagValue(fSpec, value) {
 
 // ---------- Public entry ----------
 
-export function parseAndValidate(command) {
+/**
+ * parseAndValidate(command, options?) — the structural gate.
+ *
+ * Production callers (src/tools/shell-exec.js, src/security/approval-
+ * gate.js) pass NO options. The frozen module-level constants
+ * (ALLOWED_CWD, DENY_PREFIXES, DENY_GLOBS, per-verb allowedPrefixes
+ * baked into VERB_SCHEMAS) are used. Default behaviour is unchanged.
+ *
+ * Test-only DI surface (options):
+ *   {
+ *     allowedCwd?:               string,   // overrides ALLOWED_CWD
+ *     denyPrefixes?:             string[], // overrides DENY_PREFIXES
+ *     denyGlobs?:                string[], // overrides DENY_GLOBS
+ *     allowedPrefixesPerVerb?:   Record<schemaKey, string[]>,
+ *                                          // overrides PATH_SCHEMA.allowedPrefixes
+ *   }
+ *
+ * The override is consumed only inside applySchema → resolvePath. No
+ * env flag, no global state, no automatic detection — explicit caller
+ * responsibility. Test helper: tests/_shell-exec-fixtures.js exposes
+ * makeTestOverrides(fixtureRoot) which returns the correctly-shaped
+ * options for a fixture directory created in /tmp.
+ */
+export function parseAndValidate(command, options) {
   const parsed = parse(command);
   if (!parsed.ok) return parsed;
   const dispatch = dispatchVerb(parsed.argv);
   if (!dispatch.ok) return dispatch;
   const schema = VERB_SCHEMAS[dispatch.schemaKey];
-  const validated = applySchema(parsed.argv, dispatch, schema);
+  const validated = applySchema(parsed.argv, dispatch, schema, options);
   if (!validated.ok) return validated;
   return {
     ok: true,

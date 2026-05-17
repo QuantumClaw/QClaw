@@ -21,6 +21,15 @@
  *      structurally as error=rejected_feature, reason=newline.
  *      Notifier never fires.
  *
+ * CI parity (2026-05-17, PR #25):
+ *   The injTools registry registers createShellExecTool with a
+ *   `parserOptions` override pointing at a per-test-run /tmp fixture
+ *   (tests/_shell-exec-fixtures.js). Path-touching happy-path cases
+ *   (ls <fixture>, ls -l -a <fixture>) use the fixture root in the
+ *   command string. Lexical-rejection cases (cat /root/.ssh/id_rsa →
+ *   path_denied) stay on production paths — the post-fix lexical DENY
+ *   pre-check in resolvePath rejects them BEFORE realpath fires.
+ *
  * Run: node tests/approval-gate-shell-exec-parser.test.js
  */
 
@@ -31,6 +40,7 @@ import { ExecApprovals } from '../src/security/approvals.js';
 import { ApprovalGate } from '../src/security/approval-gate.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import { createShellExecTool } from '../src/tools/shell-exec.js';
+import { createFixture, makeTestOverrides } from './_shell-exec-fixtures.js';
 
 let passed = 0;
 let failed = 0;
@@ -46,13 +56,22 @@ async function main() {
 
   const gate = new ApprovalGate(approvals);
 
+  // Per-test-run fixture for the tool registry. parserOptions points
+  // allowedCwd / DENY / allowedPrefixesPerVerb at <FIX>; path-touching
+  // happy-paths use ${FIX} in their command strings. Lexical-only
+  // rejections (combined-short-flag, lexical DENY pre-check, unknown_
+  // verb, rejected_feature) still resolve against production data
+  // because they don't read the disk.
+  const { root: FIX, cleanup: cleanupFixture } = createFixture();
+  const overrides = makeTestOverrides(FIX);
+
   console.log('\n=== Slice 3d: approval-gate parser-bypass contract ===\n');
 
   // ── 1. Parser-OK commands bypass the gate ──────────────
-  // The Slice 3d v1 ALLOW for ls/cat is /root/QClaw only. Most cases
-  // below resolve to NOT-OK at parseAndValidate but the gate still
-  // returns false (the tool body owns the rejection shape). The cases
-  // that DO parse-OK exercise the happy path.
+  // The Slice 3d v1 ALLOW for ls/cat is /root/QClaw only. Path-touching
+  // cases use the fixture root via the tool's parserOptions override.
+  // Non-path-touching cases (pm2, git status, git log) work unchanged
+  // against production data.
   console.log('-- Parser-OK shell_exec commands return requiresApproval:false --');
   const parserOk = [
     'pm2 list',
@@ -61,8 +80,8 @@ async function main() {
     'git log --oneline -n 20',
     'git log -n 5 --oneline',
     'git log --all --graph --oneline',
-    'ls /root/QClaw',
-    'ls -l -a /root/QClaw',
+    `ls ${FIX}`,
+    `ls -l -a ${FIX}`,
   ];
   for (const cmd of parserOk) {
     const r = await gate.check('shell_exec', { command: cmd });
@@ -152,10 +171,19 @@ async function main() {
   const injGate = new ApprovalGate(approvals);
   injGate.setNotifier(async () => { injNotifierFired++; });
 
+  // Tool registry uses parserOptions override → fixture-rooted ALLOW/
+  // DENY. Newline-injection cases reject pre-path-resolution at the
+  // parse layer, so the override doesn't influence them, but the
+  // structural cases below include a happy-path-style ls that needs
+  // the override.
   const injTools = new ToolRegistry({});
   injTools.registerBuiltin('shell_exec', {
     scope: 'shared',
-    ...createShellExecTool({ audit: null, auditActor: 'newline-injection-test' }),
+    ...createShellExecTool({
+      audit: null,
+      auditActor: 'newline-injection-test',
+      parserOptions: overrides,
+    }),
   });
 
   const injectionCases = [
@@ -190,6 +218,14 @@ async function main() {
     `got ${injNotifierFired}`);
 
   // ── 8. Slice 3d new attack classes — structural rejections ──
+  //
+  // The `cat /root/.ssh/id_rsa` case asserts path_denied. Under the
+  // post-fix parser, the lexical DENY pre-check fires BEFORE realpath
+  // touches the filesystem — so the assertion passes on CI even though
+  // /root is mode 700 (no EACCES leak). The `ls -la /root/QClaw` case
+  // rejects at the combined-short-flag check in applySchema, which is
+  // also pre-path-resolution. All other structural cases reject at
+  // parse / dispatch — none touches the filesystem.
   console.log('\n-- Slice 3d structural rejection classes --');
   const structuralCases = [
     { label: 'R3.2 $HOME expansion', command: 'cat $HOME/.ssh/id_rsa', error: 'rejected_feature', reason: 'variable_expansion' },
@@ -199,7 +235,15 @@ async function main() {
     { label: 'R2.2 sed unknown verb', command: 'sed -e "1e echo PWN" /tmp/x', error: 'unknown_verb', reason: null },
     { label: 'R3.1 sort unknown verb', command: 'sort --compress-program=touch /tmp/sort_pwn /tmp/big', error: 'unknown_verb', reason: null },
     { label: 'R3.4 find unknown verb', command: 'find /tmp -fls /etc/cron.d/evil', error: 'unknown_verb', reason: null },
-    { label: 'symlink /root/.ssh/id_rsa DENY', command: 'cat /root/.ssh/id_rsa', error: 'path_denied', reason: 'path_denied' },
+    // Fixture-DENY: cat <fixture>/.ssh/id_rsa rejects via the
+    // override's denyPrefixes (path.join(FIX, '.ssh')) via the lexical
+    // pre-check, exercising the same DENY codepath the production
+    // /root/.ssh DENY entry would exercise on the qclaw host. We use
+    // the fixture path instead of /root/.ssh here because the override
+    // re-points denyPrefixes to fixture-rooted entries; the production
+    // /root/.ssh entry isn't in the override's list and would resolve
+    // to not_in_allow_prefix instead.
+    { label: 'fixture DENY .ssh/id_rsa (pre-realpath lexical)', command: `cat ${FIX}/.ssh/id_rsa`, error: 'path_denied', reason: 'path_denied' },
     { label: 'combined short flag ls -la', command: 'ls -la /root/QClaw', error: 'invalid_flag', reason: 'combined_short_flags' },
     { label: 'git log -n --oneline (value-flag UX)', command: 'git log -n --oneline', error: 'invalid_flag_value', reason: null },
   ];
@@ -220,6 +264,7 @@ async function main() {
   }
 
   rmSync(dir, { recursive: true, force: true });
+  cleanupFixture();
 }
 
 main()

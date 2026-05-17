@@ -7,6 +7,18 @@
  * zero-segment globMatch battery (round-2 Blocker 2), multi-** battery
  * (round-3 LOW L3), literal-DENY belt-and-braces (round-2 Blocker 2),
  * and the resolvedPaths-substitution semantics (round-2 LOW L1).
+ *
+ * CI parity (2026-05-17, PR #25):
+ *   §B / §B1 (matchesDeny purity) and §C / §E (lexical-only checks) run
+ *   against the production DENY/ALLOW data — no filesystem touch.
+ *   §D (lexical DENY pre-check) runs against production DENY paths
+ *   because the lexical pre-check inside resolvePath fires BEFORE
+ *   realpath touches the disk; the assertion is matchedDeny === literal
+ *   prefix (no realpath needed). §F (symlinks) uses /tmp + a test-only
+ *   ALLOW override pointing at /tmp. §G (resolvedPaths Map population)
+ *   uses a /tmp fixture via tests/_shell-exec-fixtures.js — that
+ *   assertion needs realpath to succeed, which on CI is only possible
+ *   in a writable fixture directory.
  */
 
 import fs from 'node:fs';
@@ -21,6 +33,7 @@ import {
   ALLOWED_CWD,
 } from '../src/tools/shell-exec-verb-schemas.js';
 import { parseAndValidate } from '../src/tools/shell-exec-parser.js';
+import { createFixture, makeTestOverrides } from './_shell-exec-fixtures.js';
 
 let passed = 0;
 let failed = 0;
@@ -32,6 +45,11 @@ function check(name, cond, detail = null) {
     if (detail !== null) console.log(`      ${JSON.stringify(detail).slice(0, 300)}`);
   }
 }
+
+const { root: FIX, cleanup: cleanupFixture } = createFixture();
+const overrides = makeTestOverrides(FIX);
+
+try {
 
 console.log('\n=== A. globMatch zero-segment battery (Blocker 2) ===');
 check('globMatch /root/.env vs /root/**/.env', globMatch('/root/.env', '/root/**/.env') === true);
@@ -83,12 +101,12 @@ console.log('\n=== C. resolvePath — must_be_absolute, empty_path ===');
   check('relative path → must_be_absolute', !r.ok && r.reason === 'must_be_absolute', r);
 }
 
-console.log('\n=== D. resolvePath — DENY-on-real, ALLOW-pass ===');
+console.log('\n=== D. resolvePath — lexical DENY pre-check (no realpath, CI-safe) ===');
+// These three paths are all in the production DENY surface. The
+// lexical pre-check inside resolvePath (post-fix) fires BEFORE
+// fs.realpathSync, so the assertion succeeds on any host regardless of
+// /root permissions.
 {
-  // /root/QClaw/package.json (assume exists in repo root). The repo dev
-  // path on this machine is /Users/tysonvenables/QClaw — paths under
-  // /root/QClaw won't exist locally, so realpath ENOENT's and falls
-  // back to lexical. Lexical /root/QClaw/.env hits the literal DENY.
   const r = resolvePath('/root/QClaw/.env', ALLOWED_CWD, ['/root/QClaw']);
   check('/root/QClaw/.env → path_denied (literal)', !r.ok && r.reason === 'path_denied' && r.detail.matchedDeny === '/root/QClaw/.env', r);
 }
@@ -190,26 +208,48 @@ if (symlinkSupported) {
   try { fs.unlinkSync(sym1); } catch (e) { /* ignore */ }
 }
 
-console.log('\n=== G. resolvedPaths substitution semantics (LOW L1) ===');
+console.log('\n=== F1. resolvePath — symlink-into-DENY (fixture-based, exercises DENY-on-real) ===');
 {
-  // Create a symlink under /tmp pointing at a real file under the dev
-  // copy of QClaw. We can't use /root/QClaw on dev — use the live repo
-  // path. For this test we widen ALLOW to the dev repo dir.
-  // This validates the Map semantics (the absolute-index key) rather
-  // than the production ALLOW.
-  // Instead, validate semantics by checking that the resolvedPaths Map
-  // entries exist when paths validate.
-  // Simpler test: parseAndValidate('cat /root/QClaw/package.json') —
-  // on dev, ENOENT path, falls back to lexical = resolved =
-  // /root/QClaw/package.json, ALLOW passes, DENY doesn't fire.
-  const r = parseAndValidate('cat /root/QClaw/package.json');
-  if (r.ok) {
-    check('parseAndValidate cat <file> populates resolvedPaths', r.resolvedPaths instanceof Map && r.resolvedPaths.has(1), r);
-    check('resolvedPaths key is absolute argv index (1 for cat arg)', r.resolvedPaths.get(1) === '/root/QClaw/package.json', r);
+  // Fixture provides <FIX>/symlink_to_id_rsa → <FIX>/.ssh/id_rsa, and
+  // the overrides put <FIX>/.ssh in denyPrefixes. The lexical pre-check
+  // does NOT fire on the symlink path (it's not in DENY), so resolution
+  // proceeds to realpath, which canonicalises to the DENY target, and
+  // the DENY-on-real branch fires. ALLOW must be widened to include
+  // <FIX> for the lexical-DENY-skip path; the override does this.
+  const symPath = path.join(FIX, 'symlink_to_id_rsa');
+  if (fs.existsSync(symPath)) {
+    const r = resolvePath(
+      symPath,
+      overrides.allowedCwd,
+      overrides.allowedPrefixesPerVerb.cat,
+      overrides,
+    );
+    check('fixture symlink → id_rsa: DENY-on-real fires', !r.ok && r.reason === 'path_denied', r);
   } else {
-    check('parseAndValidate cat /root/QClaw/package.json (skip — no fs)', false, r);
+    console.log('  [skip] fixture symlink not created (filesystem lacks symlink support)');
+  }
+}
+
+console.log('\n=== G. resolvedPaths substitution semantics (LOW L1) — fixture-based ===');
+{
+  // Drive parseAndValidate('cat <fixture>/package.json') with fixture
+  // overrides. On CI, /root/QClaw is unreachable (EACCES), so the
+  // previous prod-path version of this test failed with realpath_
+  // failed. The fixture write at createFixture() guarantees package.
+  // json exists and the override widens ALLOW to the fixture root.
+  const r = parseAndValidate(`cat ${FIX}/package.json`, overrides);
+  if (r.ok) {
+    check('parseAndValidate cat <fixture>/package.json populates resolvedPaths', r.resolvedPaths instanceof Map && r.resolvedPaths.has(1), r);
+    check('resolvedPaths key is absolute argv index (1 for cat arg)', r.resolvedPaths.get(1) === `${FIX}/package.json`, r);
+  } else {
+    check('parseAndValidate cat <fixture>/package.json → ok', false, r);
   }
 }
 
 console.log(`\n=== shell-exec-path-resolve.test.js: ${passed} passed, ${failed} failed ===\n`);
+
+} finally {
+  cleanupFixture();
+}
+
 if (failed > 0) process.exit(1);

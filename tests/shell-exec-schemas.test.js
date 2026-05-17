@@ -5,11 +5,25 @@
  * combined-short-flag rejection battery, value-flag rejections incl.
  * the round-3 LOW L6 `git log -n --oneline` mistake, positional count
  * caps, alias `pm2 ls`, and the pm2-binary-existence skip per Blocker 3.
+ *
+ * CI parity (2026-05-17, PR #25):
+ *   Happy-path / ALLOW-pass cases (ls /root/QClaw, cat /root/QClaw/
+ *   package.json, etc.) are driven against a per-test-run /tmp fixture
+ *   (tests/_shell-exec-fixtures.js) with parser overrides re-pointing
+ *   allowedCwd / allowedPrefixesPerVerb / denyPrefixes / denyGlobs at
+ *   the fixture root. This isolates realpath() from /root, which on
+ *   GitHub Actions CI is mode 700 owned by root (EACCES for the runner
+ *   user). Lexical-rejection cases (relative-path rejection, lexical
+ *   DENY pre-check, combined-short-flag, flag-not-in-v1, unknown_verb,
+ *   length-cap) still use the production paths and the default
+ *   parseAndValidate(command) — those reject BEFORE realpath fires.
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
 import { parseAndValidate } from '../src/tools/shell-exec-parser.js';
 import { VERB_BINARY } from '../src/tools/shell-exec-verb-schemas.js';
+import { createFixture, makeTestOverrides } from './_shell-exec-fixtures.js';
 
 let passed = 0;
 let failed = 0;
@@ -24,49 +38,70 @@ function check(name, cond, detail = null) {
   }
 }
 
-function rej(label, input, expectedError, expectedReason) {
-  const r = parseAndValidate(input);
+// Per-test-run fixture: realpath/spawn-path assertions run against
+// <fixtureRoot>; lexical-only assertions stay on production paths.
+const { root: FIX, cleanup: cleanupFixture } = createFixture();
+const overrides = makeTestOverrides(FIX);
+
+function rej(label, input, expectedError, expectedReason, opts) {
+  const r = parseAndValidate(input, opts);
   const ok = !r.ok && r.error === expectedError && (!expectedReason || r.reason === expectedReason);
   check(`${label} → ${expectedError}${expectedReason ? '/' + expectedReason : ''}`, ok, r);
 }
 
-function ok(label, input, expectSchemaKey) {
-  const r = parseAndValidate(input);
+function ok(label, input, expectSchemaKey, opts) {
+  const r = parseAndValidate(input, opts);
   const cond = r.ok && (!expectSchemaKey || r.schemaKey === expectSchemaKey);
   check(`${label} → ok (schemaKey=${expectSchemaKey || 'any'})`, cond, r);
 }
 
-console.log('\n=== A. ls happy path ===');
+try {
+
+console.log('\n=== A. ls happy path (fixture overrides) ===');
 ok('ls (no args)', 'ls', 'ls');
-ok('ls /root/QClaw', 'ls /root/QClaw', 'ls');
-ok('ls -l /root/QClaw', 'ls -l /root/QClaw', 'ls');
-ok('ls -l -a /root/QClaw', 'ls -l -a /root/QClaw', 'ls');
-ok('ls --human-readable -l /root/QClaw', 'ls --human-readable -l /root/QClaw', 'ls');
+ok(`ls ${FIX}`, `ls ${FIX}`, 'ls', overrides);
+ok(`ls -l ${FIX}`, `ls -l ${FIX}`, 'ls', overrides);
+ok(`ls -l -a ${FIX}`, `ls -l -a ${FIX}`, 'ls', overrides);
+ok(`ls --human-readable -l ${FIX}`, `ls --human-readable -l ${FIX}`, 'ls', overrides);
 
 console.log('\n=== B. ls rejections ===');
+// Forbidden-flag cases — schema rejection, no path resolution. Production
+// paths fine.
 rej('ls -R (forbidden)', 'ls -R /root/QClaw', 'invalid_flag', 'flag_not_in_v1');
 rej('ls --recursive', 'ls --recursive /root/QClaw', 'invalid_flag', 'flag_not_in_v1');
 rej('ls --color=always', 'ls --color=always /root/QClaw', 'invalid_flag', 'flag_not_in_v1');
-rej('ls /tmp (outside ALLOW)', 'ls /tmp', 'not_in_allow_prefix');
-rej('ls /etc (outside ALLOW)', 'ls /etc', 'not_in_allow_prefix');
-rej('ls /root/.ssh (DENY)', 'ls /root/.ssh', 'path_denied');
+// ALLOW-fail cases — driven against the fixture overrides (ALLOW=
+// [fixtureRoot]). /tmp and /etc are outside ALLOW under either prod or
+// fixture; using fixture overrides for symmetry with the happy-path
+// block above.
+rej('ls /tmp (outside fixture ALLOW)', 'ls /tmp', 'not_in_allow_prefix', null, overrides);
+rej('ls /etc (outside fixture ALLOW)', 'ls /etc', 'not_in_allow_prefix', null, overrides);
+// Lexical DENY pre-check — /root/.ssh is in the production DENY_PREFIXES
+// list and the lexical pre-check fires BEFORE realpath touches the
+// filesystem. CI-safe with production overrides (no opts).
+rej('ls /root/.ssh (lexical DENY)', 'ls /root/.ssh', 'path_denied');
 rej('ls relative path', 'ls foo', 'invalid_argument', 'must_be_absolute');
 
 console.log('\n=== C. Combined-short-flag rejection battery (LOW L5) ===');
+// Combined-short-flag rejection fires in applySchema BEFORE path
+// resolution — production paths are fine here.
 rej('ls -la', 'ls -la /root/QClaw', 'invalid_flag', 'combined_short_flags');
 rej('ls -lh', 'ls -lh /root/QClaw', 'invalid_flag', 'combined_short_flags');
 rej('ls -lah', 'ls -lah /root/QClaw', 'invalid_flag', 'combined_short_flags');
-// positive controls
-ok('ls -l -a (separated)', 'ls -l -a /root/QClaw', 'ls');
-ok('ls --human-readable -l (long + short)', 'ls --human-readable -l /root/QClaw', 'ls');
+// Positive controls — happy paths under the fixture overrides.
+ok(`ls -l -a (separated) ${FIX}`, `ls -l -a ${FIX}`, 'ls', overrides);
+ok(`ls --human-readable -l (long + short) ${FIX}`, `ls --human-readable -l ${FIX}`, 'ls', overrides);
 rej('ls -l -la (second-token rejection)', 'ls -l -la /root/QClaw', 'invalid_flag', 'combined_short_flags');
 
 console.log('\n=== D. cat happy + rejections ===');
-ok('cat /root/QClaw/package.json (assumes exists)', 'cat /root/QClaw/package.json', 'cat');
+// Happy path — needs realpath under fixture (fixture writes a real
+// package.json file).
+ok(`cat ${FIX}/package.json`, `cat ${FIX}/package.json`, 'cat', overrides);
 rej('cat (no args)', 'cat', 'too_few_arguments');
-rej('cat /tmp/x (outside ALLOW)', 'cat /tmp/x', 'not_in_allow_prefix');
-rej('cat /root/QClaw/.env (DENY literal)', 'cat /root/QClaw/.env', 'path_denied');
-rej('cat /root/.ssh/id_rsa (DENY)', 'cat /root/.ssh/id_rsa', 'path_denied');
+rej('cat /tmp/x (outside ALLOW)', 'cat /tmp/x', 'not_in_allow_prefix', null, overrides);
+// Lexical DENY pre-check on production paths — CI-safe.
+rej('cat /root/QClaw/.env (lexical DENY literal)', 'cat /root/QClaw/.env', 'path_denied');
+rej('cat /root/.ssh/id_rsa (lexical DENY)', 'cat /root/.ssh/id_rsa', 'path_denied');
 rej('cat -n (forbidden flag)', 'cat -n /root/QClaw/package.json', 'invalid_flag');
 rej('cat -A (forbidden flag)', 'cat -A /root/QClaw/package.json', 'invalid_flag');
 rej('cat --show-all', 'cat --show-all /root/QClaw/package.json', 'invalid_flag');
@@ -140,4 +175,9 @@ rej('sort (unknown verb)', 'sort foo', 'unknown_verb');
 rej('find (unknown verb)', 'find foo', 'unknown_verb');
 
 console.log(`\n=== shell-exec-schemas.test.js: ${passed} passed, ${failed} failed ===\n`);
+
+} finally {
+  cleanupFixture();
+}
+
 if (failed > 0) process.exit(1);

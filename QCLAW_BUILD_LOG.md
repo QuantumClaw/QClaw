@@ -11459,3 +11459,122 @@ clean.
    `invalid_flag/combined_short_flags`.
 
 End of session 2026-05-16 Slice 3d.
+
+---
+
+## 2026-05-17 — Slice 3d CI parity fix (PR #25)
+
+### Failure
+
+PR #25 (`cc/slice3d-shell-exec-parser-20260516-2030`) CI test job (Node
+20) failed with 10 realpath_failed/EACCES errors in
+`shell-exec-schemas.test.js`. The other shell-exec tests after it in the
+`npm test` chain never ran (chained with `&&`). Verbatim from
+https://github.com/tysonven/QClaw/actions/runs/25984954048/job/76380445912:
+
+```
+=== shell-exec-schemas.test.js: 50 passed, 10 failed ===
+
+  ✗ ls /root/QClaw → ok (schemaKey=ls)
+      {"ok":false,"error":"invalid_argument","reason":"realpath_failed","detail":{"lexical":"/root/QClaw","resolved":"/root/QClaw","errCode":"EACCES","positionalIndex":0}}
+  ✗ ls -l /root/QClaw → ok (schemaKey=ls)
+      {"ok":false,"error":"invalid_argument","reason":"realpath_failed","detail":{"lexical":"/root/QClaw","resolved":"/root/QClaw","errCode":"EACCES","positionalIndex":0}}
+  ✗ ls -l -a /root/QClaw → ok (schemaKey=ls)
+      {"ok":false,"error":"invalid_argument","reason":"realpath_failed","detail":{"lexical":"/root/QClaw","resolved":"/root/QClaw","errCode":"EACCES","positionalIndex":0}}
+  ✗ ls --human-readable -l /root/QClaw → ok (schemaKey=ls)
+      {"ok":false,"error":"invalid_argument","reason":"realpath_failed","detail":{"lexical":"/root/QClaw","resolved":"/root/QClaw","errCode":"EACCES","positionalIndex":0}}
+  ✗ ls /root/.ssh (DENY) → path_denied
+      {"ok":false,"error":"invalid_argument","reason":"realpath_failed","detail":{"lexical":"/root/.ssh","resolved":"/root/.ssh","errCode":"EACCES","positionalIndex":0}}
+  ✗ ls -l -a (separated) → ok (schemaKey=ls)
+      {"ok":false,"error":"invalid_argument","reason":"realpath_failed","detail":{"lexical":"/root/QClaw","resolved":"/root/QClaw","errCode":"EACCES","positionalIndex":0}}
+  ✗ ls --human-readable -l (long + short) → ok (schemaKey=ls)
+      {"ok":false,"error":"invalid_argument","reason":"realpath_failed","detail":{"lexical":"/root/QClaw","resolved":"/root/QClaw","errCode":"EACCES","positionalIndex":0}}
+  ✗ cat /root/QClaw/package.json (assumes exists) → ok (schemaKey=cat)
+      {"ok":false,"error":"invalid_argument","reason":"realpath_failed","detail":{"lexical":"/root/QClaw/package.json","resolved":"/root/QClaw/package.json","errCode":"EACCES","positionalIndex":0}}
+  ✗ cat /root/QClaw/.env (DENY literal) → path_denied
+      {"ok":false,"error":"invalid_argument","reason":"realpath_failed","detail":{"lexical":"/root/QClaw/.env","resolved":"/root/QClaw/.env","errCode":"EACCES","positionalIndex":0}}
+  ✗ cat /root/.ssh/id_rsa (DENY) → path_denied
+      {"ok":false,"error":"invalid_argument","reason":"realpath_failed","detail":{"lexical":"/root/.ssh/id_rsa","resolved":"/root/.ssh/id_rsa","errCode":"EACCES","positionalIndex":0}}
+```
+
+### Root cause
+
+GitHub Actions ubuntu-latest runner runs as the `runner` user; `/root`
+is mode 700 owned by root. `fs.realpathSync('/root/...')` raises
+EACCES (not ENOENT), so the parser's `resolvePath` returns
+`realpath_failed` instead of falling through to the DENY/ALLOW check.
+
+The parser is doing the right thing (fail-closed). The tests hardcoded
+`/root/...` paths and assumed realpath would succeed (true on the qclaw
+production host where the runner IS root) or ENOENT-fallback (true on
+Tyson's Mac where `/root` doesn't exist). Neither holds on CI.
+
+### Fix
+
+Three-part fix per Tyson's locked Option B:
+
+1. **Lexical DENY pre-check** added to `resolvePath` BEFORE
+   `fs.realpathSync` (src/tools/shell-exec-verb-schemas.js). Refuses to
+   even touch the disk for a path the operator has already declared
+   off-limits. Production-semantics-improving (defence in depth);
+   CI-parity-fixing (no EACCES leak for DENY paths). All five
+   `cat /root/.ssh/id_rsa`-style assertions now pass on every host.
+
+2. **Options-arg dependency injection** for
+   `parseAndValidate(command, options?)` (src/tools/shell-exec-parser.js)
+   and `resolvePath(..., opts?)`. Options shape:
+   `{ allowedCwd?, denyPrefixes?, denyGlobs?, allowedPrefixesPerVerb? }`.
+   Production callers (shell-exec.js, approval-gate.js) pass no options
+   — frozen production constants are used. Tool factory
+   `createShellExecTool({parserOptions})` threads the override to the
+   tool fn for integration tests.
+
+3. **Per-test-run /tmp fixture** at `tests/_shell-exec-fixtures.js`.
+   `createFixture()` returns `{root, cleanup}` with a full layout
+   mirror (package.json, src/, .env, .git/, secrets/, data/*.sql,
+   node_modules/**/.env, .ssh/id_rsa, .quantumclaw/config.json + .env,
+   symlink_to_id_rsa). `makeTestOverrides(root)` returns the options
+   object to pass through. Realpath canonicalisation of the root
+   handles the macOS `/tmp → /private/tmp` symlink.
+
+Refactored 3 test files + 1 source file:
+- tests/shell-exec-schemas.test.js — happy paths use fixture
+- tests/shell-exec-path-resolve.test.js — happy path + symlink-into-
+  DENY use fixture
+- tests/approval-gate-shell-exec-parser.test.js — parser-OK ls cases +
+  fixture-DENY structural case use fixture
+- src/tools/shell-exec.js — `parserOptions` pass-through in
+  `createShellExecTool`
+
+Already CI-safe (no fix needed):
+- tests/shell-exec-env-isolation.test.js — spies on spawn, no /root
+  access
+- tests/shell-exec-git-config-safety.test.js — discovers repo root via
+  `new URL('..', import.meta.url).pathname`, scans live config in CI
+- tests/shell-exec-spawn-limits.test.js — uses `process.cwd()` + spawn
+  spy that overrides cwd; not in `npm test` so doesn't gate CI either
+  way
+- scripts/verify-shell-exec-parser.js — uses live production paths
+  with the Slice 3d structural model; only runs post-deploy on qclaw
+
+### Local verification (post-fix)
+
+```
+shell-exec-parser.test.js:                64 passed, 0 failed
+shell-exec-schemas.test.js:               60 passed, 0 failed
+shell-exec-path-resolve.test.js:          46 passed, 0 failed
+shell-exec-env-isolation.test.js:         25 passed, 0 failed
+shell-exec-git-config-safety.test.js:     22 passed, 0 failed
+approval-gate-shell-exec-parser.test.js:  81 passed, 0 failed
+shell-exec-spawn-limits.test.js:          12 passed, 0 failed
+verify-shell-exec-parser.js:              47 passed, 0 failed
+```
+
+### Operating-rule update
+
+CLAUDE_CODE_OPERATING_RULES.md §5 adds a CI-parity bullet covering the
+Mac-vs-CI realpath divergence and pointing future implementers at the
+fixture helper. The lesson: pre-PR verification on Tyson's Mac is
+necessary but not sufficient — every code change that touches
+filesystem paths in tests needs explicit non-root / no-/root validation
+before declaring ready-for-review.

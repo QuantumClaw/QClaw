@@ -195,13 +195,22 @@ function charMatch(pat, pi, str, si) {
 
 // ---------- matchesDeny ----------
 
-export function matchesDeny(absPath) {
-  for (const p of DENY_PREFIXES) {
+/**
+ * matchesDeny(absPath, opts?) — returns the matched DENY entry string or
+ * null. `opts.denyPrefixes` / `opts.denyGlobs` override the module-level
+ * frozen constants when supplied (test-only dependency injection — see
+ * resolvePath docstring for the contract). Production callers pass no
+ * opts and the frozen constants are used.
+ */
+export function matchesDeny(absPath, opts) {
+  const prefixes = (opts && opts.denyPrefixes) || DENY_PREFIXES;
+  const globs = (opts && opts.denyGlobs) || DENY_GLOBS;
+  for (const p of prefixes) {
     if (absPath === p) return p;
     const withSlash = p.endsWith('/') ? p : p + '/';
     if (absPath.startsWith(withSlash)) return p;
   }
-  for (const g of DENY_GLOBS) {
+  for (const g of globs) {
     if (globMatch(absPath, g)) return g;
   }
   return null;
@@ -210,14 +219,37 @@ export function matchesDeny(absPath) {
 // ---------- resolvePath ----------
 
 /**
- * resolvePath(rawValue, cwd, allowedPrefixes) →
+ * resolvePath(rawValue, cwd, allowedPrefixes, opts?) →
  *   { ok: true, lexical, resolved, real } |
  *   { ok: false, reason, detail? }
  *
- * Order: empty → must_be_absolute → path.resolve → realpathSync (ENOENT
- * falls back to resolved) → DENY-on-real (and lexical) → ALLOW-on-real.
+ * Order:
+ *   1. empty / not-a-string → empty_path
+ *   2. relative → must_be_absolute
+ *   3. path.resolve → resolved (lexical absolute)
+ *   4. **lexical DENY pre-check** — if the resolved (pre-realpath) path
+ *      hits a DENY entry, reject as path_denied WITHOUT calling realpath.
+ *      Two reasons:
+ *        (a) Defence in depth — refuses to even touch the filesystem
+ *            for a path the operator has already declared off-limits.
+ *        (b) CI parity — Linux CI runners with /root mode 700 raise
+ *            EACCES on realpath('/root/...') even for DENY entries we
+ *            were going to reject anyway. The pre-check rejects with
+ *            path_denied (the intended outcome) instead of leaking
+ *            realpath_failed/EACCES.
+ *   5. realpathSync (ENOENT falls back to resolved; other errors →
+ *      realpath_failed)
+ *   6. DENY-on-real (catches symlink-into-DENY) and DENY-on-resolved
+ *      (belt-and-braces).
+ *   7. ALLOW-on-real.
+ *
+ * Test-only DI (opts):
+ *   { denyPrefixes?, denyGlobs? } — override the module-level frozen
+ *   constants. Production callers pass no opts. The opts surface is
+ *   threaded down from parseAndValidate(command, options); there is no
+ *   env-flag / global-state path. See tests/_shell-exec-fixtures.js.
  */
-export function resolvePath(rawValue, cwd, allowedPrefixes) {
+export function resolvePath(rawValue, cwd, allowedPrefixes, opts) {
   if (typeof rawValue !== 'string' || rawValue.length === 0) {
     return { ok: false, reason: 'empty_path' };
   }
@@ -229,6 +261,22 @@ export function resolvePath(rawValue, cwd, allowedPrefixes) {
     };
   }
   const resolved = path.resolve(cwd, rawValue);
+
+  // Step 4 — lexical DENY pre-check. See docstring.
+  const lexicalDeny = matchesDeny(resolved, opts);
+  if (lexicalDeny) {
+    return {
+      ok: false,
+      reason: 'path_denied',
+      detail: {
+        lexical: rawValue,
+        resolved,
+        real: resolved,
+        matchedDeny: lexicalDeny,
+      },
+    };
+  }
+
   let real;
   try {
     real = fs.realpathSync(resolved);
@@ -247,10 +295,10 @@ export function resolvePath(rawValue, cwd, allowedPrefixes) {
       };
     }
   }
-  // DENY-on-real first; then DENY-on-resolved as a defensive second
-  // check (the realpath substitution in the spawn layer closes the
-  // residual TOCTOU race, but the lexical check belt-and-braces).
-  const denyHit = matchesDeny(real) || matchesDeny(resolved);
+  // DENY-on-real catches symlinks-into-DENY (the lexical pre-check
+  // wouldn't have fired because the symlink path itself doesn't match
+  // DENY — only the target does after realpath).
+  const denyHit = matchesDeny(real, opts) || matchesDeny(resolved, opts);
   if (denyHit) {
     return {
       ok: false,

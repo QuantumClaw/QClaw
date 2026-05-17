@@ -112,8 +112,17 @@ export function isShellExecEnabled() {
  * No approval-required path — the structural validation IS the
  * authorisation (none of the 5 verbs is destructive). The legacy
  * `approvalGate.requestInlineApproval` plumbing is removed.
+ *
+ * `parserOptions` is a TEST-ONLY pass-through to parseAndValidate. The
+ * production caller (src/index.js) never passes it; the frozen
+ * production constants are used. Test code (e.g. tests/approval-gate-
+ * shell-exec-parser.test.js) injects fixture-based overrides through
+ * this surface so end-to-end gate+tool tests can run on CI runners
+ * with no /root access. See src/tools/shell-exec-parser.js for the
+ * options-object contract and tests/_shell-exec-fixtures.js for the
+ * helper that builds it.
  */
-export function createShellExecTool({ audit, auditActor = 'charlie' } = {}) {
+export function createShellExecTool({ audit, auditActor = 'charlie', parserOptions } = {}) {
   return {
     description: 'Execute one of five structurally-validated read-only shell verbs on the qclaw server: `ls`, `cat`, `git status`, `git log`, `pm2 list` (alias `pm2 ls`). Paths must be absolute and resolve under /root/QClaw (DENY entries override; symlinks resolved through realpath, no symlink-leak). Combined short flags are rejected — use `ls -l -a`, NOT `ls -la`. The -n flag on `git log` is a value-flag: use `git log -n 20 --oneline`, NOT `git log -n --oneline` (the parser would consume `--oneline` as the int value). 30s timeout, 1 MiB combined-output cap, ASCII-only, 8 KiB input cap. Shell metacharacters (newlines, ;, |, &, <, >, $, `, ~, *, ?, [, ], {, }, #) are rejected at parse time — no bash ever sees the input. inputSchema accepts only {command: string} — `cwd` and `timeout_ms` are NOT accepted (hardcoded). For everything else (awk, sed, sort, find, head, tail, grep, write ops, log inspection) use claude_code_dispatch.',
     inputSchema: {
@@ -135,7 +144,7 @@ export function createShellExecTool({ audit, auditActor = 'charlie' } = {}) {
         };
       }
 
-      const validated = parseAndValidate(command);
+      const validated = parseAndValidate(command, parserOptions);
       if (!validated.ok) {
         const rejectionStage =
           validated.error === 'parse_error' || validated.error === 'rejected_feature'
