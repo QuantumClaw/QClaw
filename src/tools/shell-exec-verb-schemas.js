@@ -38,15 +38,12 @@ export const SAFE_ENV = Object.freeze({
 });
 
 // Verb name → absolute binary path. PATH lookup is neutralised — spawn
-// receives an absolute path. pm2's path on qclaw is a BEST-GUESS pending
-// Tyson's pre-merge verification via `which pm2` on qclaw — design
-// Appendix C. The most common install on a Debian/Ubuntu droplet with
-// user-scoped npm global prefix is /root/.npm-global/bin/pm2.
+// receives an absolute path.
 export const VERB_BINARY = Object.freeze({
   ls: '/bin/ls',
   cat: '/bin/cat',
   git: '/usr/bin/git',
-  pm2: '/root/.npm-global/bin/pm2',
+  pm2: '/usr/bin/pm2',
 });
 
 // ---------- DENY data ----------
