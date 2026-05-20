@@ -2,7 +2,7 @@
 
 **Project:** QClaw — Self-hosted Claude agent runtime (Fork of QuantumClaw/QClaw)
 **Owner:** Tyson Venables / Flow OS
-**Last updated:** 20 May 2026
+**Last updated:** 2026-05-20
 **Repo:** https://github.com/tysonven/QClaw
 
 ---
@@ -12415,3 +12415,154 @@ silent scope creep):**
   `workflow_entity.nodes` JSON; a simple `nodes::text LIKE '%<id>%'`
   scan catches orphans pre-delete. Consider adding to the rotation
   runbook.
+
+---
+
+## 2026-05-20 — Clipper Anthropic API key rotation + pipeline cascade surfaced
+
+Triggered by Ep 69's Workflow A clipper job failing with `Error code: 401` at
+2026-05-20 17:22:55 UTC. Episode already live on WP/LinkedIn/YouTube; clips
+are non-blocking but the recovery attempt surfaced a broader pipeline issue.
+
+### Primary fix — Anthropic 401
+
+**Root cause:** clipper-worker (`src/clipper/main.py`) calls
+`load_env("/root/.quantumclaw/.env")` at module import time, which uses
+`os.environ.setdefault()` to cache values. The worker process started
+2026-05-13 09:30:47 UTC and had cached the pre-rotation Anthropic key. The
+May 19 n8n credential rotation updated `/root/.quantumclaw/.env` to the new
+key (suffix `…IwAA`, len 108) but the worker was never restarted, so it kept
+using the May-13 cached value — which Anthropic had revoked.
+
+**Failure verbatim** (Ep 69 job `aebb4ce8-d9f1-4b61-bdd0-b729a60fc3fb`):
+
+```
+2026-05-20 17:22:55,106 [INFO] [aebb4ce8-d9f1-4b61-bdd0-b729a60fc3fb] Step 1: Selecting segments with Claude
+2026-05-20 17:22:55,506 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 401 Unauthorized"
+2026-05-20 17:22:55,517 [ERROR] [aebb4ce8-d9f1-4b61-bdd0-b729a60fc3fb] Job failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CbED28GGpnjhHuSBCMoY6'}
+```
+
+**Fix:** `sudo pm2 restart clipper-worker --update-env`. Re-execs python →
+re-runs `load_env()` → picks up post-rotation key. No `.env` edits needed
+(the rotated value was already in place since May 19; only the cached
+process state was stale).
+
+**Verification** (job `9b2c2743-6f20-48f5-902a-86edf275f58d`):
+
+```
+2026-05-20 20:43:34,673 [INFO] [9b2c2743-6f20-48f5-902a-86edf275f58d] Step 1: Selecting segments with Claude
+2026-05-20 20:43:36,160 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-05-20 20:43:36,215 [INFO] [9b2c2743-6f20-48f5-902a-86edf275f58d] Claude selected 1 segments
+```
+
+Same code path that 401'd now returns 200. Primary brief goal: closed.
+
+### Cascade discovered during recovery attempt
+
+8/8 most recent clip_jobs in `error` state. No successful end-to-end clipper
+run on a production source in the visible history.
+
+| Failure surface | Status | Notes |
+|---|---|---|
+| R2 HeadObject 404 | old (presumably fixed) | 4× ζ-era jobs May 7 |
+| ffmpeg smart-crop expression (Step 3b) | UNADDRESSED | Bug 1 fix may have been incomplete; validated against synthetic fixture, never replayed against Ep 68's actual failing source |
+| Anthropic 401 (Step 1) | FIXED TODAY | this session |
+| ffmpeg subtitles burn / empty-SRT (Step 4) | NEW | surfaced by this session's verification fixture (1 clip, empty transcript array). Production calls pass real transcript so it's a fixture-only failure — but reveals that an empty SRT silently progresses through `generate_srt()` then explodes at libass, instead of failing fast at SRT generation |
+
+**Ep 68 smart-crop failure verbatim** (job `41eeaa72-cdad-4237-9d9b-beefd646844b`,
+2026-05-12):
+
+```
+Command '['ffmpeg', '-y', '-threads', '1', '-i', '/tmp/41eeaa72-cdad-4237-9d9b-beefd646844b_clip_0.mp4', '-vf', 'crop=ih*9/16:ih:max(0, min(iw-ih*9/16, 0.4546*iw - ih*9/16/2)):0', '-preset', 'ultrafast', '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-movflags', '+faststart', '/tmp/41eeaa72-cdad-4237-9d9b-beefd646844b_vertical_0.mp4']' returned non-zero exit status 8.
+```
+
+**This session's captions-burn failure verbatim** (job
+`9b2c2743-6f20-48f5-902a-86edf275f58d`):
+
+```
+Command '['ffmpeg', '-y', '-threads', '1', '-i', '/tmp/9b2c2743-6f20-48f5-902a-86edf275f58d_vertical_0.mp4', '-vf', "subtitles=/tmp/9b2c2743-6f20-48f5-902a-86edf275f58d_clip_0.srt:force_style='FontName=Montserrat Bold,FontSize=48,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Alignment=2,MarginV=180,MarginL=40,MarginR=40'", '-preset', 'ultrafast', '-c:a', 'copy', '/tmp/9b2c2743-6f20-48f5-902a-86edf275f58d_captioned_0.mp4']' returned non-zero exit status 183.
+```
+
+### Path decision — Path A: no backfill, document and stop
+
+Path B+ (promote 1-clip verification → 4 more) was invalidated when the
+verification job errored at Step 4. Path B (fresh 5-clip with full
+transcript) carries Ep 68's unaddressed smart-crop risk and would require
+a real investigation session, not a tail-end push. Path A: leave csj
+`567548d9-938b-44d4-a01f-57a41724a638` at its current state (status =
+`full_complete`, `clips_ready=false`, `error_message` holds the 401 —
+honest ground truth; clip recovery deferred to a fresh dispatch).
+
+No further `/clip` fires this session. No manual csj UPDATE. Ep 69 ships
+clip-less, same as Ep 68.
+
+### Lessons banked
+
+61. **clipper-worker `load_env()` caches `.env` at module import.** All
+    future credential rotations must include `pm2 restart clipper-worker
+    --update-env` in the rotation checklist OR clipper-worker needs
+    config-reload signal handling. Class-of-bug: any python service that
+    reads `.env` at import time needs an explicit restart step in
+    rotation runbooks.
+
+62. **clipper-worker port 4002 binds to 0.0.0.0** — internet probes
+    hitting it directly, log noise (steady drip of `WARNING:  Invalid
+    HTTP request received.` in `/root/.pm2/logs/clipper-worker-error.log`).
+    Should bind to `127.0.0.1` (clipper is called by n8n on the same
+    host) OR be put behind nginx with auth. Pillar 7 (Infrastructure) gap.
+
+64. **"Fixed Bug X" claim from a prior session must validate the fix
+    against the ORIGINAL failing input, not just a synthetic
+    reproduction. Otherwise we discover only A bug, not THE bug.**
+    Today's recovery assumed the smart-crop fix was complete because the
+    fix shipped — but no clip_jobs row exists between Ep 68's May 12
+    smart-crop failure and Ep 69's May 20 Anthropic-401 attempt, so the
+    fix was never replayed against the failing input. Validation gates
+    should require: (a) reproduce on original failing data, (b) apply
+    fix, (c) re-run, (d) only then claim closed. General lesson, not
+    specific to clipper.
+
+### Followups (HIGH → LOW)
+
+- **HIGH (NEW):** Clipper pipeline cascade investigation — fresh
+  session. Reproduce against real Ep 68 + Ep 69 sources. Confirm Bug 1
+  fix is complete (or surface what was missed). Trace empty-SRT failure
+  in subtitles-burn step. Goal: one successful end-to-end `/clip` on a
+  real production source.
+
+- **HIGH (NEW):** Rotation runbook needs expansion. Today's rotation
+  surfaced 3 gaps: clipper-worker `.env` consumer (env-var-direct, not
+  n8n-credential), pm2 restart-with-update-env requirement (not just
+  `.env` edit), port-exposure audit during credential review. Should
+  also cover the Meta Ads Optimisation Agent deleted-credential
+  pointer from yesterday's recon.
+
+- **HIGH (carried from yesterday):** Meta Ads Optimisation Agent
+  (`lf955LDteJ512RQi`) repoint to `LUUeAdpObQjzRbct` — still failing
+  daily at 09:00 UTC. Missed by May 19's 5-workflow rotation.
+
+- **MEDIUM (NEW):** clipper-worker port 4002 firewall to `127.0.0.1` OR
+  nginx+auth (lesson 62).
+
+- **MEDIUM (NEW):** Stale local branch cleanup on qclaw
+  (`docs/incident-closure-2026-05-19` +
+  `cc/wfa-cred-sync-retry-hardening-20260520-1336`). Code state is on
+  `origin/main`; local branches are orphans. Safe to delete via
+  `git branch -D` + `git remote prune origin`. Surfaced during pre-flight.
+
+- **LOW (carried):** Various smaller items.
+
+### Session metadata
+
+- Pre-flight surfaced 2 brief defects (unresolved
+  `<latest after today's slices>` placeholder; `CLAUDE_CODE_INVENTORY.md`
+  line 29 "never write /root/.quantumclaw/.env" vs explicit rotation
+  dispatch). Both resolved by Tyson: switch qclaw to main (verified safe
+  — the 2 "ahead" commits SHA-match `origin/main`); brief overrides
+  inventory for this rotation.
+- Lock created `.claude-code-session.lock` per Rule 2; released at
+  session end.
+- Verified per Rule 5: Step 1 Anthropic call returns 200 OK
+  post-restart (was 401 pre-restart, same code path). Build log entry
+  read back after append; `Last updated` header bumped.
+
