@@ -740,6 +740,41 @@ Files: `src/tools/shell-exec-verb-schemas.js`,
 
 Code-round adversarial review pending after Unit 3 push.
 
+**Slice 3e — grammY runner hardening — ✓ COMPLETE 2026-05-21.**
+Closes the FLOW_OS_STATE §7 MEDIUM "grammY runner unhandled rejection
+causing quantumclaw restart loops" (119 restarts over 17h baseline,
+2026-05-16 to 2026-05-17). Wraps `_runner.task()` in `src/channels/
+manager.js` with `_onRunnerFailure`: classifier (`src/channels/grammy
+-error-classifier.js`) categorises errors as transient (429, 502,
+503, 504, standard Node net codes ECONNRESET/ETIMEDOUT/EAI_AGAIN/etc.,
+undici codes for forward-compat), non_transient (401, 403, 409, plus
+any other HTTP code as fail-loud), or unknown (null/non-object/Error
+without code — retry-bounded). Inline retry on transient: 5 attempts,
+1/2/4/8/16s base with ±25% jitter, 429 honours `parameters.retry_after`
+capped at 60s. On exhaust or non-transient: status flips to `degraded`,
+recovery timer fires every 5 minutes (12 attempts = 1h cap), then
+`manual_intervention_required`. Channel-events log at
+`~/.quantumclaw/channel-events.log` (JSONL, 0600, token-scrubbed).
+Dashboard `/api/channels` surfaces the new `status` field
+(`starting | active | retrying | degraded | stopped`). Process never
+crashes from Telegram API errors. Three rounds of cold adversarial
+design review converged before code; design at `/tmp/slice3e_design.md`.
+Notifier path (PR #3, 2026-04-28) unaffected — confirmed via design
+analysis and existing tests. Two new test files: `tests/grammy-error-
+classifier.test.js` (49 checks), `tests/channel-manager-grammy-
+resilience.test.js` (38 checks). Closes the bootstrap-restart
+amplifier that was the most plausible amplifier of the 2026-05-18
+Anthropic spend anomaly; Slice 3f (prompt caching) is now unblocked
+because post-cache token measurements won't be confounded by restart
+amplification.
+
+Files: `src/channels/grammy-error-classifier.js` (new),
+`src/channels/manager.js`, `src/dashboard/server.js`,
+`tests/grammy-error-classifier.test.js` (new),
+`tests/channel-manager-grammy-resilience.test.js` (new),
+`package.json` (test script), `LOCATIONS.md`, `FLOW_OS_STATE.md`,
+`CHARLIE_OVERHAUL.md`, `QCLAW_BUILD_LOG.md`.
+
 **Slice 4 — Verification gates (soft + hard).** Moved one slot back
 in the queue (was next after 3c.1; now next after 3d).
 `verification-reflexes.md` skill written and loaded. `runGates()`

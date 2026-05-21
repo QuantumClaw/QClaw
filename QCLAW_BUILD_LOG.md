@@ -12766,3 +12766,313 @@ blind spot — audit query must NOT filter by `active=true`).
   audit, network reachability probes from both allowed and blocked
   sources, kernel rule counters).
 
+---
+
+## [2026-05-21] Slice 3e — grammY runner hardening (closes the bootstrap-restart amplifier)
+
+Branch `cc/slice3e-grammy-runner-hardening-20260521-1531`. Design
+doc `/tmp/slice3e_design.md`. PR base `tysonven/QClaw:main`.
+
+### Episode shape
+
+| Phase | Artefact |
+|---|---|
+| Audit | `src/channels/manager.js` + `src/index.js:329-408` + `src/dashboard/server.js:760-773` + `node_modules/grammy/out/core/error.d.ts` + `node_modules/@grammyjs/runner/out/runner.js` + `FLOW_OS_STATE.md` §7 + `QCLAW_BUILD_LOG.md` 2026-05-14 Dashboard incident |
+| Design | `/tmp/slice3e_design.md` (kept on disk per brief) |
+| Design adversarial review | 3 rounds (single-session cold pass; environment has no Task tool for spawning a separate sub-agent — each round read the design as if fresh, attacked 10+ vectors, and the design was edited between rounds) |
+| Code | 3 commits (Unit 1: feat/channels; Unit 2: test/channels; Unit 3: docs) |
+| Code adversarial review | 1 round, branch-diff cold pass — see below |
+| Verification | `npm test` green (every test passes except the pre-existing `pm2_processes` environmental failure in `tests/probes.test.js` — no pm2 binary in this filesystem) |
+
+### What closed
+
+FLOW_OS_STATE §7 MEDIUM "grammY runner unhandled rejection causing
+quantumclaw restart loops". Baseline: 119 restarts in 17h on the
+2026-05-16/17 observation window. Failure mode: `bot.api.getUpdates`
+throws a GrammyError (401 revoked-token, 409 conflicting-instance,
+or any HTTP code grammY's `throwIfUnrecoverable` doesn't suppress)
+→ runner's `task` promise rejects → unhandled in `manager.js:504-517`
+(catch only covered sync construction errors) → Node process exit →
+PM2 restart → full Charlie cold bootstrap (Layers 1-6, ~21KB always-
+on skill content) → repeat. Each restart pays the full system-prompt
+token cost on the first turn after recovery (Anthropic prompt caching
+not active until Slice 3f).
+
+### What landed
+
+Unit 1 (`feat(channels): grammY runner resilience`):
+- `src/channels/grammy-error-classifier.js` (new, pure function).
+  Input: error from grammY runner. Output: `{kind: 'transient' |
+  'non_transient' | 'unknown', httpStatus?, networkCode?, shouldRetry,
+  backoffMs?, reason}`. Transient: 429/502/503/504, ECONNRESET,
+  ETIMEDOUT, EAI_AGAIN, ENETUNREACH, ENOTFOUND, EPIPE, ECONNREFUSED,
+  + undici codes UND_ERR_SOCKET/HEADERS_TIMEOUT/BODY_TIMEOUT/
+  CONNECT_TIMEOUT/DESTROYED. Non-transient: 401/403/409 + any other
+  HTTP code (fail-loud; recovery timer will retry every 5min so a
+  transient masquerader recovers within one tick). Unknown:
+  null/non-object/Error-without-code, bounded retry. 429 special
+  case: honour `parameters.retry_after`, capped at 60s.
+- `src/channels/manager.js`:
+  - New `TelegramChannel.status` field: `starting → active → retrying
+    → degraded → stopped`, with direct `active → degraded` for
+    non-transient.
+  - `_onRunnerFailure(err)` is the new task-rejection handler. Wires
+    via `_wireRunnerTaskCatch()` called from both `start()` and
+    every successful `_reinitBot()`.
+  - Inline retry: 5 attempts max, 1/2/4/8/16s ± 25% jitter. Each
+    retry calls `_reinitBot()` (full Bot reconstruction; old Bot's
+    listeners GC with it — no double-registration).
+  - On exhaust or non-transient: `_degrade(cls)` flips status, emits
+    event, calls `_scheduleRecovery()`.
+  - Recovery timer: 5-min interval (`setTimeout`, unref'd, idempotent
+    via `clearTimeout` before re-arm). `_attemptRecovery` increments
+    `_recoveryAttempts`; success resets to 0 and returns to active;
+    failure re-schedules. At `_recoveryAttempts >= 12`: emits
+    `manual_intervention_required`, stops scheduling.
+  - `_inFlightRecovery` boolean lock, released in `finally`, gates
+    concurrent failure handlers + recovery ticks.
+  - `_registerBotHandlers(bot, allowedUsers, dmPolicy)` extracted
+    from `start()` so re-init reuses the same handler set on a
+    fresh Bot.
+  - `stop()` sets status to 'stopped' FIRST, then clears both
+    timers (`_backoffTimer`, `_recoveryTimer`), then stops the
+    runner. Late timer callbacks early-return on `status==='stopped'`.
+  - `~/.quantumclaw/channel-events.log` JSONL writer, mode 0600 on
+    first write. Path overridable via
+    `QCLAW_CHANNEL_EVENTS_LOG_PATH`. Token-scrub via `_scrubToken`
+    applied to every logged message/description before write.
+    `_safeErrProp` helper wraps every err.name/message/description
+    read in try/catch so Proxy-like or getter-throwing errors can't
+    crash the failure handler.
+- `src/dashboard/server.js`: `/api/channels` `status` field now
+  reads `ch.status || 'active'` (was hardcoded `'active'`).
+
+Unit 2 (`test(channels): grammY resilience tests`):
+- `tests/grammy-error-classifier.test.js` — 49 checks. Every
+  transient and non-transient HTTP code, every net code, malformed
+  inputs (null/undefined/string/number/Error-no-code), attempt-
+  bounded retry, 429 retry_after handling (honour / ignore / cap),
+  full jitter range (100 random samples in [750, 1250] for
+  attempt-1 confirms ±25% exact). Caught a jitter math bug in
+  initial classifier draft: `applyJitter` used ±50% instead of
+  ±25%; corrected to `baseMs * 0.25 * (2*random - 1)`.
+- `tests/channel-manager-grammy-resilience.test.js` — 38 checks.
+  Drives the (un-exported) `TelegramChannel` state machine via
+  `ChannelManager._createChannel` + reflection. Covers:
+  transient→retry→success, 5 transients→degrade, non-transient→
+  immediate degrade no retry, recovery succeeds, recovery fails
+  remains degraded, 12-attempt recovery cap →
+  manual_intervention_required, stop() clears timers, log file
+  mode 0600 on first write, token-scrub on synthetic leaky
+  FetchError-style message (`request to https://api.telegram.org/
+  bot<id>:<token>/getUpdates failed`), classifier-throw safe-default
+  via an evil-Proxy that throws on every property read.
+- `package.json` test script appended with both new files.
+
+Unit 3 (`docs(slice3e): close FLOW_OS_STATE §7 grammY MEDIUM`):
+- `LOCATIONS.md`: new channel-events.log entry in Operational
+  layer; channel-manager + classifier entry in Capability layer.
+- `FLOW_OS_STATE.md` §7: MEDIUM flipped to RESOLVED 2026-05-21
+  with slice reference.
+- `CHARLIE_OVERHAUL.md`: Slice 3e entry inserted between Slice 3
+  family closure and Slice 4, marked ✓ COMPLETE 2026-05-21.
+- `QCLAW_BUILD_LOG.md`: this entry.
+
+### Design adversarial review (3 rounds, cold pass)
+
+Single-session cold pass — this environment has no Task tool for
+spawning a separate sub-agent. Each round re-read the design
+doc deliberately ignoring the prior round's conclusions, attacked
+10+ vectors, design edited between rounds.
+
+Round 1 surfaced 8 attack vectors that required design changes:
+- ATTACK 2: recovery-tick re-init failure semantics — design didn't
+  spell out that recovery-tick failures ALL bump _recoveryAttempts
+  and re-schedule, with no nested inline retry. Fixed.
+- ATTACK 3: `_inFlightRecovery` lock release on throw — needed
+  explicit try/finally. Fixed.
+- ATTACK 4: new runner's `task().catch` needed re-wiring on every
+  successful re-init. Fixed.
+- ATTACK 6: init failure vs runtime failure boundary — needed
+  explicit subsection clarifying the new status state machine
+  applies to runtime failures (post-active), init failures retain
+  the legacy "absent from registry" semantics. Fixed (new §2a).
+- ATTACK 7: backoff worst-case wait clarified to ~39s upper bound.
+  Fixed.
+- ATTACK 8: net code list — clarified grammY uses node-fetch (not
+  undici), with undici codes kept for forward-compat. Fixed.
+- ATTACK 11: backoff `setTimeout` needs to be stored + cleared by
+  stop(). Fixed (instance `_backoffTimer` field).
+- ATTACK 12: old `_runner` socket teardown before re-init. Fixed
+  (step 1 of `_reinitBot` awaits `_runner?.stop().catch(()=>{})`).
+
+Round 2 added the inline-retry-via-re-init semantics + state
+machine `active → degraded` direct transition.
+
+Round 3 added the `_scrubToken` defence-in-depth and the
+field-presence convention for log records. Converged clean —
+no further attack vectors found.
+
+### Code adversarial review (1 round, branch diff cold pass)
+
+Single-session cold pass over the branch diff. Searched for the
+adversarial-review checklist items in the actual implementation:
+
+- Classifier completeness: 49 unit tests cover every documented
+  table row. Pure function, no side effects, asserted.
+- Recovery timer post-stop: `_scheduleRecovery` early-returns on
+  `status === 'stopped'`; timer callback also early-returns.
+  `stop()` flips status BEFORE clearing timer to close the race.
+  Verified by Section 7 of the integration test.
+- `_inFlightRecovery` deadlock: `_onRunnerFailure` releases lock in
+  `finally`. The recursive call after reinit failure releases-then-
+  re-enters explicitly so the lock state is consistent.
+- Bot-token in log: `_scrubToken` + `_safeErrProp` cover every
+  logged-string field. `err.payload`, `err.error`, `err.method`
+  never logged. Section 9 of integration test asserts a synthetic
+  leaky FetchError gets scrubbed before write.
+- Non-transient masquerade (401 from flaky middlebox): documented
+  trade-off — 5-min recovery tick will exit the degraded window
+  within one tick if the middlebox is actually flaky; sustained
+  401 stays degraded which is correct.
+- Multi-channel herd: only one Telegram channel today; if Slice 6
+  adds more, each has its own timer + jittered backoff; no shared
+  state, different APIs, no Telegram-side herd.
+- `task.catch` miss: `_wireRunnerTaskCatch` called from start() AND
+  from `_reinitBot`'s tail; every successful runner handle gets its
+  own task wiring.
+- Dashboard hardcoded `'active'`: corrected to `ch.status || 'active'`.
+- `_registerBotHandlers` re-registration safety: each call uses a
+  brand-new Bot, old listeners GC with old Bot. Explicitly documented
+  in design and code comment.
+- Undefined-state combinations: `active` requires `_runner`+`bot`;
+  `degraded` requires `_recoveryTimer` to be either scheduled OR
+  manual-intervention-emitted. Test Section 5 asserts the post-failure
+  invariant; Section 6 asserts the post-cap invariant.
+
+Code review clean after one round.
+
+### Verification
+
+- `npm test` green for every new and existing test file. One
+  pre-existing failure (`pm2_processes: failure carries error
+  string` in `tests/probes.test.js`) is environmental — no pm2
+  binary in this dev filesystem; unrelated to Slice 3e.
+- `node tests/grammy-error-classifier.test.js` → 49 passed, 0 failed
+- `node tests/channel-manager-grammy-resilience.test.js` → 38 passed, 0 failed
+- `node tests/smoke.test.js` (24 modules including manager.js) → 24 passed
+- `node tests/approval-parser-handler.test.js` → 29 passed (no regression in the export surface)
+
+### Mandatory pre-merge baseline (captured by Tyson on qclaw)
+
+Command for Tyson to run before merging:
+```
+sudo pm2 jlist | python3 -c "import sys,json; d=json.load(sys.stdin); print([x['pm2_env']['restart_time'] for x in d if x['name']=='quantumclaw'])"
+```
+Baseline placeholder: not captured by CC (this environment has no
+qclaw access). To be filled in by Tyson on the PR.
+
+### Post-merge observation window
+
+72 hours after merge. Success threshold: incremental restart_time
+delta ≤ 2. Failure threshold: > 2 → file follow-up dispatch with
+the pm2-error.log excerpt.
+
+### Followups
+
+| Priority | Item |
+|---|---|
+| LOW | Slice 3f (Anthropic prompt caching on Charlie's main loop) is now unblocked. Post-cache token measurements are no longer confounded by restart amplification. |
+| LOW | `bot.api.sendMessage` silent-drop root cause (open since 2026-04-28). PR #3 raw-fetch workaround stays in place. Separate investigation. |
+| INFO | If `restart_time` climbs > 2 in 72h post-merge, the catch is leaking somewhere — examine `~/.quantumclaw/channel-events.log` for the failure-mode signature before opening a follow-up dispatch. |
+
+End of Slice 3e episode.
+
+---
+
+## [2026-05-21] Slice 3e fixup-3 — design §5 schema reconciliation (P0-A)
+
+Second cold-read returned clean on architecture, surfaced one P0
+disposition: the `reason` field that fixup-2 commit `c44bb7f` adds to
+`*_error` and `recovery_failed` events is not documented in
+`/tmp/slice3e_design.md` §5 (the event-record schema). The classifier
+already produced `reason` pre-fixup-2; surfacing it into the JSONL log
+was pure observability gain (operator can distinguish `classifier_threw`
+from `unstructured_error` etc.) but the design-doc schema lagged.
+
+Reconciliation: edited `/tmp/slice3e_design.md` §5 to:
+- Add `reason` to the event-shape JSON example, with the full enumeration
+  of classifier `reason` values plus the safe-default `'classifier_threw'`
+  the failure handler assigns when the classifier itself throws.
+- Add a field-presence convention line: `reason` is present on the four
+  `*_error` events plus `recovery_failed`. The union is treated as open
+  so new classifier reasons can be added without a schema break.
+
+Design doc remains kept-on-disk per the original Slice 3e brief; this
+build-log entry records the reconciliation event on the branch so the
+PR history shows it. No code changes in this commit.
+
+End of fixup-3 P0-A.
+
+---
+
+## [2026-05-21] Slice 3e fixup-4 — scope-down P0-A reconciliation claim
+
+Third cold-read returned clean on the fixup-3 CODE changes (findings
+#1 + #2 + #3 all correctly implemented and tested). The P0-A
+schema-reconciliation verification, however, came back NEGATIVE:
+fixup-3 closed the `reason` field reconciliation correctly, but the
+broader §5 field-presence convention has substantive drift against
+the code's actual `_appendChannelEvent` call sites — 7 of 11 event
+types have at least one mismatch. Largest gap: `degraded` carries 6
+code-only fields (`kind`, `http_status`, `network_code`, `decision`,
+`recovery_attempt`, `max_recovery_attempts`). Most drift pre-dates
+the fixup waves; the first and second cold-reads both missed it.
+
+Per Tyson triage: scope-down the P0-A claim rather than attempt the
+broader reconciliation in PR #34. The reason-field reconciliation
+is correctly done and stays; the broader convention rewrite is
+filed for Slice 3e.1 alongside third-cold-read findings #1 (diamond
+pattern), #2 (`err.error_code` Number.isFinite hardening), and the
+cold-read prompt-template improvements accumulated across all three
+passes.
+
+Changes in this commit:
+- /tmp/slice3e_design.md §5: appended a "Known incompleteness
+  (filed for Slice 3e.1)" callout immediately after the existing
+  field-presence convention bullets. The convention text itself is
+  unchanged — no silent retcon; the doc explicitly flags itself as
+  incomplete with the PR #34 description as the audit table source
+  of truth.
+- PR #34 description: fixup-3 section rewritten to scope-down the
+  P0-A claim to "reason field only" and embed the third cold-read's
+  mismatched-events table verbatim so the Slice 3e.1 dispatch can
+  be built directly from the PR body.
+
+Outstanding for Slice 3e.1 (filed by this commit + the PR body
+update):
+- §5 field-presence convention rewrite to match code reality across
+  the 7 mismatched event types (audit table in PR #34 body).
+- Third-cold-read finding #1: `_scrubRecord` diamond-pattern
+  semantics (document + test, do not change behaviour).
+- Third-cold-read finding #2: classifier `err.error_code` Number
+  .isFinite hardening — consolidate with any remaining numeric
+  inputs in one commit.
+- First-cold-read finding #11: recursive `_onRunnerFailure` →
+  `while` loop refactor.
+- Second-cold-read findings #4 + #5: `_scrubRecord` Symbol/Date/
+  Map/Set handling and idempotent `stop()`.
+- Cold-read prompt-template improvements (accumulated across three
+  passes):
+  - (a) count-the-body verification (fixup-2 process note).
+  - (b) verify pre-existing event-schema fields against current
+    code, not just newly-introduced ones (fixup-3 process note).
+  - (c) for each documented field-presence claim, find at least
+    one code call site that writes that field on the claimed
+    event (third cold-read prompt-template note).
+
+No source-code changes, no test changes. Test counts unchanged
+from fixup-3 baseline (classifier 67, resilience 97).
+
+End of fixup-4.
+

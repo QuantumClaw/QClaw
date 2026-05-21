@@ -344,11 +344,8 @@ Stuff currently broken, suboptimal, or pending. Charlie reads this section to kn
 - n8n root SSH disable is parked. DigitalOcean console auth broken — too risky to proceed currently.
 - Process risk: ad-hoc commits getting tangled across Charlie sessions. Mitigated by `CLAUDE_CODE_OPERATING_RULES.md` (committed today). Watch for re-occurrence.
 - SproutCode content automation not yet built. Currently fully manual.
-- **MEDIUM (2026-05-17, Slice 3d/3d.1 verification) — grammY runner unhandled rejection causing quantumclaw restart loops.**
-  - Symptom: quantumclaw process restarts 119 times over ~17 hours (2026-05-16 boot to 2026-05-17 morning). Verified via `sudo pm2 jlist` showing `restart_time: 119`.
-  - Root cause: grammY runner throws on Telegram API errors (429 Too Many Requests, 502 Bad Gateway) instead of catching and retrying. Stack trace in pm2 `quantumclaw-error.log` shows `GrammyError` bubbling from `node_modules/grammy/out/core/client.js:97` and `@grammyjs/runner/out/runner.js:96` unhandled.
-  - Fix shape: wrap grammY runner's update fetching in `src/channels/manager.js` with a catch-and-retry that doesn't kill the process. Likely a try/catch around the runner invocation with exponential backoff on transient API errors (429, 502, 503, 504).
-  - Priority MEDIUM — Charlie still responds correctly during healthy windows; degrades availability during Telegram API instability. Pre-existing, not introduced by any recent slice.
+- **RESOLVED 2026-05-21, Slice 3e — grammY runner unhandled rejection causing quantumclaw restart loops.**
+  - Closed by wrapping the runner's `task()` promise in `src/channels/manager.js` `_onRunnerFailure` (Slice 3e Unit 1). Classifier (`src/channels/grammy-error-classifier.js`) routes 429/502/503/504 + standard net codes to bounded inline retry (5 attempts, 1/2/4/8/16s ± 25% jitter); 401/403/409 + any other HTTP code to immediate degrade. Degraded channel attempts re-init via a 5-min recovery timer, capped at 12 attempts before requiring manual intervention. Process never crashes from runner-loop errors. All transitions logged JSONL to `~/.quantumclaw/channel-events.log` (mode 0600, token-scrubbed). PR #TBD (cc/slice3e-grammy-runner-hardening-20260521-1531). Post-merge 72h observation by Tyson; success threshold ≤2 restarts/72h.
 - **LOW (2026-05-17, Slice 3d.1 verification) — Slice 3d.1 build log paraphrased verbatim error.**
   - Symptom: Slice 3d.1 build log entry describes the dubious-ownership symptom in Tyson's words rather than capturing the raw git stderr output.
   - Root cause: CC paraphrased the user-facing report instead of the original git error text from `quantumclaw-error.log`.

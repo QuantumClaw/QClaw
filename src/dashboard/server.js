@@ -766,7 +766,10 @@ ${error ? '<p class="err">Invalid token. Please try again.</p>' : ''}
         const paired = ch.channelConfig?.allowedUsers?.length || 0;
         const pending = ch.pendingPairings?.size || 0;
         const botName = ch.botInfo?.username || null;
-        channels.push({ name, status: 'active', paired, pending, botName });
+        // Slice 3e: surface the channel's runtime status field. Defaults to
+        // 'active' for channels that pre-date the status field (defensive).
+        const status = ch.status || 'active';
+        channels.push({ name, status, paired, pending, botName });
       }
       channels.push({ name: 'dashboard', status: 'active', tunnel: this.tunnelUrl || null });
       res.json(channels);
