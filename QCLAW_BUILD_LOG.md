@@ -2,7 +2,7 @@
 
 **Project:** QClaw — Self-hosted Claude agent runtime (Fork of QuantumClaw/QClaw)
 **Owner:** Tyson Venables / Flow OS
-**Last updated:** 2026-05-20
+**Last updated:** 2026-05-21
 **Repo:** https://github.com/tysonven/QClaw
 
 ---
@@ -12565,4 +12565,204 @@ clip-less, same as Ep 68.
 - Verified per Rule 5: Step 1 Anthropic call returns 200 OK
   post-restart (was 401 pre-restart, same code path). Build log entry
   read back after append; `Last updated` header bumped.
+
+---
+
+## 2026-05-21 — Polish batch: branch cleanup + Meta Ads repoint + clipper port firewall + rotation runbook
+
+Round-out session before pivoting to Charlie overhaul work. Four items,
+four logical scopes, three commits (Item 1 + Item 3 were operational-only,
+no repo changes).
+
+### Item 1 — qclaw local branch cleanup (no commit)
+
+`docs/incident-closure-2026-05-19` deleted on qclaw (was 709e5a5,
+already on origin/main via PR #33 squash-merge). The other named
+branch `cc/wfa-cred-sync-retry-hardening-20260520-1336` was already
+absent — likely removed when Tyson switched qclaw to main yesterday.
+
+Anomaly: 9 older orphan branches remain on qclaw
+(cc/identity-symlink-reconcile-..., cc/slice1-bootstrap-..., cc/slice2*,
+cc/slice3a-..., cc/slice3b*, hotfix/slice2b-runaway-content-...). Out of
+brief scope per Rule 4 — filed as LOW followup, separate cleanup
+dispatch.
+
+### Item 2 — Meta Ads + Trading Weekly Anthropic credential repoint (commit `44efc52`)
+
+Both workflows had stale credential pointer `eXhIwRbh7FBgb6O3`
+(deleted during May 19 rotation). Meta Ads (`lf955LDteJ512RQi`) failed
+daily at 04:00 UTC cron since 2026-05-20; Trading Weekly
+(`vjj2uBIPc07FpIxx`) is inactive but would have failed on activation.
+
+Recon surfaced an unexpected complexity: the two workflows used
+**different node patterns** for the same logical credential:
+
+| Workflow | Node | Authentication | Credential type |
+|---|---|---|---|
+| Meta Ads | AI Optimisation Analysis | `predefinedCredentialType` | `anthropicApi` |
+| Trading Weekly | Claude Analysis | `genericCredentialType` | `httpHeaderAuth` |
+
+Tyson's decision (chose Path Y for Meta Ads): **fix the credential,
+not the node.** Rationale: predefinedCredentialType=anthropicApi is a
+valid n8n pattern; refactoring an actively-failing workflow during a
+fix would risk introducing new failures (anthropic-version header
+handling, etc., that the predefined wrapper covers). n8n's own error
+message ("for type anthropicApi") confirmed the node was configured
+intentionally.
+
+Execution:
+- Tyson manually created `1yrpJ3S4Gw6YSUSJ` ("Anthropic - QuantumClaw
+  (anthropicApi)") in n8n UI with the rotated key value (same value
+  as `LUUeAdpObQjzRbct`, different credential type).
+- jq-edited Meta Ads to repoint to `1yrpJ3S4Gw6YSUSJ`; kept
+  predefinedCredentialType + nodeCredentialType intact.
+- jq-edited Trading Weekly to repoint to existing `LUUeAdpObQjzRbct`
+  (clean Path X swap, same as Workflow A's pattern).
+- PUT both via API (body limited to {name, nodes, connections,
+  settings} per known n8n constraint).
+- Repo files `lf955LDteJ512RQi-meta-ads-optimisation-agent.json` and
+  `vjj2uBIPc07FpIxx-trading-weekly-analyst.json` updated to match
+  live. Meta Ads structural diff post-edit: zero. Trading Weekly has
+  pre-existing cosmetic drift (node positions, default GET method,
+  empty value field) — left untouched per Rule 4, out of scope.
+
+Verification per Rule 5:
+- PUT both workflows: HTTP 200.
+- Post-PUT GET: both credential references match the intended targets.
+- Reverse-pointer audit (`SELECT … FROM workflow_entity WHERE
+  nodes::text LIKE '%eXhIwRbh7FBgb6O3%'`): zero rows.
+- Meta Ads webhook fire (execution `964704`, mode=webhook,
+  started 2026-05-21T11:35:31Z): status=success, finished=true,
+  20.3s runtime. Same code path that 401'd daily on cron now
+  succeeds end-to-end.
+
+### Item 3 — clipper-worker port 4002 surgical iptables fix (no commit)
+
+Brief assumed clipper is called by n8n on the same host (Option A —
+bind 127.0.0.1). Recon disproved this: n8n hits clipper at
+`http://138.68.138.214:4002/clip` (qclaw's public IP) from the n8n
+droplet at `157.230.216.158`. Path A would have broken the Content
+Studio pipeline.
+
+Recon also surfaced that qclaw has **no firewall active** — ufw
+inactive, iptables INPUT chain empty, 9 services bound to 0.0.0.0.
+Tyson's decision: surgical iptables fix for 4002 only; broader
+Pillar 7 audit deferred to its own HIGH followup.
+
+Applied (3 rules in INPUT chain, persisted via iptables-persistent):
+
+```
+1  ACCEPT  tcp -- 157.230.216.158 -> *  tcp dpt:4002
+2  ACCEPT  tcp -- *               -> *  in:lo  tcp dpt:4002
+3  DROP    tcp -- *               -> *  tcp dpt:4002
+```
+
+Verification per Rule 5:
+- n8n (157.230.216.158) → clipper /health: HTTP 200, 142ms.
+- n8n → clipper /docs: HTTP 200, 147ms.
+- qclaw localhost → clipper /health: HTTP 200.
+- External (Mac at home) → clipper /health: HTTP 000, 5s timeout
+  (connection silently dropped at kernel — expected).
+- Rule counters confirm: rule 1 (n8n) hit 14 packets; rule 2 (lo)
+  hit 7; rule 3 (DROP) hit 6 (the local Mac probe).
+- iptables-persistent installed; `/etc/iptables/rules.v4` contains
+  the 3 rules — survives reboot.
+- Log flood: probes now dropped at kernel level before reaching
+  uvicorn, so "Invalid HTTP request" entries stop generating
+  structurally. Pre-fix baseline: 173 warnings in last 1000 lines.
+
+### Item 4 — Credential rotation runbook (commit `e218b5c`)
+
+New file at `docs/runbooks/credential-rotation.md` (175 lines).
+`docs/runbooks/` is now the canonical location for operational SOPs;
+this is the first inhabitant.
+
+Three sections + explicit gap log:
+- Pre-rotation checklist (consumer inventory across n8n, .env files,
+  repo grep, startup-cache standalone services).
+- During rotation (order: .env → n8n UI → pm2 restart-with-update-env;
+  immediate per-consumer verification; old credential stays valid
+  as rollback).
+- Post-rotation cleanup (delete old, reverse-pointer audit, sweep
+  production error logs).
+
+Gap log section attributes each May 19–20 failure to a specific
+runbook step: clipper-worker (step 1.d + 2.c), Meta Ads (step 3.2 —
+reverse-pointer audit), Trading Weekly (step 3.2 + inactive-workflow
+blind spot — audit query must NOT filter by `active=true`).
+
+### Followups (HIGH → LOW)
+
+- **HIGH (NEW):** qclaw Pillar 7 infrastructure audit. 9 services
+  bind to 0.0.0.0 with no firewall active pre-today (ports
+  22/80/443/4000/4001/4891/6333/6334/8000). Today's surgical iptables
+  for 4002 is a symptom fix only. Full audit dispatch: inventory each
+  port, classify internet-facing vs internal, decide firewall layer
+  (DO Cloud Firewall vs iptables vs application-bind), apply
+  restrictions. Per-port effort ~5–10min audit; whole audit ~2–3h.
+
+- **HIGH (carried):** Clipper pipeline cascade investigation. Still
+  open from yesterday — empty-SRT subtitles-burn failure (Step 4) and
+  Ep 68 smart-crop failure (Step 3b) need real-source reproduction.
+
+- **MEDIUM (NEW):** Trading Weekly Analyst is inactive but the
+  workflow JSON has pre-existing cosmetic drift between repo and
+  live (node positions, default GET method, empty value field on
+  apikey header param). Not introduced by today's fix; predates this
+  session. Worth a structural sync if/when Trading Weekly is
+  reactivated.
+
+- **LOW (NEW):** 9 older orphan local branches remain on qclaw
+  `/root/QClaw` (cc/identity-symlink-reconcile-…, cc/slice1-…,
+  cc/slice2*-…, cc/slice3a/3b/3b1-…, hotfix/slice2b-…). Safe to
+  delete — all merged to main long ago. Out of today's scope.
+
+### Lessons banked
+
+65. **Fix the credential, not the node.** When a workflow fails
+    after a credential rotation, the default reflex is to align the
+    node to whatever pattern the rest of the fleet uses. That's
+    risky during an active incident — the node's existing shape
+    encodes intentional choices (predefinedCredentialType wraps
+    headers the generic pattern doesn't). Refactor in a separate
+    dispatch; fix the credential type today.
+
+66. **n8n is on a separate droplet from qclaw.** LOCATIONS.md is
+    canonical; the brief's localhost assumption for clipper-worker
+    was wrong. Cross-host calls happen across the public internet,
+    not over loopback. Anytime a brief specifies a same-host
+    integration, verify against LOCATIONS.md first.
+
+67. **Prefer the lowest-layer fix that achieves the goal.** Bind to
+    127.0.0.1 (application layer) > host iptables (kernel layer) >
+    cloud firewall (network layer) > application auth (service
+    layer). Surgical iptables for one port beats global ufw enable
+    because the blast radius is smaller — if a rule misfires, you
+    lose 4002, not SSH.
+
+68. **"Pillar 7 ✅" in past commits did NOT mean active firewall
+    verification.** Today's recon found zero active firewall rules
+    on qclaw despite multiple past commits claiming Pillar 7
+    closure. Past closures were probably about bind addresses and
+    application auth, not network-layer filtering. Audit framework
+    needs a "what does this Pillar X claim mean operationally?"
+    check, not a checkbox-tick.
+
+### Session metadata
+
+- Lock created `.claude-code-session.lock` per Rule 2; released at
+  session end.
+- Pre-flight surfaced one anomaly: local repo was on
+  `cc/wfa-cred-sync-retry-hardening-20260520-1336` (yesterday's
+  unmerged-locally branch), not main. Resolved by `git checkout main
+  && git pull origin main`, fast-forwarded to ff460d9.
+- Two STOP-and-surface points per Rule 9:
+  - Item 2 — Meta Ads node pattern (predefinedCredentialType) not
+    addressed by the brief's Path X; Tyson chose Path Y.
+  - Item 3 — n8n calls clipper across the network, not localhost;
+    Tyson chose surgical iptables over ufw enable.
+- Verified per Rule 5: each item has explicit verification documented
+  above (PUT response codes, GET re-fetch checks, reverse-pointer
+  audit, network reachability probes from both allowed and blocked
+  sources, kernel rule counters).
 
