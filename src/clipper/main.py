@@ -524,9 +524,9 @@ def burn_captions(input_path: str, srt_path: str, output_path: str):
             "-threads", "1",
             "-i", input_path,
             "-vf",
-            f"subtitles={escaped_srt}:force_style='FontName=Montserrat Bold,FontSize=48,"
-            f"PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,"
-            f"Alignment=2,MarginV=180,MarginL=40,MarginR=40'",
+            f"subtitles={escaped_srt}:force_style='FontName=Montserrat Bold,FontSize=14,"
+            f"PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=1,"
+            f"Alignment=2,MarginV=32,MarginL=8,MarginR=8'",
             "-preset", "ultrafast",
             "-c:a", "copy",
             output_path,
