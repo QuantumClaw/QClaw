@@ -13211,3 +13211,196 @@ csj fb4edfcc + 567548d9 updated to status=clipper_complete with
 clips_ready=true clip_count=5; Telegram msg_ids 4331+4332 confirmed
 delivered; build log entry read back after append; Last updated
 header bumped to 2026-05-22.
+
+
+---
+
+## 2026-05-22 — Clipper caption styling fix: below-centre position + sized for 608×1080
+
+Today's cascade-closure entry proved the pipeline runs end-to-end.
+Visual review of the 10 produced clips (Ep 68 + Ep 69, jobs
+`0cb6d53e-...` and `1418ebd1-...`) immediately surfaced rendering
+quality issues that block Emma from posting the clips as-is:
+
+- Caption text positioned in upper-third, crowding Emma's face
+  (defeated the purpose of face-detect smart-crop).
+- Font way too large — words >5 chars clipped at left + right
+  edges of the 9:16 frame ("nvitation", "indfulnes", "bundanc").
+- No max-width handling; words overflow instead of breaking.
+
+Pipeline-works ≠ publishable. **Lesson 73:** the cascade-closure
+success criteria stopped at "FFmpeg returns 0 / clip uploads to
+R2" and never included visual review. The 5/5 result felt like a
+win until the clips were opened.
+
+### Root cause — one transformation upstream, not three issues
+
+libass auto-generates a `[Script Info]` section with default
+`PlayResX=384, PlayResY=288` when it ingests an SRT file with no
+script header. Every geometric value in the `force_style` block is
+then scaled by `video_height / PlayResY` at render time. On a
+608×1080 vertical output, that's a **3.75× multiplier** on every
+script-side number:
+
+| `force_style` (script) | Rendered (×3.75) | Visible effect |
+|---|---|---|
+| `FontSize=48` | 180 px font | 10-char words ≫ 528 px usable width → both edges clipped |
+| `MarginV=180` | 675 px from bottom | baseline at y=405 → text in **upper-third**, crowding face at y_ratio=0.14 |
+| `MarginL` / `MarginR` `=40` | 150 px each | usable centred width collapses |
+| `Outline=2` | 7.5 px | proportionate to oversized font |
+
+`Alignment=2` (bottom-center) was correct all along — the position
+complaint was MarginV being silently scaled 3.75×, not the alignment
+flag being wrong. **Lesson 74:** the three visible symptoms (font,
+overflow, position) traced back to one transformation. Diagnose
+upstream first; cosmetic constants are usually the wrong layer to
+fight.
+
+### Patch — descale every geometric value by 3.75
+
+**Commit `922d241` — fix(clipper): caption styling — descale force_style for libass PlayResY=288 default**
+
+| `force_style` value | Before | After | Rendered (×3.75) |
+|---|---|---|---|
+| `FontSize` | 48 | **14** | ~52 px |
+| `MarginV` | 180 | 32 *(later tweaked to 64)* | 120 → 240 px from bottom |
+| `MarginL` / `MarginR` | 40 | **8** | ~30 px each |
+| `Outline` | 2 | **1** | ~3.75 px |
+| `Alignment` | 2 | 2 (unchanged) | bottom-center |
+
+Diff scoped to lines 527–529 of `burn_captions` in
+[src/clipper/main.py](src/clipper/main.py#L527-L529). No other code
+changes.
+
+### v1 single-clip test — too low
+
+Fired `9fbf56ca-cf6e-406e-b2a9-56d937b7993d` on Ep 69's source with
+`num_clips=1`, MarginV=32 active. Completed in 100 s, output
+608×1080, all visual issues from the original cascade-closure clips
+were fixed — font size clean ("countless" rendered without
+overflow), word-by-word animation working, outline readable. **But**
+text sat at ~89% from top (~120 px from bottom) and crowded
+Instagram Reels' built-in caption/UI overlay area.
+
+Test clip (v1, superseded):
+https://pub-70c436931e9e4611a135e7405c596611.r2.dev/clips/9fbf56ca-cf6e-406e-b2a9-56d937b7993d/clip_0.mp4
+
+### Tweak — MarginV 32 → 64
+
+**Commit `8b79c0e` — fix(clipper): caption styling — MarginV 32→64 (Reels UI clearance)**
+
+64 × 3.75 = 240 px rendered from bottom. Baseline at y=840 of a
+1080-tall frame = 78% from top. Solid lower-third, well above
+Reels UI overlays, still cleanly below the face zone.
+
+### v2 single-clip test — approved
+
+Fired `5ad84e91-b52e-41a0-98c2-76afecb247c3` on the same Ep 69
+source, same `num_clips=1`, MarginV=64 active. Completed in 67 s,
+output 608×1080.
+
+Test clip (v2, approved):
+https://pub-70c436931e9e4611a135e7405c596611.r2.dev/clips/5ad84e91-b52e-41a0-98c2-76afecb247c3/clip_0.mp4
+
+Visual verdict: position in lower-third, clear of Emma's face,
+comfortable margin above platform UI overlays. "It's" and
+"person." both render at the right size with outline readable
+against both light dress and skin tones. Word-by-word animation
+working cleanly. **PATH A — approved as-is.**
+
+**Lesson 76:** success criteria for visual output must include
+user-facing quality, not just process-exit-zero. The cascade
+closure (yesterday's entry) shipped without this gate and pushed
+two episodes worth of unpublishable clips to R2.
+
+**Lesson 77:** caption styling converged in two rounds (descale
++ Reels-UI clearance bump). Future caption work should start
+with **industry-standard reference points** (Reels lower-third
+≈ MarginV=64 on 608×1080, ≈ 78% from top) rather than computing
+position from first-principles. Reference values exist; use them.
+
+### What this fix does NOT do
+
+`caption_style` fields in the `/clip` POST body remain silently
+ignored — only `animation` is consumed. The HIGH followup below
+captures this. **Lesson 75:** Workflow A's payload schema currently
+lies about what's configurable (`font_size`, `position`, `color`,
+`outline_color`, `outline_width`, `highlight_color`, `font` all
+sent but discarded). Pillar 2 (Backend) integrity issue — fix or
+delete the dead fields.
+
+### Lessons banked
+
+- **73.** Publishable ≠ pipeline-works. A clipper run that returns
+  HTTP 200 and uploads to R2 can still produce visually
+  unpublishable output. Visual review must be part of the gate.
+- **74.** One transformation upstream often masquerades as three
+  cosmetic issues. Diagnose the scale factor (libass PlayResY)
+  before tweaking individual constants.
+- **75.** `caption_style` schema in Workflow A's `/clip` POST is
+  fiction except for `animation`. The other fields are silently
+  discarded by `burn_captions`'s hardcoded f-string. Pillar 2
+  integrity gap.
+- **76.** Success criteria for visual output must include user-
+  facing quality, not just process-exit-zero. Yesterday's
+  cascade-closure entry shipped 10 unpublishable clips to R2.
+- **77.** Industry-standard reference points beat first-principles
+  computation for visual styling decisions. Reels lower-third
+  baseline at ~78% from top is a known target; computing
+  MarginV from libass scaling math gave a value (32) that was
+  technically correct for "above bottom edge" but ignored
+  platform UI overlays.
+
+### Followups
+
+- **HIGH (NEW) — caption_style fields silently ignored.**
+  `font`, `font_size`, `position`, `color`, `outline_color`,
+  `outline_width`, `highlight_color` from Workflow A's `/clip`
+  request body are all ignored — only `animation` is consumed
+  in `generate_srt`. `burn_captions` uses a hardcoded f-string
+  with no read of the request. Two viable shapes for a fresh
+  dispatch: (a) honor the fields in `burn_captions` (read
+  FontName, FontSize, PrimaryColour, OutlineColour, Outline
+  from `caption_style` instead of hardcoding), OR (b) delete
+  the fields from Workflow A's payload so the schema matches
+  reality. Pillar 2 (Backend) integrity issue.
+- **MEDIUM (NEW) — explicit PlayResX/PlayResY.** Set
+  `PlayResX=608, PlayResY=1080` explicitly in the generated
+  SRT (via a [Script Info] block) OR migrate the SRT → ASS
+  pipeline, so styling values don't silently scale with output
+  resolution. Today's fix-by-division works for 608×1080
+  specifically; if clipper-worker ever processes a different
+  output resolution (e.g., 4K source → 1216×2160 vertical),
+  the scaling math breaks and captions misposition again.
+- **MEDIUM (CARRY) — per-word highlight animation.** True
+  per-word highlight (gold colour on the active word over a
+  full sentence) requires ASS `\k` karaoke tags, not the
+  SRT-with-one-word-per-entry approach currently used. The
+  appearing/disappearing single-word effect is acceptable for
+  now; true highlight is a future enhancement, gated on the
+  HIGH followup above (need ASS pipeline anyway to honor
+  `caption_style.highlight_color`).
+- **DEFERRED — Ep 68 + Ep 69 full regeneration scope.** Both
+  episodes' csj rows currently point to `clip_jobs` produced
+  with the old (rendered-180-px font, upper-third position)
+  styling. Decision on whether to re-clip both (Ep 68 = 9 days
+  old, decayed clip ROI; Ep 69 = 2 days old, still fresh) and
+  re-adopt is its own dispatch. Today's brief explicitly
+  ruled regeneration out of scope.
+
+### Commits
+
+- `922d241` fix(clipper): caption styling — descale force_style
+  for libass PlayResY=288 default
+- `8b79c0e` fix(clipper): caption styling — MarginV 32→64
+  (Reels UI clearance)
+- This entry (docs commit)
+
+**verified:** patch values active in clipper-worker process
+891106 (`pm2 show` confirms `created at` post-restart); v1 test
+job 9fbf56ca complete in 100 s with MarginV=32 active; v2 test
+job 5ad84e91 complete in 67 s with MarginV=64 active and Tyson
+visual-approved; both test clips ffprobe-confirmed 608×1080
+output; both `public_url`s HTTP 200; build log entry read back
+after append; both fix commits pushed to origin/main
+(`34045e7..8b79c0e`).
