@@ -3,13 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="color-scheme" content="light dark">
   <title>QClaw Dashboard</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚛</text></svg>">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root{--bg:#08080d;--bg-1:#0e0e16;--bg-2:#16161f;--bg-3:#1e1e2a;--bg-hover:#1a1a28;--border:#252535;--border-l:#353548;--text:#e4e4ef;--text-dim:#6b6b8a;--text-xs:#4a4a66;--accent:#8b5cf6;--accent-l:#a78bfa;--accent-bg:#8b5cf620;--green:#22c55e;--green-bg:#22c55e18;--red:#ef4444;--red-bg:#ef444418;--yellow:#eab308;--yellow-bg:#eab30818;--blue:#3b82f6;--blue-bg:#3b82f618;--cyan:#06b6d4;--sw:56px;--sw-c:56px}
+    :root{color-scheme:light;--bg:#f5f7fb;--bg-0:#fff;--bg-1:#eef2f7;--bg-2:#fff;--bg-3:#e4e9f2;--bg-hover:#dfe6f2;--border:#d6ddeb;--border-l:#bbc7db;--text:#161827;--text-dim:#566074;--text-xs:#7c8799;--accent:#8b5cf6;--accent-l:#7c3aed;--accent-bg:#8b5cf618;--green:#16a34a;--green-bg:#16a34a14;--red:#dc2626;--red-bg:#dc262614;--yellow:#ca8a04;--yellow-bg:#ca8a0414;--blue:#2563eb;--blue-bg:#2563eb14;--cyan:#0891b2;--graph-edge:#c7d0df;--graph-label:#4f5d73;--graph-empty:#6b7280;--canvas-svg-bg:#eef2f7;--sw:56px;--sw-c:56px}
+    @media(prefers-color-scheme: dark){:root{color-scheme:dark;--bg:#08080d;--bg-0:#0b0b12;--bg-1:#0e0e16;--bg-2:#16161f;--bg-3:#1e1e2a;--bg-hover:#1a1a28;--border:#252535;--border-l:#353548;--text:#e4e4ef;--text-dim:#6b6b8a;--text-xs:#4a4a66;--accent:#8b5cf6;--accent-l:#a78bfa;--accent-bg:#8b5cf620;--green:#22c55e;--green-bg:#22c55e18;--red:#ef4444;--red-bg:#ef444418;--yellow:#eab308;--yellow-bg:#eab30818;--blue:#3b82f6;--blue-bg:#3b82f618;--cyan:#06b6d4;--graph-edge:#444;--graph-label:#ccc;--graph-empty:#666;--canvas-svg-bg:#1a1a2e}}
     *{margin:0;padding:0;box-sizing:border-box}
-    body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;display:flex;height:100vh;overflow:hidden;font-size:14px}
+    html,body{background:var(--bg)}
+    body{color:var(--text);font-family:'Outfit',sans-serif;display:flex;height:100vh;overflow:hidden;font-size:14px}
     ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
     /* Sidebar - collapsible */
     .sb{width:var(--sw-c);background:var(--bg-1);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;z-index:20;transition:width .2s}
@@ -412,6 +415,7 @@ document.querySelectorAll('.mo').forEach(m=>m.addEventListener('click',e=>{if(e.
 function esc(t){return t==null?'':String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function ta(ts){if(!ts)return'';const d=Date.now()-new Date(ts).getTime();if(d<60000)return'now';if(d<3600000)return Math.floor(d/60000)+'m';if(d<86400000)return Math.floor(d/3600000)+'h';return Math.floor(d/86400000)+'d'}
 function crd(l,v,s,fs){return'<div class="card"><div class="cl">'+l+'</div><div class="cv"'+(fs?' style="font-size:'+fs+'"':'')+'>'+v+'</div>'+(s?'<div class="cs">'+s+'</div>':'')+'</div>'}
+function cssVar(name,fallback=''){return getComputedStyle(document.documentElement).getPropertyValue(name).trim()||fallback}
 /* SIDEBAR */
 function toggleSb(){const s=document.getElementById('sb');s.classList.toggle('open');document.getElementById('sb-arrow').textContent=s.classList.contains('open')?'◀':'▶';localStorage.setItem('sb_open',s.classList.contains('open')?'1':'0')}
 if(localStorage.getItem('sb_open')==='0'){document.getElementById('sb').classList.remove('open');document.getElementById('sb-arrow').textContent='▶'}
@@ -498,7 +502,7 @@ async function deleteTask(idx){if(!confirm('Remove this task?'))return;try{const
 // ─── Memory Remember/Forget + Graph ──────
 async function rememberFact(){const fact=document.getElementById('mem-add').value.trim();if(!fact){toast('Enter something to remember');return}try{const r=await api('/api/memory/remember',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fact})});const d=await r.json();if(d.ok){toast('Remembered!');document.getElementById('mem-add').value='';loadMem()}else{toast(d.error||'Failed')}}catch(e){toast(e.message)}}
 async function loadMemGraph(){const el=document.getElementById('mem-graph');el.style.display='block';try{const r=await api('/api/memory/graph');const d=await r.json();_drawGraph(d)}catch{el.innerHTML='<div class="canvas-empty"><span>Graph unavailable</span></div>'}}
-function _drawGraph(data){const canvas=document.getElementById('graph-canvas');if(!canvas)return;const ctx=canvas.getContext('2d');const W=canvas.parentElement.offsetWidth;const H=canvas.parentElement.offsetHeight;canvas.width=W;canvas.height=H;const nodes=data.nodes||[];const edges=data.edges||[];if(!nodes.length){ctx.fillStyle='#666';ctx.font='14px Outfit';ctx.textAlign='center';ctx.fillText('No knowledge nodes yet',W/2,H/2);return}const colors={semantic:'#9b59b6',episodic:'#3498db',procedural:'#2ecc71'};nodes.forEach((n,i)=>{const angle=(2*Math.PI*i)/nodes.length;n.x=W/2+Math.cos(angle)*(Math.min(W,H)*0.35);n.y=H/2+Math.sin(angle)*(Math.min(W,H)*0.35)});ctx.clearRect(0,0,W,H);edges.forEach(e=>{const s=nodes.find(n=>n.id===e.source);const t=nodes.find(n=>n.id===e.target);if(s&&t){ctx.strokeStyle='#444';ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.lineTo(t.x,t.y);ctx.stroke()}});nodes.forEach(n=>{ctx.fillStyle=colors[n.type]||'#999';ctx.beginPath();ctx.arc(n.x,n.y,6,0,2*Math.PI);ctx.fill();ctx.fillStyle='#ccc';ctx.font='10px Outfit';ctx.textAlign='center';ctx.fillText(n.label.slice(0,25),n.x,n.y-10)})}
+function _drawGraph(data){const canvas=document.getElementById('graph-canvas');if(!canvas)return;const ctx=canvas.getContext('2d');const W=canvas.parentElement.offsetWidth;const H=canvas.parentElement.offsetHeight;canvas.width=W;canvas.height=H;const nodes=data.nodes||[];const edges=data.edges||[];if(!nodes.length){ctx.fillStyle=cssVar('--graph-empty','#666');ctx.font='14px Outfit';ctx.textAlign='center';ctx.fillText('No knowledge nodes yet',W/2,H/2);return}const colors={semantic:'#9b59b6',episodic:'#3498db',procedural:'#2ecc71'};nodes.forEach((n,i)=>{const angle=(2*Math.PI*i)/nodes.length;n.x=W/2+Math.cos(angle)*(Math.min(W,H)*0.35);n.y=H/2+Math.sin(angle)*(Math.min(W,H)*0.35)});ctx.clearRect(0,0,W,H);edges.forEach(e=>{const s=nodes.find(n=>n.id===e.source);const t=nodes.find(n=>n.id===e.target);if(s&&t){ctx.strokeStyle=cssVar('--graph-edge','#444');ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.lineTo(t.x,t.y);ctx.stroke()}});nodes.forEach(n=>{ctx.fillStyle=colors[n.type]||'#999';ctx.beginPath();ctx.arc(n.x,n.y,6,0,2*Math.PI);ctx.fill();ctx.fillStyle=cssVar('--graph-label','#ccc');ctx.font='10px Outfit';ctx.textAlign='center';ctx.fillText(n.label.slice(0,25),n.x,n.y-10)})}
 async function exportMemory(){try{const r=await api('/api/memory/export');const d=await r.json();const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='quantumclaw-memory-'+new Date().toISOString().slice(0,10)+'.json';a.click();toast('Memory exported')}catch(e){toast(e.message)}}
 
 // ─── Live Canvas (A2UI) ──────────────────────
@@ -520,7 +524,7 @@ function _showCanvasItem(item){
   if(item.format==='html'||item.format==='svg'){
     const iframe=document.createElement('iframe');
     iframe.sandbox='allow-scripts allow-same-origin';
-    iframe.srcdoc=item.format==='svg'?'<!DOCTYPE html><html><body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a2e">'+item.content+'</body></html>':item.content;
+    iframe.srcdoc=item.format==='svg'?'<!DOCTYPE html><html><body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:'+cssVar('--canvas-svg-bg','#1a1a2e')+'">'+item.content+'</body></html>':item.content;
     body.innerHTML='';body.appendChild(iframe);
   }else if(item.format==='markdown'){
     body.innerHTML='<div class="canvas-md">'+_renderMd(item.content)+'</div>';
