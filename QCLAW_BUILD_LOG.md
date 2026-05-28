@@ -13511,3 +13511,41 @@ visual-approved; both test clips ffprobe-confirmed 608×1080
 output; both `public_url`s HTTP 200; build log entry read back
 after append; both fix commits pushed to origin/main
 (`34045e7..8b79c0e`).
+
+
+---
+
+## 2026-05-28 — flowos-sms-gateway Phase 2: Telnyx Provider Live
+
+Added Telnyx as a second SMS provider alongside the Android gateway. The Flow OS AU
+number is now fully off the SIM and running on Telnyx end-to-end.
+
+- PR #1 merged (`phase2/telnyx-provider` → `main`); Railway auto-deployed from main
+- `+61490091602` (Flow OS) ported AU → Telnyx — live both directions, confirmed in
+  `message_log` with `provider=telnyx` (inbound + outbound)
+- `+13105738463` (Emma, US) seeded `active=false` — 10DLC campaign pending approval
+- Inbound: new `POST /webhooks/telnyx/inbound`, Ed25519 verify over `<timestamp>|<body>`
+  with ±5min tolerance, routes by destination number → matching GHL sub-account
+- Outbound: existing Telnyx stub (`POST /v2/messages`, Bearer auth) — unchanged
+- `verify_telnyx_signature` added alongside GHL verifier in `app/auth.py`;
+  `db.get_device_by_phone_number` added for destination lookup
+- Migration `007_seed_telnyx_devices.sql` — idempotent (`on conflict (phone_number)`),
+  resolved via `ghl_location_id` lookup, applied via Supabase MCP
+- `TELNYX_INBOUND_WEBHOOK_SECRET` → `TELNYX_PUBLIC_KEY` (Phase 1 placeholder, was unused)
+- Both Telnyx Messaging Profiles' inbound webhooks pointed at the gateway endpoint
+- Telnyx account spend limit set: $10
+- Tests: 68/68 green (12 new Telnyx)
+
+**Security gate:**
+- No hardcoded secrets — `TELNYX_API_KEY` / `TELNYX_PUBLIC_KEY` in Railway env only — PASS
+- Inbound webhook authenticated — Ed25519, ±5min replay window — PASS
+- Financial disabled by default — US number `active=false`, $10 cap set — PASS
+- DB — no new tables; RLS already on `device_registry`; migration tracked + idempotent — PASS
+- Rate limiting on `/webhooks/telnyx/inbound` — PASS (inherits global 100/min from
+  `SlowAPIMiddleware` in `app/main.py`; no per-route override, same as `/webhooks/inbound`)
+
+**Parked:**
+- Flip `+13105738463` `active=true` when 10DLC clears
+- Motorola / `device1.flowos.tech` decommission + SOP cleanup — separate ticket
+- Inbound handler: skip alphanumeric senders (COSMOTE / #My Account) to stop false heartbeat alerts
+- Voice: gateway is SMS-only by design; BYOC via CRM Phone Pro is the path if ever needed
