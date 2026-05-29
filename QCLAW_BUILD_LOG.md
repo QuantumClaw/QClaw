@@ -13696,3 +13696,99 @@ sudo pm2 reload quantumclaw --update-env
 | LOW | Bootstrap-stable canonical docs (CHARLIE_ROLE.md, CEO_OPERATING_MODEL.md, VALUES.md, SOUL.md) are read non-atomically by `_safeRead`. A concurrent writer using in-place `writeFileSync` can produce a partial read that gets cached for 30 min AND primed into the Anthropic cache at 1.25× write premium. Mitigation: require atomic write (write-to-tmp + rename) in any tool that edits these. Pre-existing risk; Slice 3f doesn't introduce it but does make the failure mode more durable. |
 
 End of Slice 3f episode.
+
+## 2026-05-29 — Meta Page Access Token rotation + GHL Marketing FB backlog catch-up
+
+Both Meta Page Access Tokens consumed by n8n (`FLOWOS_META_PAGE_ACCESS_TOKEN` for the
+Flow Os Page, `META_PAGE_ACCESS_TOKEN` for the Crete Projects Page) were revoked by
+Meta with `code:190, error_subcode:460` (session invalidated, password change /
+security event). Single Meta-side event hitting both Pages, not brand-side rotation
+drift. Probed via `/tmp/ghl_meta_token_failure_probe_20260529.md` before this dispatch.
+
+- Both tokens rotated to Page Access Tokens *derived* from new Never-expiry System User
+  tokens (one System User per Business Portfolio: `flow_os_` and `Crete Projects`).
+  Derived Page tokens inherit Never-expiry from the System User parent — same security
+  posture, correct grain for `/<PAGE>/photos` publishing.
+- May 19 .env partial-rotation artifact removed: previous .env had a blank
+  `FLOWOS_META_PAGE_ACCESS_TOKEN=` on line 27 above the real value on line 28
+  (last-wins saved the load). Now a single clean assignment.
+- 2 backlog rows manually published to Facebook via direct Graph API POST and patched
+  in Supabase `marketing_drafts`:
+  - `df8610c7-3efb-49ab-997b-f58ddc92ddf2` (value-led) → FB post_id
+    `452895447897010_122194403246518741`, status `partially_published` → `published`
+  - `c0fec25e-5531-4245-b7e3-a0e2afe4cb97` (pain-led) → FB post_id
+    `452895447897010_122194403504518741`, status `partially_published` → `published`
+- Scheduled Publisher (`dHceOMijUOcnEowO`) queries `status=eq.approved` only, so a
+  re-flag would have re-published IG+LI as duplicates. Manual Graph API POST + direct
+  PATCH avoided that.
+- `marketing_drafts.partially_published` count dropped 8 → 6 (the remaining 6 are
+  older pre-revocation IG-side failures, unrelated to this dispatch).
+- Slice 2 PR #10 error-promotion confirmed working end-to-end: `df8610c7.publish_errors.facebook`
+  contained the full Graph API description verbatim:
+  ```
+  400 - {"error":{"message":"Error validating access token: The session has been invalidated because the user changed their password or Facebook has changed the session for security reasons.","type":"OAuthException","code":190,"error_subcode":460,"fbtrace_id":"As3JJNF2wOGjGWj6k4P0DlY"}}
+  ```
+  Not the synthesized generic "400" — the `readNode('Facebook Post').error?.description`
+  promotion in Compute Final is reaching the DB.
+
+**Dispatch deviation (authorized mid-flight):** Dispatch instructed placing the raw
+System User tokens into `FLOWOS_META_PAGE_ACCESS_TOKEN` / `META_PAGE_ACCESS_TOKEN`.
+First POST to `/v19.0/452895447897010/photos` with the System User token returned:
+```
+{"error":{"message":"(#200) The permission(s) publish_actions are not available. It has been deprecated. If you want to provide a way for your app users to share content to Facebook, we encourage you to use our Sharing products instead.","type":"OAuthException","code":200,"fbtrace_id":"A6cai4MnzXz6qv96fIY8C2T"}}
+```
+System User tokens authenticate (`getMe` ok) but cannot publish directly to Pages —
+they must be exchanged via `/me/accounts` for Page Access Tokens. Stopped pre-DB-patch,
+surfaced to Tyson, confirmed option 1 (derive Page tokens), pivoted. Same `.env`
+backup file (`.env.bak.20260529-meta`) covers both edits.
+
+**Implementation note for retry semantics:** First derived-Page-token POST also failed
+once with `{"error":{"code":1,"message":"Please reduce the amount of data you're asking for, then retry your request"}}` when using form-urlencoded body. Switching to JSON body
+(matching the Publisher workflow's exact request shape) succeeded immediately. Likely
+a Graph API transient or a content-type sensitivity around the multi-line caption +
+remote image URL combination. The live Publisher workflow already uses JSON body in
+`Facebook Post` node, so no workflow change needed.
+
+**Security gate:**
+- No tokens echoed beyond first-12-chars + discriminator (chars 13–25) in scrollback — PASS
+- All 3 staging files (`/tmp/.meta_tokens`, `/tmp/.flow_page_token`, `/tmp/.crete_page_token`)
+  shredded on n8n via `shred -u` — PASS
+- `.env` perms 600 confirmed post-edit (was already 600, preserved) — PASS
+- `.env.bak.20260529-meta` perms 600 — PASS
+- Both Page tokens verified live via Graph API:
+  `/v19.0/452895447897010?fields=id,name` → `{"id":"452895447897010","name":"Flow Os "}`
+  `/v19.0/1151574668028295?fields=id,name` → `{"id":"1151574668028295","name":"Crete Projects"}`
+  — PASS
+- Backlog rows committed to Supabase with correct status transitions, IG/LI unchanged,
+  `published_at` preserved at original partial-publish timestamp — PASS
+- No workflow PUTs — PASS
+- No git-tracked file contains any token value (this build log entry contains only
+  Page IDs and FB post IDs, both already public on the live Page) — PASS
+- `published_platforms` field correctly transitions to `["instagram","linkedin","facebook"]`
+  for both rows; `publish_errors` cleared to `null` — PASS
+
+**Reminder for Tyson:** delete local copy `/Users/tysonvenables/meta system user tokens`
+from your Mac now that the rotation is complete.
+
+**Parked (separate dispatches):**
+- Scheduled Publisher (`dHceOMijUOcnEowO`) silent-skip anomaly: 1,342 cron heartbeats
+  over 14 days with 0 downstream Publisher webhook invocations. Both successful
+  Publisher runs in last 20 days fired ~1s after `scheduled_for`, consistent with an
+  on-demand path, not the 15-min cron. The 3 stale `approved` rows (5/20, 5/22, 5/25)
+  never attempted on any platform. Fetch Due Drafts query likely returning empty for
+  due rows — needs Slice 3g (or similar) diagnostic.
+- `Crete - Content Publish` (`zXKBjp3yjW2oR2Mj`) reliability check — 4 error heartbeats
+  5/25–5/27 then "success" runs resume post 5/27 13:00. Likely silently dropping FB
+  branch. New Crete Page Token is now in `META_PAGE_ACCESS_TOKEN` so subsequent runs
+  should succeed if the workflow is structurally intact; verify on next scheduled
+  Crete run.
+- 5 older `partially_published` rows (pre-revocation IG-side failures: creation_id,
+  media URI, transient image issues) — separate dispatch.
+- Migration of env-token nodes to credential bindings — P1 backlog (#TBD).
+- Hardcoded literal bot token in `lrGcirtmOHb1xTq8` — P2 backlog (#TBD).
+
+**References:** `/tmp/ghl_meta_token_failure_probe_20260529.md` (read-only probe that
+sized the failure).
+
+End of Meta Token Rotation episode.
+
