@@ -13697,6 +13697,28 @@ sudo pm2 reload quantumclaw --update-env
 
 End of Slice 3f episode.
 
+## [2026-06-03] Slice 3f.1 — TTL decision deferred
+
+Ran the Slice 3f §6.2 `cold_re_prime_rate` aggregation against 6 days
+of `cache-usage.log` data (**n=23 turns**). Result: **43.5%
+cold-re-prime rate** — fractionally above the 40% threshold that would
+trigger a switch from 5m to 1h TTL.
+
+**Decision: stay on 5m TTL.** Three reasons:
+
+1. The sample is too thin (n=23) and structurally biased toward
+   deliberate testing patterns (post-merge verification bursts, manual
+   probes), not organic Charlie usage.
+2. 43.5% sits inside the noise margin around the 40% threshold — not a
+   decisive crossing.
+3. Slice 3g and Slice 4 will materially change Charlie's usage pattern,
+   so any TTL decision made now is premature.
+
+**Revisit criterion:** re-run the `cold_re_prime_rate` calculation once
+`cache-usage.log` has **≥200 turns of organic usage** (post-3g,
+post-4), **or** after **~1 month of normal operation**, whichever comes
+first.
+
 ## 2026-05-29 — Meta Page Access Token rotation + GHL Marketing FB backlog catch-up
 
 Both Meta Page Access Tokens consumed by n8n (`FLOWOS_META_PAGE_ACCESS_TOKEN` for the
