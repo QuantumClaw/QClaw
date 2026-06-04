@@ -2,7 +2,7 @@
 
 **Project:** QClaw — Self-hosted Claude agent runtime (Fork of QuantumClaw/QClaw)
 **Owner:** Tyson Venables / Flow OS
-**Last updated:** 2026-05-22
+**Last updated:** 2026-06-04
 **Repo:** https://github.com/tysonven/QClaw
 
 ---
@@ -14413,5 +14413,90 @@ test misses). 70 unit-test checks incl. cleanupTools-valid-across-3-attempts.
    which is correctly suppressed.
 
 End of Slice 4 episode.
+
+## [2026-06-04] Ep 71 clipper "hang" was a transient Supabase 522 on the terminal write — reconciled from R2, NO worker kill/re-fire
+
+**Premise in the brief was wrong, and recon overturned it.** The brief framed
+clip_job `a51b64e2-b9d6-49b4-9abc-bc7891519c90` (csj
+`31c2a79b-37bd-4764-b985-0e775399bd06`, Ep 71) as an 8-hour worker hang and
+prescribed kill-the-stuck-process + restart (Stage 2) and re-fire (Stage 3).
+Stage 1 read-only diagnosis showed the worker never hung and the job's work had
+actually completed — so Stages 2-3 would have been destructive (killing a
+healthy worker mid-serve) and wasteful (5 duplicate clips under a new job_id).
+Surfaced; Tyson chose adopt-and-reconcile.
+
+### What actually happened
+
+The job processed all 5 clips successfully (cut → 9:16 smart-crop → caption burn
+→ R2 upload, clips 0-4, 13:59-14:03 UTC). The ONLY failure was the terminal
+"mark complete" PATCH to Supabase, which hit a read timeout then a Cloudflare
+522. The clip_jobs row therefore froze at `processing` with `clips=null`, while
+the 5 clip files sat intact and publicly reachable in R2.
+
+Verbatim clipper-worker log (job a51b64e2), captured pre-intervention to
+`/tmp/clipper_hang_logs.txt` on qclaw:
+
+```
+2026-06-04 13:59:17,425 [INFO] HTTP Request: PATCH .../clip_jobs?id=eq.a51b64e2... "HTTP/1.1 200 OK"
+2026-06-04 13:59:24,089 [INFO] [a51b64e2...] Claude selected 5 segments
+2026-06-04 13:59:41,549 [INFO] [a51b64e2...] Video duration: 1078265ms
+2026-06-04 14:00:16,602 [INFO] [a51b64e2...] Step 5: Uploading clip 0 to R2
+2026-06-04 14:01:24,770 [INFO] [a51b64e2...] Step 5: Uploading clip 1 to R2
+2026-06-04 14:01:40,975 [INFO] [a51b64e2...] Step 5: Uploading clip 2 to R2
+2026-06-04 14:02:40,285 [INFO] [a51b64e2...] Step 5: Uploading clip 3 to R2
+2026-06-04 14:03:22,629 [INFO] [a51b64e2...] Step 5: Uploading clip 4 to R2
+2026-06-04 14:03:23,373 [INFO] [a51b64e2...] Step 6: Updating job — complete
+2026-06-04 14:03:53,780 [ERROR] [a51b64e2...] Job failed: The read operation timed out
+2026-06-04 14:04:13,188 [INFO] HTTP Request: PATCH .../clip_jobs?id=eq.a51b64e2... "HTTP/1.1 522 <none>"
+```
+
+### Stage 1 diagnostic findings (5)
+
+1. **Worker healthy, not hung.** PM2: `online`, PID 2171908, uptime 36h, 0
+   restarts, 0% CPU, 146 MB. uvicorn FastAPI on :4002, cwd `/root/QClaw/src/clipper`.
+   `out.log` shows POST /clip + /health 200s served *after* the incident
+   (including from external IP 157.230.216.158) — it kept working.
+2. **The terminal write failed, not the work** (verbatim log above).
+3. **No orphan FFmpeg/ffprobe** — `(none alive)`, consistent with a finished job.
+4. **Resources fine** — `/` 24% used (37 G free), `/tmp` same FS, mem 1260 MB
+   available / 1967, swap 777/2047.
+5. **Network fine** — anthropic 405 (reachable, wants POST), r2 404 (reachable).
+   The 522 at 14:04 was a transient Supabase-edge blip, since cleared.
+
+### Recovery executed (adopt + reconcile, Path 1)
+
+- Verified all 5 clips live in R2: `clips/a51b64e2-.../clip_{0..4}.mp4`,
+  HTTP 200, `video/mp4`, 2.7-33 MB each.
+- `clip_jobs.a51b64e2` → `status=complete`, `clips` = reconstructed 5-element
+  array (index/r2_key/public_url exact; hook_title/caption_text/virality_score/
+  start_ms/end_ms/duration_s = null, lost from worker memory), `error_message`
+  documents the 522 + metadata loss.
+- `content_studio_jobs.31c2a79b` → `status=clipper_complete`,
+  `clip_job_id=a51b64e2`, `clip_count=5`, `clips_ready=true`, `error_message=NULL`.
+- Telegram clipper_complete alert fired to owner (message_id 4766) with the 5
+  live URLs + reconciliation note.
+- **NO worker kill, NO restart, NO re-fire.** Worker left running as-is.
+- Diagnostic logs retained at `/tmp/clipper_hang_logs.txt` on qclaw.
+
+### Followups
+
+- **HIGH (NEW): Clipper-worker terminal-write robustness.** Current code retries
+  the completion PATCH once on timeout and gives up on the second 522. Needs
+  exponential backoff (≈5 retries over ~5 min) on the completion PATCH
+  specifically, OR incremental clips-array writes per clip-upload step so partial
+  progress survives a final-write failure. Today's recovery proved the data was
+  correct in worker memory — the DB write surface was the sole failure point, and
+  the in-memory per-clip metadata was unrecoverable once the process moved on.
+- **MEDIUM (CARRY-OVER, now more urgent): Clipper-worker reliability
+  investigation (lesson 80).** Ep 68 (FFmpeg), Ep 69 (Anthropic 401), Ep 71
+  (terminal-write loss) are three consecutive episodes with three+ distinct
+  failure classes. Four successful runs on May 22 vs degraded runs since — the
+  failure surface is widening, not shrinking. Needs a dedicated reliability
+  dispatch: dependency-version audit vs May 22 known-good, progress-heartbeat
+  writes to clip_jobs per major step, timeout wrappers on long-running
+  subprocesses, and a decision on whether Workflow B's timeout should also
+  release/kill the worker's job.
+
+End of Ep 71 clipper recovery episode.
 
 
