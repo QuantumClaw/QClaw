@@ -276,7 +276,17 @@ class QuantumClaw {
         contentQueue,
         onToolCall: (call) => {
           log.debug(`Tool call: ${call.name}(${JSON.stringify(call.args).slice(0, 100)}`);
-          this.audit.log('tool', call.name, JSON.stringify(call.args).slice(0, 200));
+          // Slice 4: embed the tool-call id so the call row and its result row
+          // can be correlated by identity (not "nearest same-action"), which
+          // is robust to interleaving when agents run tools concurrently.
+          this.audit.log('tool', call.name, JSON.stringify({ id: call.id, args: call.args }).slice(0, 200));
+        },
+        // Slice 4: record tool OUTCOME (success/error) so verification gates can
+        // verify completion/state claims against real results, not just calls.
+        onToolResult: (call) => {
+          this.audit.log('tool', call.name, JSON.stringify({ id: call.id, result: String(call.result).slice(0, 140) }).slice(0, 200), {
+            resultStatus: call.ok ? 'success' : 'error',
+          });
         },
       });
 

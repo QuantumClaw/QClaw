@@ -876,10 +876,34 @@ flip validatable against this spend surface. Files: `src/observability/`
 + `tests/spend-alerter.test.js` (new), `ANTHROPIC_API_SURFACE.md` (new),
 `LOCATIONS.md`, `package.json`, `QCLAW_BUILD_LOG.md`.
 
-**Slice 4 — Verification gates (soft + hard).** Moved one slot back
-in the queue (was next after 3c.1; now next after 3d).
-`verification-reflexes.md` skill written and loaded. `runGates()`
-runtime function with five gates. Gate log in place.
+**Slice 4 — Runtime verification gates — ✓ COMPLETE 2026-06-04.**
+Soft enforcement (`verification-reflexes.md`) was already live; this slice
+adds the hard runtime backstop. `runGates()` (`src/agents/gates.js`) runs
+synchronously in-process (no verification LLM) on Charlie's assembled
+response inside `_processNonReflex`, fail-closed (a gate that throws →
+hard-fail). Four gates: **Gate 4** tool-reference (structural — a phantom
+`charlie__x__y` in prose → hard-fail), **Gate 1** completion + **Gate 3**
+state (evidentiary, entity-aware — a claim must match a *successful* tool
+result for the claimed entity *this turn*; characterization like "healthy"
+needs success, an errored probe → hard-fail), **Gate 2** delegation
+(detect + fail-closed until Slice 5 wires `claude_code_dispatches`).
+Substrate: `audit.js` now records tool **outcomes** (`result_status`,
+via `onToolResult`) + ISO-UTC timestamps + a time-windowed
+`toolEventsSince`. On failure a regeneration loop (≤3) rewrites
+(soft → deterministic hedge) or re-prompts (hard), then escalates via
+`channel-events.log`; the raw unbacked claim never reaches the user.
+Gates scoped to `charlie` (`QCLAW_GATES_AGENTS`); master kill-switch
+`QCLAW_GATES_ENABLED`. **Scope (honest):** structurally closes Pattern D
+(phantom tool) and Pattern C (false completion) **for entity-bearing
+claims**; closes Pattern A only via its **state-characterization subset**
+(invented purposes + fabricated rates remain soft-reflex concerns).
+Design adversarial-reviewed 3 rounds clean; Units 1–3 each code-reviewed
+(P0/P1s fixed). 70 test checks; live-verified on host (false-completion /
+phantom / done-but-errored → escalated; backed claim → pass). Files:
+`src/agents/gates.js` (new), `src/observability/gate-log.js` +
+`channel-events.js` (new), `src/security/audit.js`, `src/tools/executor.js`,
+`src/index.js`, `src/agents/registry.js`, `src/agents/skills/verification-reflexes.md`,
+`tests/verification-gates.test.js` (new), `package.json`, docs.
 
 **Slice 5 — Claude Code delegation bridge.**
 Supabase table, `claude_code_dispatch` tool, PM2 dispatcher worker, result write-back, gate integration.

@@ -14278,4 +14278,140 @@ checks**, all green; full `npm test` unaffected.
 
 End of Slice 3g episode.
 
+## [2026-06-04] Slice 4 — Runtime verification gates
+
+Hard runtime backstop for the verification reflexes. Soft enforcement
+(`verification-reflexes.md`) was already live; this slice makes the rule
+from `CEO_OPERATING_MODEL.md` non-negotiable #5 ("every claim is
+verifiable; 'done' means a tool result confirmed it") enforceable in
+code, so Charlie cannot emit an unbacked claim even when the prompt-level
+reflex slips. Branch `cc/slice4-verification-gates-20260604-1924`, base
+`tysonven/QClaw:main`. Audit `/tmp/slice4_audit.md`, design
+`/tmp/slice4_design.md` (3 adversarial-review rounds to clean).
+
+### Scope (honest — not the brief's original "closes A/C/D")
+
+- **Pattern D (phantom tool):** structurally closed — a tool name in prose
+  that doesn't resolve in the registry → hard-fail.
+- **Pattern C (false completion):** closed **for entity-bearing claims**
+  (the claim's entity token must match a *successful* tool result this
+  turn). Vague/no-entity multi-action turns fall to a documented-weaker
+  this-turn fallback — not structurally closed.
+- **Pattern A (hallucinated context):** closed only via its
+  **state-characterization subset** (Gate 3). Invented workflow *purposes*
+  and **fabricated rates** ("70 restarts in 2 min" — no time-series in
+  `audit.db`) remain soft-reflex concerns, not gateable.
+
+### Audit verdicts (Steps A–E)
+
+- **audit.db substrate:** existence-checkable (tool *calls* logged) but
+  **no result/outcome column** — characterization needed tool outcomes.
+  Decision (Tyson): lightweight outcome capture (extend `audit.js`, no
+  parallel trail), not existence-only. Brief-12's `TurnAuditTrail`
+  dropped as redundant.
+- **Gate 2:** `claude_code_dispatches` confirmed absent → detect-and-fail-
+  closed; evidence wiring inherited by Slice 5.
+- **Integration point:** `_processNonReflex` chokepoint confirmed; gates
+  run on `result.content` before `memory.addMessage`.
+- Mapped gate coverage against `CHARLIE_ROLE.md` A/C/D (the 3d "R1–R4"
+  the brief referenced were shell_exec allowlist-escape findings — a
+  call-time-security layer, out of scope for output-claim gates).
+
+### What landed (3 units, each code-reviewed)
+
+- **Unit 1** (`fb531c8`, review `0fdadc3`) — substrate + framework + Gate 4.
+  `audit.js`: ISO-UTC timestamp bind (fixed a latent local-parse bug),
+  `result_status` column (guarded ALTER), `parseAuditTs`, `toolEventsSince`
+  (time-windowed, format-agnostic). `executor.js`/`index.js`:
+  `onToolResult` wired to audit on success **and** error (the error path
+  was previously not emitted at all). `gates.js`: `runGates` fail-closed
+  harness + `QCLAW_GATES_ENABLED` kill-switch + conservative sentence
+  detection (suppress negation/interrogative/future/quoted) + entity-aware
+  `matchEvidence` (call/result correlated by **tool-call id**, robust to
+  cross-agent interleaving) + Gate 4. `gate-log.js`. Review caught + fixed:
+  legacy-timestamp window exclusion, id-correlation under interleaving,
+  dictionary-word entity false-positives. **Checkpoint verified:** a
+  seeded erroring tool call writes `result_status:error` through the real
+  executor→audit path, and `npm test` ran **GREEN on the host** (the two
+  Mac-only failures — `probes`/pm2 + `shell-exec-path-resolve` — pass with
+  real pm2 + `/root` paths).
+- **Unit 2** (`5b0ea8e`, review `a869f4c`) — Gate 1 (completion), Gate 3
+  (state: probe must have *run*; characterization needs *success*, errored
+  probe → hard-fail), Gate 2 (delegation, tense-discriminated fail-closed).
+  Review caught + fixed: Gate 2 was self-suppressing its own "Is working on
+  it" case; liveness words backed by an errored probe were a false-pass;
+  entity evidence wasn't clamped to turn-start (regen-loop soundness);
+  hyphenated compounds false-fired.
+- **Unit 3** (`a5fff8a`, review `679517d`) — `regenerateWithGates` wired
+  into `_processNonReflex` **inside the try** so the per-request tool gate
+  stays registered across all attempts (`cleanupTools()` fires once after
+  — the layered call-site shape that bit Slice 3b/3c); `turnStart` captured
+  before the first generation. soft-fail → deterministic whole-sentence
+  hedge (no LLM, no surgical leak); hard-fail → re-prompt with the unbacked
+  claim named; escalate after 3 attempts via a `gate_escalation` event on
+  `channel-events.log`. Review caught + fixed a **P0**: `agentScope` was
+  dead → gates ran on every agent (background/heartbeat cost + Gate 2
+  suppressing their status lines); now scoped to `charlie`
+  (`QCLAW_GATES_AGENTS`, default `charlie`).
+
+### Verification (verbatim — live on host, real gates + real log writers)
+
+Four scenarios through `regenerateWithGates` → real gates → real
+`AuditLog`/`gate-log`/`channel-events`:
+
+```
+[A. false completion, no backing] outcome=hard_fail escalated=true
+  user-visible: ⚠️ I couldn't verify the following before stating it... (raw "deployed" claim withheld)
+[B. phantom tool reference]       outcome=hard_fail escalated=true   (charlie__nope__doit caught by Gate 4)
+[C. done-but-ERRORED]             outcome=hard_fail escalated=true   (claim "Deployed Qf39…" with only a result_status:error row → not success-backed)
+[D. backed claim (control)]       outcome=pass      escalated=false  ("The workflow Qf39… is running." with a successful probe → passes unchanged)
+
+gate.log: 3 hard_fail entries (attempts 1-3) per blocked claim.
+channel-events.log: {"event":"gate_escalation","agent":"charlie","attempts":3,"gates":["completion"]}
+```
+
+**Scenario C is the done-but-errored case** — a completion claim after the
+tool returned `result_status:error`, hard-failed (the case a success-only
+test misses). 70 unit-test checks incl. cleanupTools-valid-across-3-attempts.
+
+### 7 Pillars / security gate
+
+- No hardcoded credentials in any new code.
+- `gate.log` mode 0600; claim/response text scrubbed with the existing
+  unanchored sk-ant/Telegram scrubber (reused from the 3g poller — no new
+  secret-handling path).
+- **Webhook-auth / rate-limit items: N/A** — gates are in-process; no new
+  endpoints or webhooks.
+- **Supabase RLS item: N/A** — no new Supabase tables (the audit change is
+  an `ALTER TABLE … ADD COLUMN`, not a new table).
+- **Financial / disabled-by-default item: N/A** — no financial features
+  touched.
+- Regeneration cost bounded by the 3-attempt cap AND observable via the
+  Slice 3g spend alerter ($3/1h hard); gates scoped to `charlie` so
+  background agents incur zero gate cost.
+
+### Followups
+
+| Priority | Item |
+|---|---|
+| (Slice 5) | Wire `claude_code_dispatches` evidence so Gate 2 can verify delegation instead of always failing closed (the `// SLICE 5` marker + `fail_closed_slice5_pending` action are in place). |
+| LOW | Fabricated **rates** are ungateable (no time-series in `audit.db`) — remains a `verification-reflexes.md` concern; revisit if a per-turn metric trail is ever added. |
+| LOW | Vague/no-entity completion claims rely on the weaker this-turn fallback (one relevant success can back multiple vague claims) — the soft reflex is the backstop; tighten only if observation shows leakage. |
+| INFO | Semantic note: on a hard-fail regeneration, a *mutating* tool that already ran in attempt 1 has executed even though the claim is withheld — "escalated/withheld" ≠ "no side effect occurred". |
+| Phase 5+ | Semantic-classifier detection pass (observation-gated) if regex detection proves to leak on paraphrase. |
+
+### Post-merge steps for Tyson
+
+1. `sudo pm2 reload quantumclaw --update-env` — loads the gate code into the
+   running Charlie (gates default ON, scoped to `charlie`).
+2. Observe `~/.quantumclaw/gate.log` over the first day — gate firings on
+   real turns. If a gate over-fires on normal conversation, tune the
+   detection regexes (or set `QCLAW_GATES_ENABLED=0` + reload as the escape
+   hatch) and file the false-positive pattern.
+3. Gate 2 will fail-closed on any past-tense "I dispatched…" until Slice 5;
+   Charlie's reflex-mandated phrasing is future-tense ("I'll dispatch"),
+   which is correctly suppressed.
+
+End of Slice 4 episode.
+
 

@@ -301,7 +301,7 @@ export class ToolExecutor {
             toolResults.push({ id: call.id, name: call.name, result: queueResult, error: false });
             
             if (this.onToolResult) {
-              this.onToolResult({ ...call, result: queueResult });
+              this.onToolResult({ ...call, result: queueResult, ok: true });
             }
             continue; // Skip actual execution
           }
@@ -328,13 +328,18 @@ export class ToolExecutor {
           toolResults.push({ id: call.id, name: call.name, result: resultStr, error: false });
 
           if (this.onToolResult) {
-            this.onToolResult({ ...call, result: resultStr });
+            this.onToolResult({ ...call, result: resultStr, ok: true });
           }
 
         } catch (err) {
           const errorMsg = `Error executing ${call.name}: ${err.message}`;
           toolResults.push({ id: call.id, name: call.name, result: errorMsg, error: true });
           log.warn(errorMsg);
+          // Slice 4: record the failed outcome so completion/state gates can
+          // tell "claimed done" from "tool actually errored".
+          if (this.onToolResult) {
+            this.onToolResult({ ...call, result: errorMsg, ok: false });
+          }
         }
       }
 

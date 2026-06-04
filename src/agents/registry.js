@@ -10,6 +10,9 @@ import { join } from 'path';
 import { log } from '../core/logger.js';
 import { parseSkill, skillToTools, executeSkillTool } from './skill-parser.js';
 import { loadSkills } from './skill-loader.js';
+import { regenerateWithGates, isGatedAgent } from './gates.js';
+import { appendGateLog } from '../observability/gate-log.js';
+import { appendChannelEvent } from '../observability/channel-events.js';
 
 // Slice 3f: prompt-cache kill-switch read per-request. process.env is a
 // spawn-time snapshot; flip via `pm2 reload qclaw --update-env`.
@@ -422,32 +425,78 @@ export class Agent {
       cacheControlEmitted,
       agent: this.name,
     };
-    let result;
-    try {
+    // Slice 4: one LLM generation (tool path or chat-only). Used by the
+    // verification-gate regeneration loop below; re-prompts append a feedback
+    // turn to `msgs`. The system prefix (systemBlocks) stays constant so the
+    // Slice 3f cache prefix is reused across attempts.
+    const generate = async (msgs) => {
       if (this.services.toolExecutor) {
-        result = await this.services.toolExecutor.run(messages, {
+        return await this.services.toolExecutor.run(msgs, {
           model: route.model,
           system: systemBlocks,
           ...slice3fOpts,
         });
-      } else {
-        // Chat-only fallback (no tools): router.complete via router.js doesn't
-        // know how to handle Array-shaped system content yet — it would
-        // implicitly stringify each block via Array.prototype.toString. Slice
-        // 3g audits router.js for cache_control; until then, join blocks to
-        // a string at this call site so the legacy path still works.
-        const joinedSystem = systemBlocks.map(b => b.text || '').join('');
-        const compatMessages = [
-          { role: 'system', content: joinedSystem },
-          ...messages.slice(1),
-        ];
-        const completion = await router.complete(compatMessages, {
-          model: route.model,
-          system: joinedSystem,
-          ...slice3fOpts,
-        });
-        result = { ...completion, toolCalls: [] };
       }
+      // Chat-only fallback (no tools): router.complete can't take Array-shaped
+      // system content, so join to a string at this call site.
+      const joinedSystem = systemBlocks.map(b => b.text || '').join('');
+      const compatMessages = [
+        { role: 'system', content: joinedSystem },
+        ...msgs.slice(1),
+      ];
+      const completion = await router.complete(compatMessages, {
+        model: route.model,
+        system: joinedSystem,
+        ...slice3fOpts,
+      });
+      return { ...completion, toolCalls: [] };
+    };
+
+    // turnStart is captured BEFORE the first generation so this turn's tool
+    // results (which land during generate()) count as evidence, while a prior
+    // turn's / prior attempt's rows do not (gates clamp evidence to turnStart).
+    const turnStart = Date.now();
+    let result;
+    try {
+      // Slice 4: gates apply to the gated agent(s) only (charlie by default —
+      // background/heartbeat agents skip the loop entirely, paying zero gate
+      // cost). When out of scope, a single ungated generation.
+      if (!isGatedAgent(this.name)) {
+        result = await generate(messages);
+      } else
+      // Gate the assembled response; regenerate (≤3) or escalate on failure.
+      // Runs INSIDE this try so the per-request tool gate stays registered
+      // across ALL regeneration attempts; cleanupTools() fires once in the
+      // finally after the loop. The user never sees a raw unbacked claim —
+      // only a hedged/corrected/escalated response.
+      result = await regenerateWithGates({
+        generate,
+        auditLog: audit,
+        toolRegistry,
+        turnStart,
+        agentScope: this.name,
+        baseMessages: messages,
+        onGateLog: (gateOut, attempt) => {
+          for (const g of gateOut.gates) {
+            if (!g.fired) continue;
+            for (const c of (g.claims || [])) {
+              appendGateLog({
+                gate: g.gate, claim: c.text || String(c),
+                verification_attempted: c.verification_attempted !== false,
+                verified: false, result: gateOut.result, action: g.action, attempt,
+              });
+            }
+          }
+        },
+        onEscalate: (gateOut, attempt) => {
+          const gates = gateOut.gates.filter(g => g.fired).map(g => g.gate);
+          const first = gateOut.gates.find(g => g.fired)?.claims?.[0];
+          appendChannelEvent({
+            event: 'gate_escalation', agent: this.name, channel: context?.channel || 'unknown',
+            attempts: attempt, gates, claim: (first && (first.text || String(first))) || null,
+          });
+        },
+      });
     } finally {
       cleanupTools();
     }

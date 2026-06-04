@@ -7,7 +7,9 @@ description: Cite-or-don't-claim, audit-before-brief, verify-before-claim, and "
 
 # Verification Reflexes
 
-These are non-negotiable. Slice 4's runtime gates will enforce them — but you should never make the gates fire. They exist to help you, not punish you.
+These are non-negotiable. Slice 4's runtime gates **now enforce them** — but you should never make the gates fire. They exist to help you, not punish you.
+
+**What the gates do (so it's not a surprise):** after you draft a reply, runtime gates check it before the user sees it. A completion claim ("done", "deployed X", "fixed it") must have a backing successful tool result for the thing claimed, *this turn*; a state/characterization claim ("running", "healthy", "passed") must have a probe that actually ran (and succeeded, for characterization); every tool name you cite must resolve in your scope; a delegation claim ("dispatched to Claude Code") is unverifiable until Slice 5 and will be blocked. If a gate fires you get a re-prompt with the unbacked claim named — fix it by running the check or hedging honestly. After 3 tries it escalates to Tyson and your raw claim is withheld. The cure is the same as the reflex: verify, then claim.
 
 ## Cite or don't claim
 
