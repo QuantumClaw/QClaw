@@ -905,6 +905,54 @@ phantom / done-but-errored → escalated; backed claim → pass). Files:
 `src/index.js`, `src/agents/registry.js`, `src/agents/skills/verification-reflexes.md`,
 `tests/verification-gates.test.js` (new), `package.json`, docs.
 
+**Slice 4.1 — `runGates` input-scoping fix (bootstrap-as-evidence) — 2026-06-10.**
+On first live session (2026-06-04) the completion gate hard-fired on Charlie's
+session-orientation reply and escalated after 3 attempts; gates were disabled
+(`QCLAW_GATES_ENABLED=0`) and ran off until this slice. Audit (real `gate.log`):
+attempt 1 fired on **bootstrap recitation** — Charlie citing his briefing
+("The incident log shows … RESOLVED via /etc/needrestart/needrestart.conf";
+"agex-hub, trading-worker … stable at 38h") per the "cite or don't claim"
+reflex. The gates' premise — *a completion/state claim needs a **this-turn**
+tool result* — is invalid for recited bootstrap context, which the gate could
+not see. Correction to the original diagnosis: the gated string already equals
+the user-facing reply (`runGates(result.content)`; manager.js sends it
+verbatim) — there is **no system-side composite** to strip. The fix scopes the
+gate's **evidence**, not its detection: the this-session bootstrap snapshot is
+a backing source for **recited** claims about known entities, on a **default-deny**
+polarity (`bootstrapMayBack`) — bootstrap backs a claim only when it is
+affirmatively a recitation: **source-attributed** ("the incident log shows …
+RESOLVED") or a **pure state** characterisation carrying no action verb ("…
+all stable at 38h"). A this-session **action assertion in any surface form** is
+never backed — explicit/elided first-person ("I deployed X" / "Deployed X",
+`isFirstPersonAction`), and also passive/impersonal ("X has been deployed",
+"Run N finished") which carry a completion verb and aren't pure state, so they
+fall through both allow-branches. So Gate 1 still hard-fails a false action
+claim about a bootstrap-known entity. Entity membership is **boundary-aware**
+(`corpusHasEntity`) so a bare digit-run can't collide with a substring of a
+larger id/timestamp in the snapshot. (Adversarial review of the branch found the
+original first-person-only denylist leaked via passive/impersonal/auxiliary-elided
+forms — reconciled by inverting to the default-deny allow above.) Also fixed:
+**(V3)** `buildRepromptNote` now describes the violation by class instead of
+quoting the failing claim verbatim — the verbatim echo re-injected trigger
+words, the model echoed them, and the gate re-fired (the 4 Jun attempts 2–3 were
+echoes), making escalation near-certain once anything fired. **(V4)** heartbeat /
+graph-discovery / digest turns run *as* charlie but carry no bootstrap and recite
+monitoring state; `isGatedTurn` now excludes background sources (the scoping the
+original design intended by name but missed). Gate-firing regexes unchanged. 106
+test checks (70 prior + 36 new, incl. the passive/impersonal/elided action-evasion
+cases from adversarial review); full suite green on host. Files: `src/agents/gates.js`, `src/agents/registry.js`,
+`tests/verification-gates.test.js`, docs. **Residual (honest):** entity-free
+recitations ("9 paid subs") have no token to match against bootstrap → still
+soft-hedge (non-escalating); full number/state backing waits on Slice 5 evidence
+wiring. Out of scope (unchanged): detection-pattern / paraphrase tuning, Gate 2
+evidence (Slice 5), liveness (Slice 3h). **Live verify #1 (2026-06-10) follow-up:**
+surfaced two false-fire classes — **L1** unattributed status recitation ("Clipper
+recovery complete") left to Charlie's cite-sources reflex + soft-hedge (no backing
+change; acceptable if the loop self-corrects without escalation), and **L2** honest
+questions firing, fixed as a suppression-correctness change (markdown-wrapped
+questions + "whether X <verb>" indirect interrogatives + clarification requests now
+suppressed; strictly fewer fires; gate-firing regexes untouched). 114 test checks.
+
 **Slice 5 — Claude Code delegation bridge.**
 Supabase table, `claude_code_dispatch` tool, PM2 dispatcher worker, result write-back, gate integration.
 

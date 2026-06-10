@@ -10,7 +10,7 @@ import { join } from 'path';
 import { log } from '../core/logger.js';
 import { parseSkill, skillToTools, executeSkillTool } from './skill-parser.js';
 import { loadSkills } from './skill-loader.js';
-import { regenerateWithGates, isGatedAgent } from './gates.js';
+import { regenerateWithGates, isGatedTurn } from './gates.js';
 import { appendGateLog } from '../observability/gate-log.js';
 import { appendChannelEvent } from '../observability/channel-events.js';
 
@@ -458,10 +458,13 @@ export class Agent {
     const turnStart = Date.now();
     let result;
     try {
-      // Slice 4: gates apply to the gated agent(s) only (charlie by default —
-      // background/heartbeat agents skip the loop entirely, paying zero gate
-      // cost). When out of scope, a single ungated generation.
-      if (!isGatedAgent(this.name)) {
+      // Slice 4: gates apply to the gated agent(s) only (charlie by default).
+      // Slice 4.1 (V4): also skip background turns (heartbeat / graph-discovery
+      // / digest) — they run AS charlie but carry no bootstrap evidence and
+      // recite monitoring state, so they false-fire like the 4 Jun /session
+      // turn. isGatedTurn = gated-agent AND interactive (non-background) source.
+      // When out of scope, a single ungated generation.
+      if (!isGatedTurn(this.name, context)) {
         result = await generate(messages);
       } else
       // Gate the assembled response; regenerate (≤3) or escalate on failure.
@@ -475,6 +478,9 @@ export class Agent {
         toolRegistry,
         turnStart,
         agentScope: this.name,
+        // Slice 4.1: this-session bootstrap snapshot — backs RECITED claims
+        // about known entities (not first-person action claims). See gates.js.
+        bootstrap: context?.bootstrap || null,
         baseMessages: messages,
         onGateLog: (gateOut, attempt) => {
           for (const g of gateOut.gates) {
