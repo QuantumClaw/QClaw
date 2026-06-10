@@ -953,6 +953,32 @@ questions firing, fixed as a suppression-correctness change (markdown-wrapped
 questions + "whether X <verb>" indirect interrogatives + clarification requests now
 suppressed; strictly fewer fires; gate-firing regexes untouched). 114 test checks.
 
+**Slice 3h — Charlie liveness + health monitoring — ✓ COMPLETE 2026-06-10.**
+Closes the 2026-06-03 silent-death gap (quantumclaw down for hours, detected only
+by Tyson noticing silence). Slice 4's gates verify a *running* Charlie's claims;
+nothing detected a *dead/hung* one. Hard constraint: the monitor must not depend
+on the thing it monitors. **Two halves on two hosts:** a writer INSIDE quantumclaw
+(`liveness-heartbeat.js`, 60s `record_heartbeat()` to `workflow_heartbeats` —
+proof-of-life; metadata carries the 3e `channel_status`) and an OFF-HOST watcher
+(`liveness-watcher.js`, n8n-droplet cron every 1 min) that reads staleness vs
+Supabase's clock and alerts via **direct Telegram** (never Charlie's bot): class
+**(a)** down / **(c-full)** hung / **(d)** host-down via staleness, **(b)** polling
+degraded via metadata, **unknown** when Supabase itself is unreachable (fails LOUD).
+Anti-storm cooldown ledger (first + 15m + hourly), recovery all-clear, cold-start
+armed. **Audit:** `charlie-watcher` is a *task executor*, not a liveness monitor —
+3h adds, reuses spend-alerter's cooldown/direct-TG pattern + reuses
+`workflow_heartbeats` (no new table/RLS). **Design adversarially reviewed** (7 fixes
+baked: read-failure-loud, inverted-ledger-polarity, server-clock staleness,
+cold-start, writer-side retention, honest class-(b) scope, dormancy backstop).
+**Live-verified:** controlled kill → DOWN alert (names host + ordered diagnostics
+`pm2 list`→`journalctl -u pm2-root`→`pm2 logs` + reminder cadence) within one
+probe cycle; restore → all-clear with downtime; cooldown holds (no storm — a live
+bug where the ledger path read `process.env` instead of the `.env` file, defaulting
+to unwritable `/root` → storm, was caught here and fixed + regression-tested).
+31 tests. **Out of scope (honest):** class-(c) partial-hang (LLM path broken,
+heartbeat fine) → v2 synthetic round-trip probe; droplet-down SPOF (both detectors
+on the n8n droplet) → cross-host dead-man's-switch follow-up; auto-recovery → alert-only.
+
 **Slice 5 — Claude Code delegation bridge.**
 Supabase table, `claude_code_dispatch` tool, PM2 dispatcher worker, result write-back, gate integration.
 

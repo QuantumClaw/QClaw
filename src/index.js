@@ -16,6 +16,7 @@ import { MemoryManager } from './memory/manager.js';
 import { ModelRouter } from './models/router.js';
 import { AgentRegistry } from './agents/registry.js';
 import { ChannelManager } from './channels/manager.js';
+import { startLivenessHeartbeat } from './observability/liveness-heartbeat.js';
 import { DashboardServer } from './dashboard/server.js';
 import { Heartbeat } from './core/heartbeat.js';
 import { ToolRegistry } from './tools/registry.js';
@@ -345,6 +346,19 @@ class QuantumClaw {
       log.warn(`Channel startup failed: ${err.message} — dashboard still available`);
     }
 
+    // ── Slice 3h: liveness heartbeat (proof-of-life for the off-host watcher) ──
+    // Lightweight 60s write to workflow_heartbeats; the n8n-droplet cron watcher
+    // alerts on staleness. Started after channels so getChannelStatus reflects
+    // the live 3e Telegram-resilience state. See src/observability/liveness-heartbeat.js.
+    try {
+      this._stopLiveness = startLivenessHeartbeat({
+        getChannelStatus: () => this.channels?._channelsByName?.get('telegram')?.status || null,
+        version: this.config?.version || null,
+      });
+    } catch (err) {
+      log.warn(`Liveness heartbeat failed to start (non-fatal): ${err.message}`);
+    }
+
     // Wire Telegram approval notifier. Bypasses bot.api.sendMessage and hits
     // Telegram's HTTP API directly — bot.api.sendMessage was observed to
     // silently drop messages when called from inside the @grammyjs/runner-
@@ -538,6 +552,7 @@ class QuantumClaw {
       log.info(`\n${signal} received. Shutting down gracefully...`);
       try { this.audit.log('system', 'shutdown', signal); } catch { /* db might be closed */ }
       if (this.heartbeat) try { await this.heartbeat.stop(); } catch { /* */ }
+      if (this._stopLiveness) try { this._stopLiveness(); } catch { /* */ }
       if (this.deliveryQueue) try { this.deliveryQueue.stop(); } catch { /* */ }
       if (this.channels) try { await this.channels.stopAll(); } catch { /* */ }
       if (this.dashboard) try { await this.dashboard.stop(); } catch { /* */ }

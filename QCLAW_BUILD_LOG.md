@@ -14648,4 +14648,83 @@ if the loop self-corrects without escalation. Clean → merge #44, prod to main,
 
 End of Slice 4.1 entry.
 
+## [2026-06-10] Slice 3h — Charlie liveness + health monitoring
+
+### Why
+2026-06-03 incident: quantumclaw down for hours, detected only by Tyson noticing silence
+(a systemd pm2-root restart resurrected a stale PM2 dump). Slice 4's gates verify a
+*running* Charlie; nothing detected a *dead/hung* one. Closes that gap before Slice 5
+makes silent death costly. Hard constraint: the monitor must not depend on the monitored
+thing — detection AND alerting must survive quantumclaw down/hung/host-down.
+
+### Audit verdicts
+- **charlie-watcher** (PM2, `task-watcher.sh`) is a *task executor* (polls `charlie_tasks` →
+  Claude Code → Telegram), NOT a liveness monitor. 3h **adds**; no change to task-watcher.
+- **spend-alerter.js** (3g) = reusable template (direct-TG, per-class cooldown ledger,
+  cron-only). **workflow_heartbeats + record_heartbeat()** reused → no new table/RLS.
+  **TelegramChannel.status** (3e) = the class-(b) signal. **n8n droplet** (Node v20, cron,
+  reaches TG+Supabase) serves the off-host (class d) prober. Charlie wrote no self-heartbeat.
+- **Coverage:** (a) down / (c-full) hung / (d) host-down via off-host staleness; (b) polling
+  via heartbeat metadata; **(c-partial) staged to v2** (synthetic round-trip).
+
+### Implementation
+- **Writer** `src/observability/liveness-heartbeat.js` (in quantumclaw, wired in `index.js`):
+  60s unref'd interval, `record_heartbeat()` service_role, no execution_id (created_at
+  advances), metadata `{pid,uptime_s,version,channel_status,polling_ok,host}`, writer-side
+  24h retention. Fail-safe (never throws into the loop).
+- **Watcher** `src/observability/liveness-watcher.js` (off-host, self-contained, n8n-droplet
+  cron 1/min): staleness vs Supabase `Date` header; classes down/polling/unknown; direct TG
+  to `1375806243`; cooldown ledger (first+15m+hourly); recovery all-clear; cold-start armed.
+- **Backstop:** `charlie-liveness` added to the dormancy alerter allowlist (`O5ir2Mp0e2AXkUXZ`,
+  60s×slack5). Repo JSON updated; **apply to live via n8n UI** (keyless API → 401).
+- Design adversarially reviewed; 7 must-fixes reconciled (read-failure-loud HIGH#1,
+  inverted-ledger-polarity HIGH#3, honest class-b HIGH#4, server-clock MED#5, cold-start
+  MED#6, writer-side retention MED#7, dormancy backstop HIGH#2). 31 tests; full host suite green.
+
+### Live verification (verbatim alerts, as sent)
+DOWN (fired once, then 4× cooldown-suppressed — no storm):
+```
+🔴 Charlie LIVENESS — no heartbeat for 4m on qclaw (138.68.138.214).
+quantumclaw is DOWN, hung, or the host is unreachable.
+Check (in order): `pm2 list` → `journalctl -u pm2-root --since '20 min ago'` → `pm2 logs quantumclaw`
+Last beat 19:06Z (pid 2987625, v1.3.4). Reminding every 15m then hourly until it clears.
+```
+ALL-CLEAR (on restore):
+```
+🟢 Charlie LIVENESS recovered on qclaw (138.68.138.214) — heartbeat fresh (~0m), polling active. Was down for ~Xm.
+```
+**Bug caught live:** the cooldown ledger never persisted — `runWatcher` derived the state path
+from `process.env.LIVENESS_DIR`, but `LIVENESS_DIR` comes from the `.env` *file* (loaded into
+`env`, not `process.env`), so it defaulted to `/root/charlie-liveness/` — unwritable by `n8nadmin`
+→ `appendState` failed silently → DOWN re-fired every run (**a storm**). Fixed (read `env.LIVENESS_DIR`)
++ regression test. Unit tests had missed it because they pass `statePath` explicitly.
+
+### 7 Pillars / security gate
+- **No-hardcoded-credentials: PASS** — writer uses qclaw `.env` service_role; watcher reads
+  `/home/n8nadmin/charlie-liveness/.env` (mode 0600) built from the n8n container env. No secrets in repo.
+- **Webhook-auth / rate-limit: N/A** — no new endpoint; cron reads Supabase REST + posts Telegram.
+  Outbound TG bounded by cron cadence + cooldown ledger.
+- **Supabase RLS: N/A** — reuses `workflow_heartbeats` (existing RLS + RPC); no new table.
+- **Financial / disabled-by-default: N/A**.
+- **pm2 save:** **No new PM2 process** — the writer runs inside the existing `quantumclaw`
+  process; the watcher is a **cron** on the n8n droplet (not PM2). `sudo pm2 save` WAS run on
+  qclaw after the `quantumclaw` reload (06-03 discipline) so the dump reflects current state.
+
+### Runbook (final deploy, after merge)
+1. **qclaw (writer):** `git checkout main && git pull` → `sudo pm2 reload quantumclaw --update-env`
+   → `sudo pm2 save` (dump current; no new process, but save per 06-03 discipline). Confirm a
+   `charlie-liveness` beat lands (`workflow_heartbeats`).
+2. **n8n droplet (watcher):** already deployed at `/home/n8nadmin/charlie-liveness/`
+   (`liveness-watcher.js`, `.env` 0600, `package.json` type:module, cron 1/min). On future code
+   changes: `scp` the file, no restart needed (cron picks up next tick).
+3. **Backstop:** apply the `charlie-liveness` allowlist entry to the live Dormancy Alerter via the
+   n8n UI (keyless API blocks programmatic edit).
+
+### Follow-ups
+- **24h zero-false-alert observation** (acceptance criterion — confirm in the next session).
+- **Class-(c) partial-hang:** v2 synthetic message round-trip probe.
+- **Droplet-down SPOF:** both detectors live on the n8n droplet; add a cross-host dead-man's-switch.
+
+End of Slice 3h entry.
+
 
