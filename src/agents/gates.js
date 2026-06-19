@@ -247,6 +247,18 @@ const DELEGATION_RE = /(?<![\w-])(dispatched|delegated|handed off|handed it off|
 //    claude_code_dispatch (queued can never back completed).
 const isClaudeCodeResult = (n) => n === 'claude_code_result';
 const isClaudeCodeDispatch = (n) => n === 'claude_code_dispatch';
+// Slice 6b — specialist dispatch evidence (parallel to the CC grades). These are
+// ACTION-NAME predicates: matchEvidence passes `p.result.action` (a string), and
+// success is enforced separately by requireStatus:'success' — so they mirror the
+// CC predicates' shape exactly (NOT event objects). delegate_to = a dispatch
+// happened (stub_routed_back or queued); delegate_to_result = a live specialist
+// result was surfaced (Slice 6d). Unions let a delegation claim be backed by
+// EITHER a Claude Code event or a specialist event — additive; the CC path is
+// unchanged (the unions are supersets of the CC predicates).
+const isSpecialistDispatch = (n) => n === 'delegate_to';
+const isSpecialistResult = (n) => n === 'delegate_to_result';
+const isAnyDispatch = (n) => isClaudeCodeDispatch(n) || isSpecialistDispatch(n);
+const isAnyResult = (n) => isClaudeCodeResult(n) || isSpecialistResult(n);
 // An OUTCOME claim attributes a finished result to Claude Code: it both mentions
 // Claude Code AND asserts a result. These require a completed result for the cited
 // task; a bare DELEGATION_RE verb is only a DISPATCH claim.
@@ -402,8 +414,8 @@ export function gateDelegation(response, ctx) {
   for (const s of cc) {
     const isOutcome = CC_MENTION_RE.test(s) && CC_OUTCOME_RE.test(s);
     const m = isOutcome
-      ? matchEvidence(s, events, { requireStatus: 'success', turnStartMs: ctx.turnStartMs ?? 0, relevant: isClaudeCodeResult, strictRelevant: true, noEntityFallback: false })
-      : matchEvidence(s, events, { requireStatus: 'success', turnStartMs: ctx.turnStartMs ?? 0, relevant: isClaudeCodeDispatch, strictRelevant: true });
+      ? matchEvidence(s, events, { requireStatus: 'success', turnStartMs: ctx.turnStartMs ?? 0, relevant: isAnyResult, strictRelevant: true, noEntityFallback: false })
+      : matchEvidence(s, events, { requireStatus: 'success', turnStartMs: ctx.turnStartMs ?? 0, relevant: isAnyDispatch, strictRelevant: true });
     if (!m.backed) fired.push({ text: s, verification_attempted: true, verified: false });
   }
   if (!fired.length) return { gate: 'delegation', fired: false };
@@ -600,4 +612,4 @@ export async function regenerateWithGates({ generate, auditLog, toolRegistry, tu
   return { ...result, gateAttempts: attempt, gateOutcome: gateOut.result };
 }
 
-export const __testing = { GATES };
+export const __testing = { GATES, isSpecialistDispatch, isSpecialistResult, isAnyDispatch, isAnyResult };
