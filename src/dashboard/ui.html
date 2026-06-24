@@ -410,7 +410,7 @@ async function loadTmAgents(){try{const r=await api('/api/agents');const a=await
 function closeMo(id){document.getElementById(id).classList.remove('show')}
 document.querySelectorAll('.mo').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('show')}));
 function esc(t){return t==null?'':String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-function ta(ts){if(!ts)return'';const d=Date.now()-new Date(ts).getTime();if(d<60000)return'now';if(d<3600000)return Math.floor(d/60000)+'m';if(d<86400000)return Math.floor(d/3600000)+'h';return Math.floor(d/86400000)+'d'}
+function ta(ts){if(!ts)return'';const now=new Date();const d=new Date(ts);const s=new Date(now.getFullYear(),now.getMonth(),now.getDate());const t=new Date(d.getFullYear(),d.getMonth(),d.getDate());const n=Math.round((s-t)/86400000);if(n===0)return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});if(n===1)return'Yesterday';if(n<7)return d.toLocaleDateString([],{weekday:'long'});return d.toLocaleDateString([],{day:'numeric',month:'short'})}
 function crd(l,v,s,fs){return'<div class="card"><div class="cl">'+l+'</div><div class="cv"'+(fs?' style="font-size:'+fs+'"':'')+'>'+v+'</div>'+(s?'<div class="cs">'+s+'</div>':'')+'</div>'}
 /* SIDEBAR */
 function toggleSb(){const s=document.getElementById('sb');s.classList.toggle('open');document.getElementById('sb-arrow').textContent=s.classList.contains('open')?'◀':'▶';localStorage.setItem('sb_open',s.classList.contains('open')?'1':'0')}
