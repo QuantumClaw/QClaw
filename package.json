@@ -16,7 +16,7 @@
     "diagnose": "node src/cli/index.js diagnose",
     "chat": "node src/cli/index.js chat",
     "dashboard": "node src/dashboard/server.js",
-    "test": "node tests/smoke.test.js",
+    "test": "node tests/smoke.test.js && node tests/dashboard-theme.test.js",
     "lint": "eslint src/"
   },
   "engines": {
