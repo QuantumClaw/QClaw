@@ -1296,7 +1296,43 @@ Keep names as lowercase slugs with dashes. Make roles practical and specific to 
 
       ws.on('message', async (data) => {
         try {
-          const { message, agent: agentName, images } = JSON.parse(data);
+          const parsed = JSON.parse(data);
+
+          // ── Route by explicit event type ────────────────────────
+          // Some clients (e.g. Windows bridge integration) send typed
+          // events such as { type: 'turingShield:fetchTicket', ... }.
+          // Handle known types; gracefully ignore or ack unknown ones
+          // so they never surface as unhandled exceptions to the user.
+          if (parsed.type && parsed.type !== 'chat') {
+            switch (parsed.type) {
+              case 'ping':
+                ws.send(JSON.stringify({ type: 'pong' }));
+                return;
+
+              case 'turingShield:fetchTicket': {
+                // The Turing Shield bridge exe may produce no output on some
+                // hardware configurations.  Instead of propagating the raw
+                // exception, return a structured error so the caller can
+                // degrade gracefully without flooding the log.
+                ws.send(JSON.stringify({
+                  type: 'turingShield:ticket',
+                  ok: false,
+                  error: 'Bridge unavailable — ticket fetch skipped',
+                }));
+                log.debug('turingShield:fetchTicket — bridge not available, returning graceful no-op');
+                return;
+              }
+
+              default:
+                // Unknown typed event — acknowledge with a no-op so the
+                // sender does not time out waiting for a reply.
+                ws.send(JSON.stringify({ type: `${parsed.type}:ack`, ok: false, error: 'Unknown event type' }));
+                return;
+            }
+          }
+
+          // ── Standard chat message ───────────────────────────────
+          const { message, agent: agentName, images } = parsed;
           const agent = this.qclaw.agents.get(agentName) || this.qclaw.agents.primary();
 
           // Check pre-hatch state
