@@ -2,6 +2,10 @@
 :: QuantumClaw Start Script (Windows)
 ::
 :: Just double-click this file or run: start.bat
+::
+:: Note: if your GPU driver (e.g. NVIDIA RTX 50-series) logs GLES3 context
+:: errors in the console, set QCLAW_DISABLE_GPU=1 before starting:
+::   set QCLAW_DISABLE_GPU=1 && start.bat
 
 echo.
 echo  QuantumClaw

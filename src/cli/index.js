@@ -433,9 +433,17 @@ switch (command) {
     // Disk space
     try {
       const { execSync } = await import('child_process');
-      const df = execSync(`df -h ${config._dir} | tail -1`, { encoding: 'utf-8' });
-      const parts = df.trim().split(/\s+/);
-      ok(`Disk: ${parts[3]} available`);
+      if (process.platform === 'win32') {
+        // Use PowerShell Get-PSDrive — filter null drive names to avoid Get-Counter-style $null errors
+        const drive = (config._dir.match(/^([A-Za-z]):/)?.[1] || 'C').toUpperCase();
+        const psCmd = `powershell -NoProfile -NonInteractive -Command "$d = Get-PSDrive -Name '${drive}' -ErrorAction SilentlyContinue; if ($d -ne $null) { [math]::Round($d.Free / 1GB, 1) } else { '' }"`;
+        const freeGb = execSync(psCmd, { encoding: 'utf-8', timeout: 6000 }).trim();
+        if (freeGb) ok(`Disk: ${freeGb} GB available (${drive}:)`);
+      } else {
+        const df = execSync(`df -h "${config._dir}" | tail -1`, { encoding: 'utf-8' });
+        const parts = df.trim().split(/\s+/);
+        if (parts[3]) ok(`Disk: ${parts[3]} available`);
+      }
     } catch { /* skip */ }
 
     // Summary

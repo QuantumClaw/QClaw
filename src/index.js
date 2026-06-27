@@ -430,11 +430,14 @@ class QuantumClaw {
 
         // Auto-open in default browser (desktop only, not Termux)
         const isTermux = (await import('fs')).existsSync('/data/data/com.termux');
-        if (!isTermux) {
+        if (!isTermux && !process.env.QCLAW_DISABLE_GPU) {
           try {
             const { exec } = await import('child_process');
             const platform = process.platform;
-            const cmd = platform === 'win32' ? `start "" "${dashUrl}"`
+            // On Windows, use start with /B to keep the console clean.
+            // Users with GPU driver issues (e.g. GLES3 errors) can set
+            // QCLAW_DISABLE_GPU=1 to skip the auto-open entirely.
+            const cmd = platform === 'win32' ? `start /B "" "${dashUrl}"`
                       : platform === 'darwin' ? `open "${dashUrl}"`
                       : `xdg-open "${dashUrl}" 2>/dev/null || true`;
             exec(cmd);
