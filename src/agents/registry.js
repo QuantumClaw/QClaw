@@ -200,7 +200,7 @@ export class AgentRegistry {
   }
 
   async _createDefault() {
-    const { mkdirSync, writeFileSync } = await import('fs');
+    const { mkdirSync, writeFileSync, existsSync: fsExistsSync } = await import('fs');
     const n = this.defaultName;
     const agentsDir = join(this.config._dir, 'workspace', 'agents', n);
     mkdirSync(join(agentsDir, 'skills'), { recursive: true });
@@ -209,9 +209,16 @@ export class AgentRegistry {
     const isHatched = this.config.agent?.hatched === true;
     const displayName = this.config.agent?.name || n;
 
-    if (isHatched && this.config.agent?.name) {
-      // Agent has been named — use its real identity
-      writeFileSync(join(agentsDir, 'SOUL.md'), `# ${displayName}
+    // Never overwrite a SOUL.md the user has already customised
+    const soulFile = join(agentsDir, 'SOUL.md');
+    if (fsExistsSync(soulFile)) {
+      log.info(`Created agent: ${isHatched ? displayName : 'hatchling (awaiting first conversation)'} (SOUL.md preserved)`);
+      return;
+    }
+
+    if (isHatched) {
+      // Agent has been marked as hatched — use its real identity
+      writeFileSync(soulFile, `# ${displayName}
 
 ## Identity
 You are ${displayName}, a QuantumClaw agent.
@@ -236,7 +243,7 @@ You exist to make your human's life easier and their business more profitable. Y
 `);
     } else {
       // Agent just hatched — eager to meet its human
-      writeFileSync(join(agentsDir, 'SOUL.md'), `# Hatchling
+      writeFileSync(soulFile, `# Hatchling
 
 ## Identity
 You are a brand new QuantumClaw agent. You just woke up for the first time. You don't have a name yet — your human will give you one.
@@ -405,7 +412,11 @@ export class Agent {
     // Load soul
     const soulFile = join(this.dir, 'SOUL.md');
     if (existsSync(soulFile)) {
-      this.soul = readFileSync(soulFile, 'utf-8');
+      try {
+        this.soul = readFileSync(soulFile, 'utf-8');
+      } catch (err) {
+        log.warn(`Failed to read SOUL.md for agent "${this.name}": ${err.message}`);
+      }
     }
 
     // Load AID (agent identity)
@@ -421,10 +432,17 @@ export class Agent {
     if (existsSync(skillsDir)) {
       this.skills = readdirSync(skillsDir)
         .filter(f => f.endsWith('.md'))
-        .map(f => ({
-          name: f.replace('.md', ''),
-          content: readFileSync(join(skillsDir, f), 'utf-8')
-        }));
+        .reduce((acc, f) => {
+          try {
+            acc.push({
+              name: f.replace('.md', ''),
+              content: readFileSync(join(skillsDir, f), 'utf-8')
+            });
+          } catch (err) {
+            log.warn(`Failed to read skill "${f}" for agent "${this.name}": ${err.message}`);
+          }
+          return acc;
+        }, []);
     }
   }
 

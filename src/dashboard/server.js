@@ -508,7 +508,8 @@ export class DashboardServer {
           router: this.qclaw.router,
           memory: this.qclaw.memory,
           audit: this.qclaw.audit,
-          toolExecutor: this.qclaw.toolExecutor
+          toolExecutor: this.qclaw.toolExecutor,
+          config: this.qclaw.config
         });
         await agent.load();
         agent.role = role;
@@ -862,7 +863,7 @@ Keep names as lowercase slugs with dashes. Make roles practical and specific to 
           const agent = new Agent(safeName, agentDir, {
             router: this.qclaw.router, memory: this.qclaw.memory,
             audit: this.qclaw.audit, toolExecutor: this.qclaw.toolExecutor,
-            trustKernel: this.qclaw.trustKernel,
+            trustKernel: this.qclaw.trustKernel, config: this.qclaw.config,
           });
           await agent.load();
           agent.role = agentDef.role || agentDef.systemPrompt;
@@ -923,7 +924,7 @@ Keep names as lowercase slugs with dashes. Make roles practical and specific to 
               const agent = new Agent(agentDef.name, agentDir, {
                 router: this.qclaw.router, memory: this.qclaw.memory,
                 audit: this.qclaw.audit, toolExecutor: this.qclaw.toolExecutor,
-                trustKernel: this.qclaw.trustKernel,
+                trustKernel: this.qclaw.trustKernel, config: this.qclaw.config,
               });
               await agent.load();
               agent.role = agentDef.role;

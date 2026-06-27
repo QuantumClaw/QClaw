@@ -199,10 +199,11 @@ class QuantumClaw {
     }
 
     // ── Layer 4: Skills (non-fatal) ──
+    let initialSkillCount = 0;
     try {
       this.skills = new SkillLoader(this.config);
-      const skillCount = await this.skills.loadAll();
-      log.success(`${skillCount} skills loaded`);
+      initialSkillCount = await this.skills.loadAll();
+      log.success(`${initialSkillCount} skills loaded`);
     } catch (err) {
       log.warn(`Skill loading failed: ${err.message} — continuing without skills`);
       this.skills = { loadAll() { return 0; }, list() { return []; }, forAgent() { return []; } };
@@ -269,7 +270,7 @@ class QuantumClaw {
             const agent = new Agent(safeName, agentDir, {
               router: this.router, memory: this.memory,
               audit: this.audit, toolExecutor: this.toolExecutor,
-              trustKernel: this.trustKernel
+              trustKernel: this.trustKernel, config: this.config
             });
             await agent.load();
             agent.role = role;
@@ -364,6 +365,17 @@ class QuantumClaw {
         voice: new VoiceEngine(this.credentials),
       });
       await this.agents.loadAll();
+
+      // If skills were not found before agent directories were created (first-run case),
+      // reload them now that agent directories exist
+      if (initialSkillCount === 0 && this.skills.loadAll) {
+        try {
+          const reloadCount = await this.skills.loadAll();
+          if (reloadCount > 0) {
+            log.success(`${reloadCount} skills loaded (after agent init)`);
+          }
+        } catch { /* non-fatal — already have skill stub */ }
+      }
 
       // Copy primary AID to default agent's directory if not already there
       if (this.credentials?.aid) {
